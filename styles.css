@@ -204,6 +204,34 @@ th { color: var(--muted); font-weight: 500; position: sticky; top: 0; background
 .save-status.warn { color: var(--warn); }
 .site-input { width: 150px; }
 
+/* Settings header & Max Play button */
+.settings-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.settings-head h3 { margin: 0; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.max-play-btn {
+  background: linear-gradient(135deg, rgba(227, 179, 65, 0.2), rgba(240, 136, 62, 0.2));
+  border: 1px solid #e3b341;
+  color: #ffde82;
+  font-weight: 700;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: transform 0.1s, background 0.15s, box-shadow 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.max-play-btn:hover {
+  background: linear-gradient(135deg, rgba(227, 179, 65, 0.35), rgba(240, 136, 62, 0.35));
+  box-shadow: 0 0 10px rgba(227, 179, 65, 0.35);
+  transform: translateY(-1px);
+}
+.max-play-btn.active {
+  background: rgba(46, 160, 67, 0.2);
+  border-color: var(--win);
+  color: var(--win);
+}
+
 /* The Kickoff game styles */
 .kickoff-slots { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 10px 0; }
 .kickoff-slots .slot { width: 64px; height: 64px; }
