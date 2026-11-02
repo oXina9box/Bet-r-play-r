@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bet-R Play-R</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Bet-R <span>Play-R</span></div>
+    <div class="pickers">
+      <select id="site" title="Site"></select>
+      <button id="addSite" class="ghost" title="Add site">+</button>
+      <input id="newSite" class="site-input" placeholder="Site name, Enter" hidden />
+      <div id="games" class="seg"></div>
+    </div>
+    <div class="session">
+      <span id="saveStatus" class="save-status"></span>
+      <span id="sessionInfo"></span>
+      <button id="newSession" class="ghost">New session</button>
+      <button id="export" class="ghost" title="Download a JSON backup">Export</button>
+      <label class="ghost btn" title="Restore from a JSON backup">Import<input id="import" type="file" accept="application/json" hidden /></label>
+    </div>
+  </header>
+
+  <main>
+    <section class="left">
+      <div id="next" class="next"></div>
+
+      <div class="entry">
+        <div id="pending" class="pending"></div>
+        <div id="pad"></div>
+        <div class="entry-actions">
+          <button id="noBet" class="act nobet-btn" title="Toggle No Bet: records this roll without risking money (shortcut: X)">No Bet <span class="kbd">X</span></button>
+          <button id="undo" class="act">Undo <span class="kbd">⌫</span></button>
+          <button id="clear" class="act">Clear <span class="kbd">Esc</span></button>
+        </div>
+      </div>
+
+      <div class="strip-wrap">
+        <div class="strip-head"><h3>This session</h3><span class="muted">newest first</span></div>
+        <div id="strip" class="strip"></div>
+      </div>
+    </section>
+
+    <section class="right">
+      <div class="card settings">
+        <div class="row"><label>Group</label><div id="groupSeg" class="seg"></div><span class="muted" id="groupHint"></span></div>
+        <div class="row"><label>Progression</label><div id="progSeg" class="seg"></div></div>
+        <div class="row">
+          <label>Base unit</label><input id="unit" type="number" min="0" step="0.01" />
+          <label>Payout</label><input id="payout" type="number" min="0" step="0.01" title="Win pays this × stake (1 = even money)" />
+        </div>
+        <div class="muted small" id="cfgNote"></div>
+      </div>
+
+      <div class="card stats">
+        <div class="stats-head">
+          <h3>Stats</h3>
+          <div id="scopeSeg" class="seg"></div>
+        </div>
+        <div id="statGrid" class="stat-grid"></div>
+        <div id="stepBars"></div>
+        <div id="extra"></div>
+        <div class="breakdown-head">
+          <h4>Breakdown</h4>
+          <div id="bdSeg" class="seg small"></div>
+        </div>
+        <div class="table-wrap"><table id="breakdown"></table></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="js/engine.js"></script>
+  <script src="js/games/sicbo.js"></script>
+  <script src="js/games/teenpatti.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
