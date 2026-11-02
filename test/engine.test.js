@@ -95,37 +95,50 @@ const st = E.stats(r.rows);
 assert.strictEqual(st.skipped, 1);
 assert.strictEqual(st.wagered, 0);
 
-// Card input: duplicate rejected, multi-tap keying, and 6 cards commit
+// Card input: rank then numeric suit 1=♥ 2=♠ 3=♣ 4=♦
 let p = TP.emptyPending();
-for (const k of ['a', 'h']) p = TP.input(p, k).pending;
+p = TP.input(p, 'a').pending;
+assert.strictEqual(p.active.rank, 'A');
+p = TP.input(p, '1').pending; // '1' = Hearts
 assert.deepStrictEqual(p.cards, ['Ah']);
-// duplicate rejection
-const dupRes = TP.input(p, 'a');
-const dupAttempt = TP.input(dupRes.pending, 'h');
-assert.strictEqual(dupAttempt.error, 'Ah already dealt');
+assert.strictEqual(p.active, null);
 
-// Multi-tap test: 'aa' gives As (2 taps = Spades)
-let pMulti = TP.emptyPending();
-pMulti = TP.input(pMulti, 'a').pending;
-assert.strictEqual(pMulti.active.rank, 'A');
-assert.strictEqual(pMulti.active.suitIdx, 0); // 1 tap = Hearts
-pMulti = TP.input(pMulti, 'a').pending;
-assert.strictEqual(pMulti.active.suitIdx, 1); // 2 taps = Spades (aa = A♠)
+// A then 2 = As
+p = TP.input(p, 'a').pending;
+p = TP.input(p, '2').pending; // '2' = Spades
+assert.deepStrictEqual(p.cards, ['Ah', 'As']);
 
-// 4 taps gives Diamonds: '5555' = 5♦
-let p5 = TP.emptyPending();
-for (let i = 0; i < 4; i++) p5 = TP.input(p5, '5').pending;
-assert.strictEqual(p5.active.rank, '5');
-assert.strictEqual(p5.active.suitIdx, 3); // 4 taps = Diamonds (5555 = 5♦)
+// 5 then 4 = 5d
+p = TP.input(p, '5').pending;
+p = TP.input(p, '4').pending; // '4' = Diamonds
+assert.deepStrictEqual(p.cards, ['Ah', 'As', '5d']);
 
-// Switching rank commits previous card:
-let pSwitch = TP.emptyPending();
-pSwitch = TP.input(pSwitch, 'a').pending;
-pSwitch = TP.input(pSwitch, 'a').pending; // As active
-pSwitch = TP.input(pSwitch, 'k').pending; // Switching to K commits As!
-assert.deepStrictEqual(pSwitch.cards, ['As']);
-assert.strictEqual(pSwitch.active.rank, 'K');
-assert.strictEqual(pSwitch.active.suitIdx, 0); // K♥ active
+// 2 then 2 = 2s
+p = TP.input(p, '2').pending;
+p = TP.input(p, '2').pending; // '2' = Spades
+assert.deepStrictEqual(p.cards, ['Ah', 'As', '5d', '2s']);
+
+// 3 then 3 = 3c
+p = TP.input(p, '3').pending;
+p = TP.input(p, '3').pending; // '3' = Clubs
+assert.deepStrictEqual(p.cards, ['Ah', 'As', '5d', '2s', '3c']);
+
+// 0 then 1 = 10h (Deal 6 commits!)
+const c6 = TP.input(p, '0').pending;
+const res6 = TP.input(c6, '1'); // '1' = Hearts
+assert.strictEqual(res6.commit.order, 'alternating');
+assert.deepStrictEqual(res6.commit.c, ['Ah', 'As', '5d', '2s', '3c', '10h']);
+assert.deepStrictEqual(res6.pending, { cards: [], active: null });
+
+// Duplicate rejection
+let pDup = TP.emptyPending();
+pDup = TP.input(pDup, 'a').pending;
+pDup = TP.input(pDup, '1').pending; // Ah
+const dupRes = TP.input(pDup, 'a').pending;
+const dupAttempt = TP.input(dupRes, '1'); // Ah again!
+assert.strictEqual(dupAttempt.error, 'A♥ already dealt');
+assert.deepStrictEqual(dupAttempt.pending, { cards: ['Ah'], active: null });
+
 // Delay simulation: waitBust = 1 should insert a cooldown roll after a bust
 const bustSeq = [11, 14, 9, 14, 6, 13, 12, 8, 12, 9, 6, 14, 15, 11, 12];
 const rNoDelay = E.run(entries(bustSeq), Object.assign({}, cfg, { waitBust: 0 }));
@@ -309,32 +322,46 @@ const regressions = [
       assert.strictEqual(JSON.stringify(pending), snapshot);
     }
   }],
-  ['Teen Patti multitap, confirmation, duplicates and undo preserve input', () => {
+  ['Teen Patti fast entry, numeric suits, duplicates and undo preserve input', () => {
     const missingCards = {};
     let pending = TP.input(missingCards, 'a').pending;
     assert.deepStrictEqual(missingCards, {});
-    assert.deepStrictEqual(pending.active, { rank: 'A', suitIdx: 0 });
-    for (const suitIdx of [1, 2, 3, 0]) {
-      const previous = pending;
-      const before = JSON.stringify(previous);
-      pending = TP.input(previous, 'a').pending;
-      assert.strictEqual(pending.active.suitIdx, suitIdx);
-      assert.strictEqual(JSON.stringify(previous), before);
+    assert.deepStrictEqual(pending.active, { rank: 'A' });
+    // Numeric suits: 1=h, 2=s, 3=c, 4=d
+    for (const [key, suit] of [['1', 'h'], ['2', 's'], ['3', 'c'], ['4', 'd']]) {
+      const p = TP.input({ cards: [] }, 'a').pending;
+      const res = TP.input(p, key);
+      assert.deepStrictEqual(res.pending.cards, ['A' + suit]);
     }
-    const confirmed = TP.input(pending, 'enter');
-    assert.deepStrictEqual(confirmed.pending, { cards: ['Ah'], active: null });
-    const duplicate = { cards: ['Ah'], active: { rank: 'A', suitIdx: 0 } };
+    const duplicate = { cards: ['Ah'], active: { rank: 'A' } };
     const before = JSON.stringify(duplicate);
-    for (const confirm of [p => TP.confirmActive(p), p => TP.input(p, 'h'), p => TP.input(p, 'k')]) {
-      assert.strictEqual(confirm(duplicate).error, 'Ah already dealt');
+    for (const confirm of [p => TP.confirmActive(p), p => TP.input(p, '1'), p => TP.input(p, 'h')]) {
+      assert.strictEqual(confirm(duplicate).error, 'A♥ already dealt');
       assert.strictEqual(JSON.stringify(duplicate), before);
     }
     assert.deepStrictEqual(TP.undoInput(duplicate), { cards: ['Ah'], active: null });
     assert.deepStrictEqual(TP.undoInput({ cards: ['Ah'], active: null }), { cards: [], active: null });
-    const changed = TP.input({ cards: [], active: { rank: 'A', suitIdx: 1 } }, 'k');
-    assert.deepStrictEqual(changed.pending, { cards: ['As'], active: { rank: 'K', suitIdx: 0 } });
+    const changed = TP.input({ cards: [], active: { rank: 'A' } }, 'k');
+    assert.deepStrictEqual(changed.pending, { cards: ['Ah'], active: { rank: 'K' } });
     assert.deepStrictEqual(TP.input(changed.pending, 'wa').commit, { w: 'A' });
     TP.emptyPending();
+  }],
+  ['Voice module parses spoken cards, dice, and commands accurately', () => {
+    const Voice = require('../js/voice.js');
+    assert.deepStrictEqual(Voice.parseSpeech('ace of spades').cards, ['As']);
+    assert.deepStrictEqual(Voice.parseSpeech('king hearts').cards, ['Kh']);
+    assert.deepStrictEqual(Voice.parseSpeech('five of diamonds').cards, ['5d']);
+    assert.deepStrictEqual(Voice.parseSpeech('ten of clubs').cards, ['10c']);
+    assert.deepStrictEqual(Voice.parseSpeech('deuce spades').cards, ['2s']);
+    assert.deepStrictEqual(Voice.parseSpeech('trey of diamonds').cards, ['3d']);
+    assert.deepStrictEqual(Voice.parseSpeech('ace 2').cards, ['As']);
+    assert.deepStrictEqual(Voice.parseSpeech('5 4').cards, ['5d']);
+    assert.deepStrictEqual(Voice.parseSpeech('ace of spades, king of hearts, five of clubs').cards, ['As', 'Kh', '5c']);
+    assert.deepStrictEqual(Voice.parseSpeech('undo').commands, ['undo']);
+    assert.deepStrictEqual(Voice.parseSpeech('clear').commands, ['clear']);
+    assert.deepStrictEqual(Voice.parseSpeech('player 1 won').commands, ['wa']);
+    assert.deepStrictEqual(Voice.parseSpeech('four five six', 'sicbo').dice, [4, 5, 6]);
+    assert.deepStrictEqual(Voice.parseSpeech('triple four', 'sicbo').dice, [4, 4, 4]);
   }],
   ['recovery changes preserve recorded and legacy history', () => {
     const recorded = entries(bustSeq, { ...cfg, recovery: 0 });

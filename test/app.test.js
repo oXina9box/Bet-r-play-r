@@ -34,7 +34,7 @@ function boot({ cache = null, get = async () => ({ ok: true, json: async () => f
   };
   context.window = context;
   vm.createContext(context);
-  for (const file of ['js/engine.js', 'js/games/sicbo.js', 'js/games/teenpatti.js', 'js/games/kickoff.js']) {
+  for (const file of ['js/engine.js', 'js/games/sicbo.js', 'js/games/teenpatti.js', 'js/games/kickoff.js', 'js/voice.js']) {
     vm.runInContext(fs.readFileSync(file, 'utf8'), context, { filename: path.resolve(file) });
   }
   context.AppData = require('../js/data.js');
@@ -174,29 +174,24 @@ function boot({ cache = null, get = async () => ({ ok: true, json: async () => f
   const cards = boot({ protocol: 'file:' }); await tick();
   cards.pick('games', 'teenpatti');
   assert.equal(cards.key('Tab').prevented, undefined, 'Tab keeps normal navigation without active card');
-  cards.key('a'); cards.key('a');
-  assert.equal(cards.timerCount(650), 1, 'multi-tap schedules one confirmation');
-  assert.equal(cards.key('Tab').prevented, true, 'Tab confirms active card');
-  assert.equal(cards.timerCount(650), 0);
-  assert.match(cards.element('pending').innerHTML, /A♠/, 'multi-tap suit survives Tab confirmation');
-  for (const key of ['k', 'Enter', 'q', ' ', 'j', 'Enter', '9', 'Enter', '8']) cards.key(key);
-  await cards.runTimers(650);
+  // Two-stroke fast card entry: A then 2 = As
+  cards.key('a');
+  assert.match(cards.element('pending').innerHTML, /rank-pending/, 'active rank highlighted');
+  cards.key('2'); // '2' = Spades
+  assert.match(cards.element('pending').innerHTML, /A♠/, 'A then 2 immediately produces A♠');
+  // Deal remaining 5 cards: K1 (Kh), Q4 (Qd), J3 (Jc), 91 (9h), 82 (8s)
+  for (const [r, s] of [['k', '1'], ['q', '4'], ['j', '3'], ['9', '1'], ['8', '2']]) {
+    cards.key(r); cards.key(s);
+  }
   const dealt = JSON.parse(cards.stored.get('betrplayr.v1')).books['shuff:teenpatti'].entries;
-  assert.equal(dealt.length, 1, 'timer confirmation commits sixth card');
-  assert.deepEqual(dealt[0].raw.c, ['As', 'Kh', 'Qh', 'Jh', '9h', '8h']);
+  assert.equal(dealt.length, 1, '6th card immediately commits without timer delay');
+  assert.deepEqual(dealt[0].raw.c, ['As', 'Kh', 'Qd', 'Jc', '9h', '8s']);
   assert.equal(dealt[0].raw.order, 'alternating');
-  cards.key('7');
-  cards.pick('games', 'sicbo');
-  assert.equal(cards.timerCount(650), 0, 'game switch cancels previous game timer');
-  cards.pick('games', 'teenpatti');
-  cards.key('6');
-  cards.element('newSession').onclick();
-  assert.equal(cards.timerCount(650), 0, 'new session cancels timer');
-  cards.key('5');
-  await cards.import(fixture(100));
-  assert.equal(cards.timerCount(650), 0, 'import cancels old game timer');
-  cards.pick('games', 'teenpatti'); cards.key('4');
-  await cards.element('resetAll').onclick();
-  assert.equal(cards.timerCount(650), 0, 'reset cancels old game timer');
+
+  // Voice toggle test
+  assert.ok(cards.element('voiceBtn'), 'voice button exists');
+  cards.key('v');
+  cards.element('voiceBtn').onclick();
+
   console.log('All app tests passed');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

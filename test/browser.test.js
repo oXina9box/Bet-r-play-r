@@ -102,7 +102,7 @@ async function main() {
     await page.locator('#pad [data-key="wa"]').click();
     await page.locator('#maxPlay').click();
     assert.match(await page.locator('#sessionInfo').innerText(), /1 hand/i);
-    for (const key of ['a', 'k', 'q', 'j', '9', '8', 'Enter']) await page.keyboard.press(key);
+    for (const key of ['a', '2', 'k', '1', 'q', '4', 'j', '3', '9', '1', '8', '2']) await page.keyboard.press(key);
     assert.match(await page.locator('#sessionInfo').innerText(), /2 hands/i);
     await waitFor(() => JSON.parse(fs.readFileSync(file)).books['shuff:teenpatti']?.entries.length === 2,
       'Teen Patti quick and card hands were not persisted');

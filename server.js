@@ -9,7 +9,7 @@ const ASSETS = {
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/index.html': ['index.html', 'text/html; charset=utf-8'],
   '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
-  ...Object.fromEntries(['data', 'app', 'engine', 'games/sicbo', 'games/teenpatti', 'games/kickoff']
+  ...Object.fromEntries(['data', 'app', 'engine', 'voice', 'games/sicbo', 'games/teenpatti', 'games/kickoff']
     .map(name => [`/js/${name}.js`, [`js/${name}.js`, 'text/javascript; charset=utf-8']])),
 };
 const HEADERS = {

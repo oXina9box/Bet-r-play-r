@@ -11,22 +11,24 @@
  * Deal 5: Player 1 (Card 3)
  * Deal 6: Player 2 (Card 3)
  *
- * Multi-Tap Card Key Entry:
- * 1 tap : Hearts (♥)
- * 2 taps: Spades (♠)
- * 3 taps: Clubs (♣)
- * 4 taps: Diamonds (♦)
- * e.g. aa = A♠, 5555 = 5♦, k = K♥, jjj = J♣.
- * Changing rank, pressing Space/Enter, or a 650ms pause confirms the card.
+ * Fast Keypad Card Entry:
+ * Step 1: Press Rank (2..9, 0/t/10, J, Q, K, A)
+ * Step 2: Press Suit Number:
+ *   1 = Hearts (♥)
+ *   2 = Spades (♠)
+ *   3 = Clubs (♣)
+ *   4 = Diamonds (♦)
+ * Direct letter suits (h, s, c, d) and full codes (e.g. As, 5d) are also supported.
  */
 (function (root) {
   const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
   const VAL = Object.fromEntries(RANKS.map((r, i) => [r, i + 2]));
   const SUITS = { h: '♥', d: '♦', s: '♠', c: '♣' };
-  const SUIT_CYCLE = ['h', 's', 'c', 'd']; // 1=h, 2=s, 3=c, 4=d
+  const NUMERIC_SUITS = { '1': 'h', '2': 's', '3': 'c', '4': 'd' };
+  const SUIT_CYCLE = ['h', 's', 'c', 'd'];
   const RANK_KEYS = {
     2: '2', 3: '3', 4: '4', 5: '5', 6: '6', 7: '7', 8: '8', 9: '9',
-    0: '10', t: '10', 1: '10', 10: '10',
+    0: '10', t: '10', 10: '10',
     j: 'J', q: 'Q', k: 'K', a: 'A'
   };
   const CATS = ['', 'High Card', 'Pair', 'Color', 'Sequence', 'Pure Seq', 'Trail'];
@@ -56,15 +58,7 @@
     return 0;
   }
 
-  let commitTimer = null;
   let autoCommitCb = null;
-
-  function scheduleAutoCommit() {
-    clearTimeout(commitTimer);
-    commitTimer = setTimeout(() => {
-      if (typeof autoCommitCb === 'function') autoCommitCb();
-    }, 650);
-  }
 
   const TeenPatti = {
     id: 'teenpatti',
@@ -78,8 +72,6 @@
       autoCommitCb = cb;
     },
 
-    // Legacy {c} groups P1's first 3 cards; new deals explicitly mark alternating order.
-    // Quick entry: { w: 'A'|'B'|'T' }.
     outcome(raw) {
       if (raw.w) return { side: raw.w === 'T' ? null : raw.w, lossAll: false };
       const alternating = raw.order === 'alternating';
@@ -91,16 +83,15 @@
     },
 
     emptyPending() {
-      clearTimeout(commitTimer);
       return { cards: [], active: null };
     },
 
     confirmActive(p) {
-      if (!p || !p.active) return null;
-      clearTimeout(commitTimer);
-      const card = p.active.rank + SUIT_CYCLE[p.active.suitIdx];
+      if (!p || !p.active || !p.active.rank) return null;
+      const suit = p.active.suit || 'h';
+      const card = p.active.rank + suit;
       if (p.cards.includes(card)) {
-        return { pending: { cards: p.cards, active: null }, error: card + ' already dealt' };
+        return { pending: { cards: p.cards, active: null }, error: cardLabel(card) + ' already dealt' };
       }
       const cards = p.cards.concat(card);
       if (cards.length === 6) {
@@ -110,29 +101,30 @@
     },
 
     input(p, key) {
-      p = Object.assign({ active: null }, p, { cards: p && p.cards || [] });
+      p = Object.assign({ active: null }, p, { cards: (p && p.cards) || [] });
       key = String(key).toLowerCase();
 
       // Quick entry
       if (key === 'wa' || key === 'wb' || key === 'wt') {
-        clearTimeout(commitTimer);
         return { pending: this.emptyPending(), commit: { w: key[1].toUpperCase() } };
       }
 
-      // Space / Enter / Tab: explicitly confirm current active card
+      // Space / Enter / Tab: explicitly confirm current active card (defaults to Hearts if suit wasn't chosen)
       if (key === 'enter' || key === ' ' || key === 'space' || key === 'tab') {
         return this.confirmActive(p) || { pending: p };
       }
 
       if (key.startsWith('r:')) key = key.slice(2);
 
-      // Direct suit key ('h', 's', 'c', 'd') immediately confirms active card with that suit
-      if (SUITS[key]) {
-        if (!p.active) return { pending: p };
-        clearTimeout(commitTimer);
-        const card = p.active.rank + key;
+      // Direct full card code, e.g. "as", "5d", "10h", "kc"
+      const fullMatch = key.match(/^([2-9]|10|[jqka])([hscd])$/);
+      if (fullMatch) {
+        if (p.cards.length >= 6) return null;
+        const r = RANK_KEYS[fullMatch[1]] || fullMatch[1].toUpperCase();
+        const s = fullMatch[2];
+        const card = r + s;
         if (p.cards.includes(card)) {
-          return { pending: { cards: p.cards, active: null }, error: card + ' already dealt' };
+          return { pending: { cards: p.cards, active: null }, error: cardLabel(card) + ' already dealt' };
         }
         const cards = p.cards.concat(card);
         if (cards.length === 6) {
@@ -141,46 +133,61 @@
         return { pending: { cards, active: null } };
       }
 
-      // Rank key (2..9, 0, t, 1, j, q, k, a)
-      if (RANK_KEYS[key]) {
-        const rank = RANK_KEYS[key];
-        if (p.active) {
-          if (p.active.rank === rank) {
-            // Multi-tap: same rank tapped again -> cycle suit: Hearts -> Spades -> Clubs -> Diamonds
-            const suitIdx = (p.active.suitIdx + 1) % 4;
-            const active = { rank, suitIdx };
-            scheduleAutoCommit();
-            return { pending: { cards: p.cards, active } };
-          } else {
-            // Different rank tapped: confirm previous card first
-            clearTimeout(commitTimer);
-            const prevCard = p.active.rank + SUIT_CYCLE[p.active.suitIdx];
-            if (p.cards.includes(prevCard)) {
-              return { pending: { cards: p.cards, active: null }, error: prevCard + ' already dealt' };
-            }
-            const cards = p.cards.concat(prevCard);
-            if (cards.length === 6) {
-              return { pending: this.emptyPending(), commit: { c: cards, order: 'alternating' } };
-            }
-            // Start new active card at Hearts (suitIdx 0)
-            const active = { rank, suitIdx: 0 };
-            scheduleAutoCommit();
-            return { pending: { cards, active } };
+      // If a rank is currently active:
+      if (p.active && p.active.rank) {
+        // Suit key: 1=h (Hearts), 2=s (Spades), 3=c (Clubs), 4=d (Diamonds), or direct h/s/c/d
+        const suit = NUMERIC_SUITS[key] || (SUITS[key] ? key : null);
+        if (suit) {
+          const card = p.active.rank + suit;
+          if (p.cards.includes(card)) {
+            return { pending: { cards: p.cards, active: null }, error: cardLabel(card) + ' already dealt' };
           }
-        } else {
-          // No active card: start new active card at Hearts (suitIdx 0)
-          if (p.cards.length >= 6) return null;
-          const active = { rank, suitIdx: 0 };
-          scheduleAutoCommit();
-          return { pending: { cards: p.cards, active } };
+          const cards = p.cards.concat(card);
+          if (cards.length === 6) {
+            return { pending: this.emptyPending(), commit: { c: cards, order: 'alternating' } };
+          }
+          return { pending: { cards, active: null } };
         }
+
+        // Extra 0 while rank is 10 (e.g. user typed '1' then '0')
+        if (key === '0' && p.active.rank === '10') {
+          return { pending: p };
+        }
+
+        // If user typed another non-suit rank key (e.g. 5..9, 0, t, j, q, k, a):
+        // Confirm previous card with Hearts, then start new rank (or commit if 6th card)
+        if (RANK_KEYS[key]) {
+          const prevCard = p.active.rank + (p.active.suit || 'h');
+          if (p.cards.includes(prevCard)) {
+            return { pending: { cards: p.cards, active: null }, error: cardLabel(prevCard) + ' already dealt' };
+          }
+          const cards = p.cards.concat(prevCard);
+          if (cards.length === 6) {
+            return { pending: this.emptyPending(), commit: { c: cards, order: 'alternating' } };
+          }
+          return { pending: { cards, active: { rank: RANK_KEYS[key] } } };
+        }
+
+        return { pending: p };
+      }
+
+      // No active rank currently:
+      if (p.cards.length >= 6) return null;
+
+      // '1' when no rank is active starts rank 10
+      if (key === '1') {
+        return { pending: { cards: p.cards, active: { rank: '10' } } };
+      }
+
+      // Normal rank key (2..9, 0, t, j, q, k, a)
+      if (RANK_KEYS[key]) {
+        return { pending: { cards: p.cards, active: { rank: RANK_KEYS[key] } } };
       }
 
       return null;
     },
 
     undoInput(p) {
-      clearTimeout(commitTimer);
       if (!p) return null;
       if (p.active) return { cards: p.cards, active: null };
       if (p.cards && p.cards.length) return { cards: p.cards.slice(0, -1), active: null };
@@ -200,9 +207,8 @@
         if (c) {
           return `<div class="slot card filled ${suitCls(c)}"><span class="deal-num">#${dealIdx + 1}</span>${cardLabel(c)}</div>`;
         }
-        if (isActive && p.active) {
-          const activeCard = p.active.rank + SUIT_CYCLE[p.active.suitIdx];
-          return `<div class="slot card filled active ${suitCls(activeCard)}"><span class="deal-num">#${dealIdx + 1}</span>${cardLabel(activeCard)}</div>`;
+        if (isActive && p.active && p.active.rank) {
+          return `<div class="slot card active rank-pending"><span class="deal-num">#${dealIdx + 1}</span><span class="active-rank">${p.active.rank}</span><span class="suit-hints"><span class="red">1♥</span> 2♠ 3♣ <span class="red">4♦</span></span></div>`;
         }
         return `<div class="slot card ${isActive ? 'active' : ''}"><span class="deal-num">#${dealIdx + 1}</span><small>${isActive ? 'deal' : ''}</small></div>`;
       };
@@ -241,9 +247,15 @@
         const k = r === '10' ? '0' : r.toLowerCase();
         return `<button class="key rank" data-key="r:${k}">${r}${r === '10' ? '<span class="kbd">0</span>' : ''}</button>`;
       }).join('');
-      const suits = Object.entries(SUITS).map(([k, s]) => `<button class="key suit ${k === 'h' || k === 'd' ? 'red' : ''}" data-key="${k}">${s}<span class="kbd">${k}</span></button>`).join('');
+      const suits = [
+        { k: '1', s: '♥', cls: 'red' },
+        { k: '2', s: '♠', cls: '' },
+        { k: '3', s: '♣', cls: '' },
+        { k: '4', s: '♦', cls: 'red' },
+      ].map((it) => `<button class="key suit ${it.cls}" data-key="${it.k}">${it.s}<span class="kbd">${it.k}</span></button>`).join('');
+
       return `<div class="pad card-pad">
-        <div class="multitap-hint">Multi-tap rank: <b>1×♥</b> · <b>2×♠</b> · <b>3×♣</b> · <b>4×♦</b> &nbsp;<small class="muted">(aa = A♠, 5555 = 5♦ · Space/Enter to confirm)</small></div>
+        <div class="multitap-hint">Fast Entry: <b>[Rank]</b> then suit: <b>1=♥</b> · <b>2=♠</b> · <b>3=♣</b> · <b>4=♦</b> &nbsp;<small class="muted">(e.g. A2=A♠, 54=5♦, 01=10♥, 22=2♠ · or use Mic 🎙️)</small></div>
         <div class="ranks">${ranks}</div>
         <div class="suits">${suits}</div>
         <div class="quick"><span>Quick:</span>

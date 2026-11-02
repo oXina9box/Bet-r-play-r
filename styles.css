@@ -82,6 +82,9 @@ main { display: grid; grid-template-columns: minmax(420px, 1fr) minmax(380px, 1f
 .slot.filled { border-style: solid; border-color: var(--text); background: var(--panel2); }
 .slot.card { width: 50px; height: 70px; position: relative; }
 .slot.card.active { border-color: var(--warn); }
+.slot.card.rank-pending { border-color: var(--warn); background: rgba(210, 153, 34, 0.12); }
+.slot.card .active-rank { font-size: 26px; font-weight: 900; line-height: 1; margin-top: 6px; }
+.slot.card .suit-hints { position: absolute; bottom: 3px; font-size: 8px; font-weight: 700; color: var(--muted); letter-spacing: 0.02em; white-space: nowrap; }
 .slot.card .deal-num { position: absolute; top: 2px; left: 4px; font-size: 9px; font-weight: 700; color: var(--muted); opacity: 0.6; }
 .slot small { color: var(--muted); font-size: 14px; }
 .red { color: #ff6b6b; }
@@ -93,6 +96,45 @@ main { display: grid; grid-template-columns: minmax(420px, 1fr) minmax(380px, 1f
 .hand-type { color: var(--text); text-transform: none; letter-spacing: 0; margin-left: 6px; font-weight: 700; }
 .multitap-hint { font-size: 11px; color: var(--muted); text-align: center; margin-bottom: 4px; background: rgba(255, 255, 255, 0.03); padding: 4px; border-radius: 6px; }
 .multitap-hint b { color: var(--text); }
+
+.voice-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s; }
+.voice-btn.listening {
+  border-color: #f85149 !important;
+  background: rgba(248, 81, 73, 0.18) !important;
+  color: #ff7b72 !important;
+  box-shadow: 0 0 12px rgba(248, 81, 73, 0.4);
+}
+.voice-btn.listening .mic-icon {
+  display: inline-block;
+  animation: pulse-mic 1.2s infinite ease-in-out;
+}
+@keyframes pulse-mic {
+  0% { transform: scale(1); filter: drop-shadow(0 0 2px #f85149); }
+  50% { transform: scale(1.25); filter: drop-shadow(0 0 8px #ff7b72); }
+  100% { transform: scale(1); filter: drop-shadow(0 0 2px #f85149); }
+}
+.voice-transcript {
+  background: rgba(56, 139, 253, 0.15);
+  border: 1px solid rgba(56, 139, 253, 0.4);
+  color: #58a6ff;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.voice-transcript .pill {
+  background: #58a6ff;
+  color: #0d1117;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
 
 .pad { display: grid; gap: 8px; }
 .dice-pad { grid-template-columns: repeat(6, 1fr); }

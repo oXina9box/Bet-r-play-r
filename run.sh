@@ -22,5 +22,5 @@ if ! is_running; then
   echo 'Unable to start Bet-R Play-R. Check data/server.log. If an older server owns port 47615, stop it and rerun this launcher.' >&2
   exit 1
 fi
-if command -v chromium >/dev/null; then exec chromium --app="$URL" --window-size=1400,1000 --ozone-platform-hint=auto "$@"
+if command -v chromium >/dev/null; then exec chromium --app="$URL" --window-size=1400,1000 --ozone-platform-hint=auto --use-fake-ui-for-media-stream "$@"
 else exec xdg-open "$URL"; fi

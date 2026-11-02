@@ -634,6 +634,7 @@
     }
   });
   if ($('maxPlay')) $('maxPlay').onclick = applyMaxPlay;
+  if ($('voiceBtn')) $('voiceBtn').onclick = toggleVoice;
   $('noBet').onclick = toggleNoBet;
   $('undo').onclick = undo;
   $('clear').onclick = clearPending;
@@ -700,6 +701,81 @@
     finally { ready = true; }
   };
 
+  function updateVoiceUI(isListening) {
+    const btn = $('voiceBtn');
+    if (!btn) return;
+    if (isListening) {
+      btn.classList.add('listening');
+      btn.innerHTML = '<span class="mic-icon">🔴</span> Listening <span class="kbd">V</span>';
+      showVoiceTranscript('Listening for cards or voice commands...', true);
+    } else {
+      btn.classList.remove('listening');
+      btn.innerHTML = '<span class="mic-icon">🎙️</span> Voice <span class="kbd">V</span>';
+      hideVoiceTranscript();
+    }
+  }
+
+  function showVoiceTranscript(msg, isInterim = false) {
+    const el = $('voiceTranscript');
+    if (!el) return;
+    el.hidden = false;
+    el.innerHTML = `<span class="pill">${isInterim ? 'Live' : 'Heard'}</span> <span>${msg}</span>`;
+  }
+
+  function hideVoiceTranscript() {
+    const el = $('voiceTranscript');
+    if (!el) return;
+    el.hidden = true;
+  }
+
+  function toggleVoice() {
+    if (!window.Voice) return toast('Voice module not loaded');
+    if (!window.Voice.isSupported()) return toast('Microphone speech recognition not supported in this browser');
+    window.Voice.toggle();
+  }
+
+  if (window.Voice && window.Voice.isSupported()) {
+    window.Voice.init({
+      onStateChange: ({ listening }) => {
+        updateVoiceUI(listening);
+      },
+      onInterim: ({ transcript }) => {
+        showVoiceTranscript(transcript, true);
+      },
+      onResult: ({ transcript }) => {
+        showVoiceTranscript(transcript, false);
+        const parsed = window.Voice.parseSpeech(transcript, data.cur.game);
+
+        // Process commands
+        for (const cmd of parsed.commands) {
+          if (cmd === 'undo') undo();
+          else if (cmd === 'clear') clearPending();
+          else if (cmd === 'newSession') newSession();
+          else if (cmd === 'wa' || cmd === 'wb' || cmd === 'wt') press(cmd);
+        }
+
+        // Teen Patti cards
+        if (data.cur.game === 'teenpatti' && parsed.cards.length > 0) {
+          for (const card of parsed.cards) {
+            press(card);
+          }
+          toast(`🎤 Heard: ${parsed.cards.join(', ')}`);
+        }
+
+        // Sic Bo / Kickoff dice
+        if ((data.cur.game === 'sicbo' || data.cur.game === 'kickoff') && parsed.dice.length > 0) {
+          for (const d of parsed.dice) {
+            press(d);
+          }
+          toast(`🎤 Heard: ${parsed.dice.join(', ')}`);
+        }
+      },
+      onError: (msg) => {
+        toast(msg);
+      }
+    });
+  }
+
   if (window.Games?.teenpatti?.registerAutoCommit) {
     window.Games.teenpatti.registerAutoCommit(() => {
       if (!ready || data.cur.game !== 'teenpatti') return;
@@ -719,6 +795,10 @@
     else if (e.key === 'Escape') clearPending();
     else if (['Enter', ' ', 'Tab'].includes(e.key) && data.cur.game === 'teenpatti' && pending.active) {
       e.preventDefault(); press(e.key === ' ' ? 'space' : e.key.toLowerCase());
+    }
+    else if (e.key.toLowerCase() === 'v') {
+      e.preventDefault();
+      toggleVoice();
     }
     else if (e.key.toLowerCase() === 'x') { e.preventDefault(); toggleNoBet(); }
     else if (e.key.length === 1) press(e.key.toLowerCase());
