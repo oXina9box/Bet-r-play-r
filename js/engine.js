@@ -3,9 +3,12 @@
  * Classic script (no modules) so the app runs straight from file://. Also loadable in Node for tests.
  */
 (function (root) {
+  const FIB_SEQUENCE = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144];
   const PROGRESSIONS = {
     double: { label: '1x 2x 4x 8x', mult: (k) => 2 ** k },
     plusone: { label: '1x 3x 7x 15x', mult: (k) => 2 ** (k + 1) - 1 },
+    fib: { label: '1x 2x 3x 5x', mult: (k) => FIB_SEQUENCE[k] || FIB_SEQUENCE[FIB_SEQUENCE.length - 1] },
+    fib_ladder: { label: 'Fib Ladder', mult: (k) => FIB_SEQUENCE[k] || FIB_SEQUENCE[FIB_SEQUENCE.length - 1], ladder: true },
   };
   const GROUP_SIZES = [4, 5, 6, 7];
   const opp = (s) => (s === 'A' ? 'B' : 'A');
@@ -27,7 +30,8 @@
   function recoveryOptions(cfg) {
     const n = cfg.n || 5;
     const nBets = n - 1;
-    const prog = PROGRESSIONS[cfg.prog || 'double'];
+    const progKey = cfg.prog && PROGRESSIONS[cfg.prog] ? cfg.prog : 'double';
+    const prog = PROGRESSIONS[progKey];
     const baseMults = Array.from({ length: nBets }, (_, i) => prog.mult(i));
     const baseRiskUnits = baseMults.reduce((a, b) => a + b, 0);
     const unit = cfg.unit || 1;
@@ -65,8 +69,16 @@
 
   function betFor(set, step) {
     const cfg = set.cfg;
+    const isLadder = PROGRESSIONS[cfg.prog] && PROGRESSIONS[cfg.prog].ladder;
     const recMult = set.recMult || 1;
-    const baseMult = PROGRESSIONS[cfg.prog].mult(step);
+    let baseMult;
+    if (isLadder) {
+      const lvl = (set.ladderLevel != null) ? set.ladderLevel : 0;
+      baseMult = FIB_SEQUENCE[Math.min(FIB_SEQUENCE.length - 1, Math.max(0, lvl))];
+    } else {
+      const p = PROGRESSIONS[cfg.prog] || PROGRESSIONS.double;
+      baseMult = p.mult(step);
+    }
     const mult = baseMult * recMult;
     return {
       side: set.plan[step],
@@ -75,6 +87,7 @@
       mult,
       baseMult,
       recMult,
+      ladderLevel: set.ladderLevel,
       amount: mult * cfg.unit,
       recovery: set.recovery || null,
     };
@@ -92,6 +105,7 @@
     let setNo = 0;
     let cooldown = 0;
     let recoveryState = null;
+    let ladderLevel = 0;
 
     for (const e of entries) {
       const r = Object.assign({}, e, { role: 'collect', bet: null, result: null, pnl: 0, setEnd: null });
@@ -125,36 +139,48 @@
             recoveryState.setsLeft--;
             if (recoveryState.setsLeft <= 0) recoveryState = null;
           }
-          set = null;
-        } else if (++set.step >= set.plan.length) {
-          r.setEnd = 'bust';
-          r.setStep = set.step - 1;
-          r.pattern = abstract(set.pattern);
-          r.rawPattern = set.pattern.slice();
-          r.factor = set.factor;
-          r.plan = set.plan.slice();
-          r.setCfg = Object.assign({}, set.cfg);
-          cooldown = (set.cfg && set.cfg.waitBust != null) ? set.cfg.waitBust : (curCfg.waitBust || 0);
-
-          // If recovery was already active and busted, reset it to protect bankroll
-          if (set.recovery) {
-            recoveryState = null;
-          } else {
-            const recTarget = (curCfg.recovery != null) ? curCfg.recovery : (set.cfg && set.cfg.recovery != null ? set.cfg.recovery : 0);
-            if (recTarget > 0) {
-              const baseRisk = Array.from({ length: set.plan.length }, (_, k) => PROGRESSIONS[set.cfg.prog].mult(k)).reduce((a, b) => a + b, 0);
-              const recMult = recTarget === 1 ? (baseRisk + 1) : Math.ceil(baseRisk / recTarget);
-              recoveryState = {
-                target: recTarget,
-                setsLeft: recTarget,
-                recMult,
-                profitPerWin: recMult * (set.cfg.unit || curCfg.unit || 1),
-              };
-            } else {
-              recoveryState = null;
-            }
+          if (set.cfg.prog === 'fib_ladder') {
+            ladderLevel = Math.max(0, set.ladderLevel - (curCfg.fibDrop || 2));
           }
           set = null;
+        } else {
+          if (!push && set.cfg.prog === 'fib_ladder') {
+            ladderLevel = Math.min(FIB_SEQUENCE.length - 1, set.ladderLevel + 1);
+          }
+          if (++set.step >= set.plan.length) {
+            r.setEnd = 'bust';
+            r.setStep = set.step - 1;
+            r.pattern = abstract(set.pattern);
+            r.rawPattern = set.pattern.slice();
+            r.factor = set.factor;
+            r.plan = set.plan.slice();
+            r.setCfg = Object.assign({}, set.cfg);
+            cooldown = (set.cfg && set.cfg.waitBust != null) ? set.cfg.waitBust : (curCfg.waitBust || 0);
+
+            // If recovery was already active and busted, reset it to protect bankroll
+            if (set.recovery) {
+              recoveryState = null;
+            } else {
+              const recTarget = (curCfg.recovery != null) ? curCfg.recovery : (set.cfg && set.cfg.recovery != null ? set.cfg.recovery : 0);
+              if (recTarget > 0) {
+                const baseRisk = Array.from({ length: set.plan.length }, (_, k) => (PROGRESSIONS[set.cfg.prog] || PROGRESSIONS.double).mult(k)).reduce((a, b) => a + b, 0);
+                const recMult = recTarget === 1 ? (baseRisk + 1) : Math.ceil(baseRisk / recTarget);
+                recoveryState = {
+                  target: recTarget,
+                  setsLeft: recTarget,
+                  recMult,
+                  profitPerWin: recMult * (set.cfg.unit || curCfg.unit || 1),
+                };
+              } else {
+                recoveryState = null;
+              }
+            }
+            set = null;
+          } else {
+            if (set.cfg.prog === 'fib_ladder') {
+              set.ladderLevel = ladderLevel;
+            }
+          }
         }
         seq.push(side);
         continue;
@@ -170,7 +196,7 @@
       }
 
       // Idle: this entry becomes the factor if we have a full window behind it.
-      const n = e.cfg.n;
+      const n = (e.cfg && e.cfg.n) || curCfg.n;
       if (seq.length >= n) {
         const pattern = seq.slice(-n);
         let recMult = 1;
@@ -190,8 +216,9 @@
           pattern,
           factor: side,
           plan: betPlan(pattern, side),
-          cfg: Object.assign({}, e.cfg),
+          cfg: Object.assign({}, curCfg, e.cfg),
           step: 0,
+          ladderLevel,
           recMult,
           recovery: recInfo,
         };
@@ -212,21 +239,38 @@
       profitPerWin: recoveryState.profitPerWin,
     } : null;
 
+    const isLadder = (set ? set.cfg.prog : curCfg.prog) === 'fib_ladder';
+    const curLvl = isLadder ? (set ? (set.ladderLevel || 0) : ladderLevel) : 0;
+    const dropLvl = Math.max(0, curLvl - (curCfg.fibDrop || 2));
+    const climbLvl = Math.min(FIB_SEQUENCE.length - 1, curLvl + 1);
+    const ladderInfo = isLadder ? {
+      level: curLvl,
+      step: curLvl + 1,
+      mult: FIB_SEQUENCE[curLvl],
+      dropMult: FIB_SEQUENCE[dropLvl],
+      climbMult: FIB_SEQUENCE[climbLvl],
+    } : null;
+
     if (set) {
+      const progObj = PROGRESSIONS[set.cfg.prog] || PROGRESSIONS.double;
+      const mults = isLadder
+        ? Array.from({ length: set.plan.length }, (_, i) => FIB_SEQUENCE[Math.min(FIB_SEQUENCE.length - 1, curLvl + i)])
+        : set.plan.map((_, i) => progObj.mult(i) * (set.recMult || 1));
       next = Object.assign({
         phase: 'bet',
         pattern: abstract(set.pattern),
         factor: set.factor,
         plan: set.plan,
-        mults: set.plan.map((_, i) => PROGRESSIONS[set.cfg.prog].mult(i) * (set.recMult || 1)),
+        mults,
         recovery: set.recovery,
+        ladder: ladderInfo,
       }, betFor(set, set.step));
     } else if (cooldown > 0) {
-      next = { phase: 'cooldown', left: cooldown, have: seq.length, need: curCfg.n, recovery: recInfo };
+      next = { phase: 'cooldown', left: cooldown, have: seq.length, need: curCfg.n, recovery: recInfo, ladder: ladderInfo };
     } else if (seq.length >= curCfg.n) {
-      next = { phase: 'factor', pattern: abstract(seq.slice(-curCfg.n)), raw: seq.slice(-curCfg.n), recovery: recInfo };
+      next = { phase: 'factor', pattern: abstract(seq.slice(-curCfg.n)), raw: seq.slice(-curCfg.n), recovery: recInfo, ladder: ladderInfo };
     } else {
-      next = { phase: 'collect', have: seq.length, need: curCfg.n, recovery: recInfo };
+      next = { phase: 'collect', have: seq.length, need: curCfg.n, recovery: recInfo, ladder: ladderInfo };
     }
     return { rows, next };
   }
@@ -374,7 +418,72 @@
     });
   }
 
-  const api = { PROGRESSIONS, GROUP_SIZES, opp, abstract, betPlan, run, stats, analyzeBusts, simulateDelays, recoveryOptions };
+  /**
+   * Probability and overdue status for rare game outcomes:
+   * - Sic Bo: Triples (1 in 36 rolls, 2.78%)
+   * - The Kickoff: Ties (1 in 6 rolls, 16.67%)
+   */
+  function specialProbability(gameId, rows) {
+    if (!rows || rows.length === 0) return null;
+    if (gameId === 'sicbo') {
+      let rollsSince = 0;
+      for (let i = rows.length - 1; i >= 0; i--) {
+        const r = rows[i];
+        if (r.lossAll || (r.o && r.o.triple)) break;
+        rollsSince++;
+      }
+      const avgWait = 36;
+      const isOverdue = rollsSince >= avgWait;
+      const isHigh = rollsSince >= 45;
+      const cumProb = 1 - Math.pow(35 / 36, rollsSince);
+      const cumPct = Math.round(cumProb * 100);
+      return {
+        gameId,
+        type: 'triple',
+        label: 'Sic Bo Triple',
+        rollsSince,
+        avgWait,
+        cumPct,
+        isOverdue,
+        isHigh,
+        message: isHigh
+          ? `⚡ High Triple Alert: Overdue by ${rollsSince} rolls (${cumPct}% cumulative chance · avg is 36)`
+          : isOverdue
+          ? `⚠️ Triple Overdue: ${rollsSince} rolls without triple (avg is 36)`
+          : null,
+      };
+    } else if (gameId === 'kickoff') {
+      let rollsSince = 0;
+      for (let i = rows.length - 1; i >= 0; i--) {
+        const r = rows[i];
+        if (r.push || (r.o && r.o.tie) || (r.raw && r.raw[0] === r.raw[1])) break;
+        rollsSince++;
+      }
+      const avgWait = 6;
+      const isOverdue = rollsSince >= avgWait;
+      const isHigh = rollsSince >= 9;
+      const cumProb = 1 - Math.pow(5 / 6, rollsSince);
+      const cumPct = Math.round(cumProb * 100);
+      return {
+        gameId,
+        type: 'tie',
+        label: 'Kickoff Tie',
+        rollsSince,
+        avgWait,
+        cumPct,
+        isOverdue,
+        isHigh,
+        message: isHigh
+          ? `⚡ High Tie Alert: Overdue by ${rollsSince} rolls (${cumPct}% cumulative chance · avg is 6)`
+          : isOverdue
+          ? `⚠️ Tie Overdue: ${rollsSince} rolls without tie (avg is 6)`
+          : null,
+      };
+    }
+    return null;
+  }
+
+  const api = { PROGRESSIONS, FIB_SEQUENCE, GROUP_SIZES, opp, abstract, betPlan, run, stats, analyzeBusts, simulateDelays, recoveryOptions, specialProbability };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Engine = api;
 })(this);

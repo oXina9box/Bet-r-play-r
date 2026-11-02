@@ -151,4 +151,114 @@ assert.strictEqual(rRec.next.amount, 5); // bet 1 is 1 * 5 = 5
 assert.deepStrictEqual(rRec.next.mults, [5, 10, 20, 40]);
 assert.strictEqual(rRec.next.recovery.totalSets, 3);
 
-console.log('All engine tests passed');
+// ---------- 1. Fibonacci Progression & Recovery Tests ----------
+const cfgFib = { n: 5, prog: 'fib', unit: 1, payout: 1 };
+const rFib = E.run(entries([11, 14, 9, 14, 6, 13], cfgFib), cfgFib);
+assert.strictEqual(rFib.next.phase, 'bet');
+assert.deepStrictEqual(rFib.next.mults, [1, 2, 3, 5]);
+
+const fibRecOpts = E.recoveryOptions(cfgFib);
+assert.strictEqual(fibRecOpts.length, 5);
+assert.strictEqual(fibRecOpts[0].k, 0); // off
+assert.strictEqual(fibRecOpts[4].k, 1); // 1 set
+assert.strictEqual(fibRecOpts[4].recMult, 12);
+assert.strictEqual(fibRecOpts[4].totalBankrollUnits, 143);
+
+// ---------- 2. Fibonacci Ladder Tests ----------
+const cfgLadder = { n: 5, prog: 'fib_ladder', unit: 1, payout: 1, fibDrop: 2 };
+const rLadder = E.run(entries([11, 14, 9, 14, 6, 13, 12, 15], cfgLadder), cfgLadder);
+assert.strictEqual(rLadder.rows[6].role, 'bet');
+assert.strictEqual(rLadder.rows[6].bet.amount, 1);
+assert.strictEqual(rLadder.rows[6].result, 'loss');
+assert.strictEqual(rLadder.rows[7].role, 'bet');
+assert.strictEqual(rLadder.rows[7].bet.amount, 2);
+assert.strictEqual(rLadder.rows[7].result, 'win');
+assert.strictEqual(rLadder.next.ladder.level, 0);
+assert.strictEqual(rLadder.next.ladder.mult, 1);
+
+// ---------- 3. The Kickoff Game Tests ----------
+const Kickoff = require('../js/games/kickoff.js');
+assert.strictEqual(Kickoff.id, 'kickoff');
+assert.strictEqual(Kickoff.outcome([5, 3]).side, 'A'); // Red wins
+assert.strictEqual(Kickoff.outcome([2, 6]).side, 'B'); // Blue wins
+assert.strictEqual(Kickoff.outcome([4, 4]).side, null); // Tie
+assert.strictEqual(Kickoff.outcome([4, 4]).tie, true);
+
+// Quick entries
+assert.strictEqual(Kickoff.outcome({ w: 'A' }).side, 'A');
+assert.strictEqual(Kickoff.outcome({ w: 'B' }).side, 'B');
+assert.strictEqual(Kickoff.outcome({ w: 'T' }).side, null);
+
+// Kickoff 30-round session test from user image
+const kickoffRounds = [
+  [3, 5], [1, 5], [4, 6], [2, 2], [5, 5], [5, 2], [5, 6], [4, 4], [4, 4], [5, 6],
+  [3, 1], [5, 6], [4, 1], [2, 6], [3, 1], [2, 3], [2, 3], [6, 6], [1, 1], [1, 5],
+  [3, 6], [5, 5], [2, 3], [3, 6], [6, 3], [3, 6], [6, 4], [3, 6], [3, 5], [1, 2]
+];
+const koEntries = kickoffRounds.map(d => {
+  const o = Kickoff.outcome(d);
+  return { raw: d, o, side: o.side, lossAll: false };
+});
+const koRes = E.run(koEntries, { n: 5, prog: 'double', unit: 1, payout: 1, waitBust: 0, recovery: 0 });
+const koStats = E.stats(koRes.rows);
+assert.strictEqual(koStats.sets, 9);
+assert.strictEqual(koStats.won, 8);
+assert.strictEqual(koStats.bust, 1);
+assert.strictEqual(koStats.ties, 7);
+
+// ---------- 4. Special Probability & Overdue Alert Tests ----------
+const koProb = E.specialProbability('kickoff', koRes.rows);
+assert.strictEqual(koProb.rollsSince, 8);
+assert.strictEqual(koProb.isOverdue, true);
+
+const fakeSb = Array(45).fill(null).map(() => ({ lossAll: false, o: { triple: false } }));
+const sbProb = E.specialProbability('sicbo', fakeSb);
+assert.strictEqual(sbProb.rollsSince, 45);
+assert.strictEqual(sbProb.isHigh, true);
+
+// ---------- 5. Session #3: User 105-Round Test Dataset ----------
+const sb105Dice = [
+  [1,3,4],[6,1,2],[5,1,6],[6,4,1],[4,6,5],[3,3,2],[2,6,5],[3,5,4],[2,5,1],[3,2,5],
+  [6,6,5],[3,3,2],[3,2,6],[4,5,4],[3,5,2],[2,3,3],[2,3,4],[2,3,2],[6,4,1],[6,5,4],
+  [3,2,1],[3,5,3],[6,3,1],[1,1,3],[3,2,2],[3,2,6],[2,6,3],[1,2,5],[1,2,3],[5,5,2],
+  [4,3,2],[3,6,1],[2,5,1],[6,3,5],[6,4,5],[2,6,5],[4,6,2],[5,2,3],[3,1,2],[4,2,4],
+  [2,4,6],[6,5,6],[1,4,1],[5,4,6],[5,5,4],[1,1,5],[2,2,3],[6,1,4],[5,5,5],[6,5,6],
+  [4,3,2],[5,2,5],[4,2,5],[3,4,3],[1,3,3],[6,1,3],[6,4,2],[3,6,4],[4,4,5],[5,3,2],
+  [2,1,4],[6,5,6],[6,1,2],[1,1,4],[1,1,5],[3,6,6],[4,4,2],[5,2,4],[5,2,5],[1,4,5],
+  [2,5,1],[6,5,1],[2,4,6],[6,4,4],[6,6,6],[3,3,4],[2,5,6],[3,1,6],[1,3,3],[5,4,3],
+  [5,1,5],[3,2,2],[2,5,4],[5,6,6],[2,1,5],[6,5,1],[2,5,5],[6,3,3],[4,4,1],[5,4,3],
+  [2,6,4],[1,4,4],[5,5,2],[4,5,1],[5,1,4],[3,2,5],[4,3,1],[4,1,2],[2,3,6],[5,3,3],
+  [2,2,2],[5,5,5],[1,1,4],[5,6,4],[4,6,4]
+];
+const sb105Entries = sb105Dice.map(d => {
+  const o = SicBo.outcome(d);
+  return { raw: d, o, side: o.side, lossAll: o.lossAll, total: o.total };
+});
+const sb105Res = E.run(sb105Entries, cfg);
+const sb105Stats = E.stats(sb105Res.rows);
+assert.strictEqual(sb105Stats.sets, 34);
+assert.strictEqual(sb105Stats.won, 31);
+assert.strictEqual(sb105Stats.bust, 3);
+assert.strictEqual(sb105Stats.special, 4); // 4 triples
+
+const tp105Winners = [
+  'A','A','A','B','A','B','A','B','B','B',
+  'A','B','A','B','A','B','B','A','A','B',
+  'A','A','A','A','A','B','B','B','B','A',
+  'B','A','A','A','B','B','B','A','A','A',
+  'B','B','B','A','A','B','A','A','A','A',
+  'A','A','A','B','A','B','A','A','A','B',
+  'B','A','B','B','B','A','B','B','B','B',
+  'A','A','A','A','B','B','B','A','B','A',
+  'A','A','A','B','B','A','B','B','B','B',
+  'B','B','A','A','B','A','A','A','B','B',
+  'B','A','B','A','B'
+];
+const tp105Entries = tp105Winners.map(w => ({ raw: { w }, side: w, lossAll: false }));
+const tp105Res = E.run(tp105Entries, cfg);
+const tp105Stats = E.stats(tp105Res.rows);
+assert.strictEqual(tp105Stats.sets, 37);
+assert.strictEqual(tp105Stats.won, 37);
+assert.strictEqual(tp105Stats.bust, 0); // 0 busts!
+
+console.log('All engine tests passed (including Fibonacci, Kickoff, Probabilities, and Session #3)');

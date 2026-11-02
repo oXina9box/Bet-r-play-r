@@ -203,3 +203,62 @@ th { color: var(--muted); font-weight: 500; position: sticky; top: 0; background
 .save-status.ok { color: var(--win); }
 .save-status.warn { color: var(--warn); }
 .site-input { width: 150px; }
+
+/* The Kickoff game styles */
+.kickoff-slots { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 10px 0; }
+.kickoff-slots .slot { width: 64px; height: 64px; }
+.kickoff-slots .vs { font-weight: 800; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
+.red-slot { border-color: rgba(240, 136, 62, 0.6) !important; color: var(--a); }
+.blue-slot { border-color: rgba(63, 184, 255, 0.6) !important; color: var(--b); }
+.ko-btn-red { border-color: var(--a) !important; color: var(--a) !important; }
+.ko-btn-blue { border-color: var(--b) !important; color: var(--b) !important; }
+.ko-btn-tie { border-color: #e3b341 !important; color: #e3b341 !important; }
+.ko-stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+.ko-stat-box { background: var(--panel2); border-radius: 8px; padding: 8px; text-align: center; border: 1px solid var(--line); }
+.ko-stat-box span { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; color: var(--muted); }
+.ko-stat-box b { display: block; font-size: 20px; margin: 2px 0; }
+.ko-stat-box small { font-size: 11px; color: var(--muted); }
+.ko-stat-box.red b { color: var(--a); }
+.ko-stat-box.blue b { color: var(--b); }
+.ko-stat-box.tie b { color: #e3b341; }
+
+/* Fibonacci Ladder badge & alerts */
+.ladder-badge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(88, 101, 242, 0.12);
+  border: 1px solid rgba(88, 101, 242, 0.4);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+.ladder-badge b { color: #8590ff; font-size: 13px; }
+.ladder-badge span { color: var(--muted); }
+.ladder-badge .ladder-flow { font-size: 11px; background: rgba(88, 101, 242, 0.2); padding: 3px 6px; border-radius: 4px; color: #b0b8ff; }
+
+/* Special Probability Notations (Sic Bo Triples & Kickoff Ties) */
+.special-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(227, 179, 65, 0.12);
+  border: 1px solid rgba(227, 179, 65, 0.4);
+  color: #ffde82;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  animation: pulse-border 2.5s infinite;
+}
+.special-alert.high {
+  background: rgba(248, 81, 73, 0.15);
+  border-color: rgba(248, 81, 73, 0.5);
+  color: #ff9b94;
+}
+@keyframes pulse-border {
+  0%, 100% { border-color: rgba(227, 179, 65, 0.35); }
+  50% { border-color: rgba(227, 179, 65, 0.85); box-shadow: 0 0 10px rgba(227, 179, 65, 0.2); }
+}

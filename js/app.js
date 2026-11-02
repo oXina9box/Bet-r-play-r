@@ -198,6 +198,23 @@
       recBanner = `<div class="recovery-banner">⚡ RECOVERY MODE · SET ${rec.currentSet} OF ${rec.totalSets} (Target ${signed(rec.profitPerWin || 0)}/win)</div>`;
     }
 
+    let alertBanner = '';
+    const prob = Engine.specialProbability ? Engine.specialProbability(data.cur.game, view.rows) : null;
+    if (prob && (prob.isOverdue || prob.isHigh)) {
+      alertBanner = `<div class="special-alert ${prob.isHigh ? 'high' : ''}">${prob.message}</div>`;
+    }
+
+    let ladderBadge = '';
+    if (nx.ladder) {
+      const l = nx.ladder;
+      ladderBadge = `
+        <div class="ladder-badge">
+          <div><b>🪜 Fib Ladder Step ${l.step}</b> <span>(${l.mult}x stake)</span></div>
+          <div class="ladder-flow">Win: <b>${l.dropMult}x</b> · Loss: <b>${l.climbMult}x</b></div>
+        </div>
+      `;
+    }
+
     let h;
     if (nx.phase === 'bet') {
       const plan = nx.plan.map((s, i) => `<div class="plan-step ${i < nx.step ? 'done' : i === nx.step ? 'now' : ''}">${sideTag(s)}<em>${nx.mults[i]}x</em></div>`).join('');
@@ -222,7 +239,7 @@
            <div class="bet-amt"><span>need ${nx.need} ${g.entryName.toLowerCase()}s for a pattern</span></div>`;
     }
     $('next').className = 'next ' + nx.phase + (nx.phase === 'bet' ? ' side-' + nx.side.toLowerCase() : '') + (nx.recovery ? ' recovery' : '');
-    $('next').innerHTML = recBanner + h + lastLine;
+    $('next').innerHTML = recBanner + alertBanner + h + ladderBadge + lastLine;
   }
 
   function renderStrip() {
@@ -258,7 +275,8 @@
       [1, '1 Set'],
     ], b.cfg.recovery || 0, (v) => setCfg('recovery', Number(v)));
     renderRecNotes(b.cfg);
-    const mults = Array.from({ length: b.cfg.n - 1 }, (_, i) => PROGRESSIONS[b.cfg.prog].mult(i));
+    const progObj = PROGRESSIONS[b.cfg.prog] || PROGRESSIONS.double;
+    const mults = Array.from({ length: b.cfg.n - 1 }, (_, i) => progObj.mult(i));
     const risk = mults.reduce((a, x) => a + x, 0) * b.cfg.unit;
     $('cfgNote').innerHTML = `Set risk: <b>${fmt(risk)}</b> (${mults.map((m) => fmt(m * b.cfg.unit)).join(' / ')})${view.next.phase === 'bet' ? ' · <span class="warn">changes apply from the next set</span>' : ''}`;
   }
@@ -266,6 +284,15 @@
   function renderRecNotes(cfg) {
     const el = $('recNotes');
     if (!el) return;
+    if (cfg.prog === 'fib_ladder') {
+      el.innerHTML = `
+        <div class="ladder-badge" style="margin-top:6px; margin-bottom:6px;">
+          <div><b>Continuous Fibonacci Ladder Active</b></div>
+          <div class="ladder-flow">Climbs on loss (+1) · Drops 2 on win (-2) · Continuous recovery built-in</div>
+        </div>
+      `;
+      return;
+    }
     const opts = recoveryOptions(cfg);
     const activeK = cfg.recovery || 0;
     const baseOpt = opts.find((o) => o.k === 0) || opts[0];
@@ -306,7 +333,9 @@
   }
 
   function seqLabel(k, nBets) {
-    return Array.from({ length: nBets }, (_, i) => PROGRESSIONS[k].mult(i) + 'x').join(' ');
+    if (k === 'fib_ladder') return '🪜 Fib Ladder';
+    const progObj = PROGRESSIONS[k] || PROGRESSIONS.double;
+    return Array.from({ length: nBets }, (_, i) => progObj.mult(i) + 'x').join(' ');
   }
 
   function setCfg(k, v) {
