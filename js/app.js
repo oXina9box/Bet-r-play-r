@@ -8,51 +8,71 @@
   const fmt = (x) => (Math.round(x * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const signed = (x) => (x > 0 ? '+' : x < 0 ? '−' : '') + fmt(Math.abs(x));
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const escapeHTML = (value) => String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const { validate, createDefault } = window.AppData;
 
   // ---------- storage ----------
   // Browser localStorage is the instant cache; the local data server (server.js) writes a real file + daily backups.
-  const API = 'http://127.0.0.1:47615';
+  const API = window.location.protocol === 'http:' ? '' : null;
   let data = load();
+  let ready = false, canWriteFile = false, cacheOK = true, revision = 0;
+  let fileQueue = Promise.resolve();
   let fileOK = null; // null = unknown, true = saving to file, false = browser only
   function load() {
     try {
       const d = JSON.parse(localStorage.getItem(KEY));
-      if (d && d.sites) return d;
+      if (d) return validate(d);
     } catch (e) { /* fall through */ }
-    return { v: 1, sites: [{ id: 'shuff', name: 'Shuff' }], cur: { site: 'shuff', game: 'sicbo' }, books: {}, savedAt: 0 };
+    return createDefault();
+  }
+  function cache(value) {
+    try { localStorage.setItem(KEY, JSON.stringify(value)); cacheOK = true; return true; }
+    catch (e) { cacheOK = false; toast('Browser storage unavailable. Export a backup to keep these changes.'); return false; }
   }
   function save() {
-    data.savedAt = Date.now();
-    localStorage.setItem(KEY, JSON.stringify(data));
+    data = { ...data, savedAt: Date.now() };
+    revision++;
+    cache(data);
     pushFile();
+    renderSaveStatus();
   }
   let pushTimer;
   function pushFile() {
+    if (!canWriteFile) return;
     clearTimeout(pushTimer);
-    pushTimer = setTimeout(async () => {
-      try { fileOK = (await fetch(API + '/data', { method: 'POST', body: JSON.stringify(data) })).ok; } catch (e) { fileOK = false; }
-      renderSaveStatus();
+    fileOK = null;
+    pushTimer = setTimeout(() => {
+      const body = JSON.stringify(data), writing = revision;
+      // ponytail: serialize disk writes so a slow older save cannot replace a newer one.
+      fileQueue = fileQueue.then(async () => {
+        let ok;
+        try { ok = (await fetch(API + '/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })).ok; } catch (e) { ok = false; }
+        if (writing === revision) { fileOK = ok; renderSaveStatus(); }
+      });
+      return fileQueue;
     }, 250);
   }
   async function syncFromFile() {
+    if (API === null) { fileOK = false; return; }
     try {
-      const d = await (await fetch(API + '/data')).json();
+      const response = await fetch(API + '/data', { signal: AbortSignal.timeout(5000) });
+      if (!response.ok) throw new Error('File load failed');
+      const value = await response.json();
+      const d = value === null ? null : validate(value);
+      canWriteFile = true;
       fileOK = true;
-      if (d && d.sites && (d.savedAt || 0) > (data.savedAt || 0)) {
+      if (d && (d.savedAt || 0) >= (data.savedAt || 0)) {
         data = d;
-        localStorage.setItem(KEY, JSON.stringify(data));
-        pending = game().emptyPending();
-        renderPad(); render();
-      } else pushFile(); // browser copy is newer (or file empty): write it out
-    } catch (e) { fileOK = false; }
-    renderSaveStatus();
+        cache(data);
+      } else pushFile();
+    } catch (e) { canWriteFile = false; fileOK = false; }
   }
   function renderSaveStatus() {
     const el = $('saveStatus');
     if (!el) return;
     el.className = 'save-status ' + (fileOK ? 'ok' : fileOK === false ? 'warn' : '');
-    el.textContent = fileOK ? '● Saved to file' : fileOK === false ? '● Browser only' : '● …';
-    el.title = fileOK ? 'Data saved to data/betrplayr.json with daily backups in data/backups/' : 'File saving unavailable (open with the Bet-R Play-R launcher). Data is still kept in the browser.';
+    el.textContent = fileOK ? '● Saved to file' : fileOK === null ? '● Loading / saving…' : cacheOK ? '● Browser only' : '● Not saved';
+    el.title = fileOK ? 'Data saved to data/betrplayr.json with daily backups in data/backups/' : cacheOK ? 'Current data is kept in browser storage. Open with the launcher for file saving.' : 'Browser storage failed. Export a backup to keep changes.';
   }
 
   function book() {
@@ -92,12 +112,14 @@
 
   // ---------- actions ----------
   function toggleNoBet() {
+    if (!ready) return;
     noBetArmed = !noBetArmed;
     render();
     toast(noBetArmed ? 'No Bet ARMED — this entry will record as $0 bet' : 'No Bet disarmed');
   }
 
   function commit(raw) {
+    if (!ready) return;
     const b = book();
     const entry = { t: Date.now(), s: curSession().id, raw, cfg: Object.assign({}, b.cfg) };
     if (noBetArmed) {
@@ -109,6 +131,7 @@
   }
 
   function press(key) {
+    if (!ready) return;
     const res = game().input(pending, key);
     if (!res) return;
     pending = res.pending;
@@ -118,6 +141,7 @@
   }
 
   function undo() {
+    if (!ready) return;
     const p = game().undoInput(pending);
     if (p) { pending = p; return render(); }
     const b = book();
@@ -128,6 +152,7 @@
   function clearPending() { pending = game().emptyPending(); render(); }
 
   function newSession() {
+    if (!ready) return;
     const b = book();
     if (!b.entries.some((e) => e.s === curSession().id)) return toast('Current session is already empty');
     b.sessions.push({ id: uid(), start: Date.now() });
@@ -137,6 +162,8 @@
   }
 
   function switchTo(site, gameId) {
+    if (!ready) return;
+    game().emptyPending(); // Cancel an active card timer before leaving its game.
     data.cur = { site, game: gameId };
     pending = game().emptyPending();
     save();
@@ -169,7 +196,7 @@
   }
 
   function renderHeader() {
-    $('site').innerHTML = data.sites.map((s) => `<option value="${s.id}" ${s.id === data.cur.site ? 'selected' : ''}>${s.name}</option>`).join('');
+    $('site').innerHTML = data.sites.map((s) => `<option value="${escapeHTML(s.id)}" ${s.id === data.cur.site ? 'selected' : ''}>${escapeHTML(s.name)}</option>`).join('');
     seg($('games'), Object.values(GAMES).map((g) => [g.id, g.name]), data.cur.game, (id) => switchTo(data.cur.site, id));
     const b = book();
     const n = view.rows.length;
@@ -195,13 +222,14 @@
     let recBanner = '';
     if (nx.recovery) {
       const rec = nx.recovery;
-      recBanner = `<div class="recovery-banner">⚡ RECOVERY MODE · SET ${rec.currentSet} OF ${rec.totalSets} (Target ${signed(rec.profitPerWin || 0)}/win)</div>`;
+      const profit = rec.profitPerWin == null ? `${signed(rec.profitMin)} to ${signed(rec.profitMax)} per winning set` : `${signed(rec.profitPerWin)} per winning set`;
+      recBanner = `<div class="recovery-banner">⚡ RECOVERY MODE · SET ${rec.currentSet} OF ${rec.totalSets} (${profit})</div>`;
     }
 
     let alertBanner = '';
     const prob = Engine.specialProbability ? Engine.specialProbability(data.cur.game, view.rows) : null;
     if (prob && (prob.isOverdue || prob.isHigh)) {
-      alertBanner = `<div class="special-alert ${prob.isHigh ? 'high' : ''}">${prob.message}</div>`;
+      alertBanner = `<div class="special-alert ${prob.isHigh ? 'high' : ''}">${escapeHTML(prob.message)}<small>Past waiting does not increase the next outcome's probability.</small></div>`;
     }
 
     let ladderBadge = '';
@@ -256,7 +284,7 @@
       const nbText = r.noBet ? ' [NO BET] ' : '';
       const recText = r.recovery ? ` [Recovery ${r.recovery.currentSet}/${r.recovery.totalSets}] ` : '';
       const tip = `${nbText}${recText}` + (r.push ? `Tie, played${as || ' as nothing (no prior winner)'} · ` : '') + (r.role === 'factor' ? `Factor · fading ${r.pattern}` : r.role === 'cooldown' ? `Cooldown after bust (${r.cooldownLeft} remaining)` : r.bet ? `Bet ${g.sides[r.bet.side].label} ${fmt(r.bet.amount)} → ${r.result}` : '') + ' · double-click to toggle No Bet';
-      return `<div class="chip ${sideCls}${r.lossAll ? ' special' : ''}${end}${r.noBet ? ' no-bet' : ''}" data-entry-idx="${r.entryIdx}" title="${tip}">${role}${res}<b>${c.main}</b><small>${c.sub}</small>${c.flag ? `<i class="flag">${c.flag}</i>` : ''}</div>`;
+      return `<div class="chip ${sideCls}${r.lossAll ? ' special' : ''}${end}${r.noBet ? ' no-bet' : ''}" data-entry-idx="${r.entryIdx}" title="${escapeHTML(tip)}">${role}${res}<b>${escapeHTML(c.main)}</b><small>${escapeHTML(c.sub)}</small>${c.flag ? `<i class="flag">${escapeHTML(c.flag)}</i>` : ''}</div>`;
     }).join('') || '<div class="muted">No entries yet — start tapping.</div>';
   }
 
@@ -264,17 +292,17 @@
     teenpatti: {
       name: 'Teen Patti',
       cfg: { n: 7, prog: 'double', recovery: 0, waitBust: 0 },
-      summary: 'Group 7 (6 bets) · Flat Doubling · 100% win rate across 500+ hands',
+      summary: 'Group 7 (6 bets) · Doubling · Recovery off · No wait after bust',
     },
     sicbo: {
       name: 'Sic Bo',
       cfg: { n: 5, prog: 'double', recovery: 1, waitBust: 0 },
-      summary: 'Group 5 (4 bets) · 1-Set Recovery (16x) · Top profit (+59u) erases triple house edge',
+      summary: 'Group 5 (4 bets) · Doubling · 1-set recovery · No wait after bust',
     },
     kickoff: {
       name: 'The Kickoff',
       cfg: { n: 5, prog: 'fib_ladder', recovery: 0, waitBust: 0 },
-      summary: 'Group 5 (4 bets) · 🪜 Continuous Fib Ladder · Optimal for 50/50 decisions & tie protection',
+      summary: 'Group 5 (4 bets) · Continuous Fibonacci ladder · No wait after bust',
     },
   };
 
@@ -291,10 +319,11 @@
                   (cfg.waitBust || 0) === preset.cfg.waitBust;
     btn.classList.toggle('active', isMax);
     btn.innerHTML = isMax ? '✓ Max Play Active' : '⚡ Max Play';
-    btn.title = isMax ? `Max Play strategy is active: ${preset.summary}` : `Click to apply proven best strategy for ${preset.name}: ${preset.summary}`;
+    btn.title = isMax ? `Preset active: ${preset.summary}` : `Apply preset for ${preset.name}: ${preset.summary}`;
   }
 
   function applyMaxPlay() {
+    if (!ready) return;
     const curGame = data.cur.game;
     const preset = MAX_PLAY_PRESETS[curGame];
     if (!preset) return;
@@ -324,7 +353,7 @@
     const progObj = PROGRESSIONS[b.cfg.prog] || PROGRESSIONS.double;
     const mults = Array.from({ length: b.cfg.n - 1 }, (_, i) => progObj.mult(i));
     const risk = mults.reduce((a, x) => a + x, 0) * b.cfg.unit;
-    $('cfgNote').innerHTML = `Set risk: <b>${fmt(risk)}</b> (${mults.map((m) => fmt(m * b.cfg.unit)).join(' / ')})${view.next.phase === 'bet' ? ' · <span class="warn">changes apply from the next set</span>' : ''}`;
+    $('cfgNote').innerHTML = `${b.cfg.prog === 'fib_ladder' ? 'Starting ladder stakes' : 'Base set stakes'}: <b>${fmt(risk)}</b> (${mults.map((m) => fmt(m * b.cfg.unit)).join(' / ')})${b.cfg.prog === 'fib_ladder' ? ' · later ladder stakes can be higher' : ' · recovery can increase stakes'}${view.next.phase === 'bet' ? ' · <span class="warn">changes apply from the next set</span>' : ''}`;
   }
 
   function renderRecNotes(cfg) {
@@ -334,7 +363,7 @@
       el.innerHTML = `
         <div class="ladder-badge" style="margin-top:6px; margin-bottom:6px;">
           <div><b>Continuous Fibonacci Ladder Active</b></div>
-          <div class="ladder-flow">Climbs on loss (+1) · Drops 2 on win (-2) · Continuous recovery built-in</div>
+          <div class="ladder-flow">Climbs on loss (+1) · Drops ${cfg.fibDrop || 2} on win · Stakes can increase; recovery is not guaranteed</div>
         </div>
       `;
       return;
@@ -347,7 +376,9 @@
       const isActive = o.k === activeK;
       const targetLabel = o.k === 0 ? 'Off (Flat Reset)' : `<b>${o.k} Set${o.k === 1 ? '' : 's'}</b>`;
       const stakes = o.stakesLabel;
-      const winLabel = signed(o.profitPerWinCash) + ` <small class="muted">(${o.profitPerWinUnits}u)</small>`;
+      const winLabel = o.profitPerWinCash == null
+        ? `${signed(o.minProfitPerWinCash)} to ${signed(o.maxProfitPerWinCash)} <small class="muted">(varies by bet)</small>`
+        : signed(o.profitPerWinCash) + ` <small class="muted">(${o.profitPerWinUnits}u)</small>`;
       const riskLabel = `${o.recSetRiskUnits}u <small class="muted">(${fmt(o.recSetRiskCash)})</small>`;
       const totalLabel = `<span class="rec-total">${o.totalBankrollUnits} units</span> <small class="muted">(${fmt(o.totalBankrollCash)})</small>`;
       return `<tr class="${isActive ? 'active' : ''}" data-k="${o.k}" style="cursor:pointer" title="Click to select ${o.label}">
@@ -385,8 +416,10 @@
   }
 
   function setCfg(k, v) {
-    if (k !== 'prog' && !(v >= 0)) return;
-    book().cfg[k] = v;
+    if (!ready || (k !== 'prog' && (!Number.isFinite(v) || !(v >= 0)))) return;
+    const b = book(), key = data.cur.site + ':' + data.cur.game;
+    try { data = validate({ ...data, books: { ...data.books, [key]: { ...b, cfg: { ...b.cfg, [k]: v } } } }); }
+    catch (err) { toast('Invalid setting'); return; }
     save(); render();
   }
 
@@ -400,7 +433,7 @@
   }
 
   function renderStats() {
-    seg($('scopeSeg'), [['session', 'Session'], ['today', 'Today'], ['all', 'All time']], scope, (v) => { scope = v; renderStats(); });
+    seg($('scopeSeg'), [['session', 'Session'], ['today', 'Today'], ['all', 'All time']], scope, (v) => { scope = v; renderStats(); renderInsights(); });
     seg($('bdSeg'), [['session', 'Session'], ['day', 'Day'], ['hour', 'Hour'], ['block', 'Per 50']], bdMode, (v) => { bdMode = v; renderStats(); });
     const g = game(), rows = scopeRows(), s = stats(rows);
     const pct = (a, b) => (b ? ((a / b) * 100).toFixed(1) + '%' : '–');
@@ -464,8 +497,7 @@
     if (insightTab === 'bust') {
       const maxExtra = 4;
       const res = analyzeBusts(rows, maxExtra);
-      const startBet = b.cfg.n;
-      let h = `<div class="insight-desc">Evaluates if continuing to bet past a bust (bets ${startBet}–${startBet + maxExtra - 1}) would have recovered the set or worsened losses. Based on ${res.total} bust${res.total === 1 ? '' : 's'} in selected scope.</div>`;
+      let h = `<div class="insight-desc">Hypothetical additional P&amp;L from extending each historical progression up to 1–${maxExtra} extra bets. Uses observed outcomes within the same session, stopping on resolution. ${res.total} bust${res.total === 1 ? '' : 's'} in selected scope. Stakes follow each set's recorded settings; results do not predict future outcomes.</div>`;
       if (res.total === 0) {
         h += `<div class="insight-callout">No busts recorded yet in this scope. As you play, any bust sets will be analyzed here in real-time.</div>`;
       } else {
@@ -473,40 +505,35 @@
         let tableRows = '';
         for (let i = 0; i < maxExtra; i++) {
           cumHits += res.countsByExtra[i];
-          const cumPct = ((cumHits / res.total) * 100).toFixed(1);
+          const evaluated = res.evaluatedByExtra[i], pendingCount = res.pendingByExtra[i];
+          const cumPct = evaluated ? ((cumHits / evaluated) * 100).toFixed(1) + '%' : '–';
           const pnl = res.pnlImpact[i];
           tableRows += `<tr>
-            <td style="text-align:left">Bet ${startBet + i} <small class="muted">(+${i + 1} roll)</small></td>
-            <td>${res.countsByExtra[i]} / ${res.total}</td>
-            <td>${cumHits} (${cumPct}%)</td>
-            <td class="${pnl >= 0 ? 'win' : 'loss'}">${signed(pnl)}</td>
+            <td style="text-align:left">Up to ${i + 1} extra bet${i ? 's' : ''}</td>
+            <td>${res.countsByExtra[i]}</td>
+            <td>${cumHits} / ${evaluated} (${cumPct})${pendingCount ? ` <small class="muted">${pendingCount} pending</small>` : ''}</td>
+            <td class="${pnl > 0 ? 'win' : pnl < 0 ? 'loss' : ''}">${evaluated ? signed(pnl) : 'Pending'}</td>
           </tr>`;
         }
         h += `<div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th style="text-align:left">Extra Bet</th>
-                <th>Hits on Bet</th>
-                <th>Cumulative Hits</th>
-                <th>Net P&amp;L vs Reset</th>
+                <th style="text-align:left">Extension horizon</th>
+                <th>Resolved on bet</th>
+                <th>Resolved / evaluated</th>
+                <th>Observed extra P&amp;L</th>
               </tr>
             </thead>
             <tbody>${tableRows}</tbody>
           </table>
         </div>`;
 
-        const bestIdx = res.pnlImpact.reduce((best, cur, idx) => (cur > res.pnlImpact[best] ? idx : best), 0);
-        const bestPnl = res.pnlImpact[bestIdx];
-        if (bestPnl > 0) {
-          h += `<div class="insight-callout good"><b>Positive recovery on Bet ${startBet + bestIdx}:</b> Extending by ${bestIdx + 1} bet(s) recovered a net ${signed(bestPnl)} across ${res.total} busts. Note: Requires higher progression stakes.</div>`;
-        } else {
-          h += `<div class="insight-callout bad"><b>Resetting on bust is optimal:</b> Extending bets deeper resulted in net negative P&amp;L (${signed(bestPnl)}) due to escalating loss sizes. Cutting losses at bet ${b.cfg.n - 1} preserved more capital.</div>`;
-        }
+        h += `<div class="insight-callout">${res.evaluatedByExtra.some((n) => n > 0) ? 'Each horizon excludes pending outcomes, so evaluated samples can differ. Additional stakes can increase losses.' : 'Pending: no extension outcomes have been fully observed yet.'}</div>`;
       }
       cEl.innerHTML = h;
     } else {
-      const entries = rows.map((r) => ({ side: r.side, lossAll: r.lossAll, nb: r.noBet, cfg: b.cfg }));
+      const entries = rows.map((r) => ({ side: r.side, lossAll: r.lossAll, nb: r.noBet, s: r.s, sessionNo: r.sessionNo, cfg: r.cfg }));
       const delays = simulateDelays(entries, b.cfg, [0, 1, 2, 3]);
       const curDelay = b.cfg.waitBust || 0;
       let h = `<div class="insight-desc">Simulates how waiting 0, 1, 2, or 3 rolls after a bust affects total sets, win rate, net P&amp;L, and max drawdown across this exact roll history.</div>`;
@@ -547,7 +574,7 @@
 
       const best = delays.reduce((acc, cur) => (cur.stats.net > acc.stats.net ? cur : acc), delays[0]);
       if (best.stats.sets > 0 && best.delay !== curDelay) {
-        h += `<div class="insight-callout good"><b>Recommendation:</b> Waiting ${best.delay} roll${best.delay === 1 ? '' : 's'} after a bust yields the highest net P&amp;L (${signed(best.stats.net)}) in this dataset. Click "Apply" to switch.</div>`;
+        h += `<div class="insight-callout"><b>Historical comparison:</b> Waiting ${best.delay} roll${best.delay === 1 ? '' : 's'} had the highest net P&amp;L (${signed(best.stats.net)}) in this dataset. This does not predict future results.</div>`;
       } else {
         h += `<div class="insight-callout">Replays past rolls to test whether cooling down after a bust aligns your entry with favorable rolls or if immediate re-entry performs better.</div>`;
       }
@@ -563,7 +590,32 @@
     toastTimer = setTimeout(() => t.classList.remove('show'), 5000);
   }
 
+  async function replaceData(next, backupKey) {
+    const replacement = validate({ ...next, savedAt: Date.now() });
+    const prev = JSON.stringify(data);
+    // Both browser writes must succeed before replacing live data or scheduling a disk write.
+    localStorage.setItem(KEY + backupKey, prev);
+    localStorage.setItem(KEY, JSON.stringify(replacement));
+    game().emptyPending(); // Imported/reset data can select a different game.
+    let snapshotOK = false;
+    if (canWriteFile) {
+      try {
+        const response = await fetch(API + '/snapshot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: prev, signal: AbortSignal.timeout(5000) });
+        snapshotOK = response.ok;
+      } catch (e) { snapshotOK = false; }
+    }
+    data = replacement;
+    cacheOK = true;
+    revision++;
+    noBetArmed = false;
+    pending = game().emptyPending();
+    pushFile();
+    renderPad(); render(); renderSaveStatus();
+    return snapshotOK ? 'previous data backed up to file and browser' : 'previous data kept in browser backup';
+  }
+
   // ---------- wiring ----------
+  function wire() {
   $('pad').addEventListener('click', (e) => { const b = e.target.closest('[data-key]'); if (b) press(b.dataset.key); });
   $('insightContent').addEventListener('click', (e) => {
     const btn = e.target.closest('.apply-btn[data-delay]');
@@ -587,6 +639,7 @@
   $('clear').onclick = clearPending;
   // Double-click a past entry to flip No Bet (single clicks do nothing, so stray clicks can't change history).
   $('strip').addEventListener('dblclick', (e) => {
+    if (!ready) return;
     const chip = e.target.closest('.chip[data-entry-idx]');
     if (!chip) return;
     const b = book();
@@ -602,13 +655,17 @@
   const siteInput = $('newSite');
   $('addSite').onclick = () => { siteInput.hidden = false; siteInput.value = ''; siteInput.focus(); };
   siteInput.onkeydown = (e) => {
+    if (!ready) return;
     if (e.key === 'Escape') siteInput.hidden = true;
     if (e.key !== 'Enter') return;
     const name = siteInput.value.trim();
     siteInput.hidden = true;
     if (!name) return;
-    const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-') || uid();
-    if (!data.sites.some((s) => s.id === id)) data.sites.push({ id, name });
+    const id = (name.toLowerCase().replace(/[^a-z0-9]+/g, '-') || uid()).slice(0, 128);
+    if (!data.sites.some((s) => s.id === id)) {
+      try { data = validate({ ...data, sites: [...data.sites, { id, name }] }); }
+      catch (err) { toast('Invalid site name (maximum 1000 characters)'); return; }
+    }
     switchTo(id, data.cur.game);
     toast(`Site "${name}" added`);
   };
@@ -623,43 +680,58 @@
     toast('Backup downloaded');
   };
   $('import').onchange = async (e) => {
+    if (!ready) return;
     const f = e.target.files[0];
     if (!f) return;
     try {
-      const d = JSON.parse(await f.text());
-      if (!d.sites || !d.books) throw new Error('not a Bet-R Play-R backup');
-      // Keep the current data before replacing it, so an import can always be reversed.
-      const prev = JSON.stringify(data);
-      localStorage.setItem(KEY + '.preimport', prev);
-      fetch(API + '/snapshot', { method: 'POST', body: prev }).catch(() => {});
-      data = d; save(); pending = game().emptyPending(); renderPad(); render();
-      toast('Backup restored · previous data saved in data/backups/');
+      const d = validate(JSON.parse(await f.text()));
+      ready = false;
+      const backup = await replaceData(d, '.preimport');
+      toast('Backup restored · ' + backup);
     } catch (err) { toast('Import failed: ' + err.message); }
+    finally { ready = true; }
     e.target.value = '';
   };
-  $('resetAll').onclick = () => {
-    const prev = JSON.stringify(data);
-    localStorage.setItem(KEY + '.prereset', prev);
-    fetch(API + '/snapshot', { method: 'POST', body: prev }).catch(() => {});
-    localStorage.removeItem(KEY);
-    data = { v: 1, sites: [{ id: 'shuff', name: 'Shuff' }], cur: { site: 'shuff', game: 'sicbo' }, books: {}, savedAt: Date.now() };
-    save();
-    pending = game().emptyPending();
-    renderPad();
-    render();
-    toast('All data cleared · fresh start');
+  $('resetAll').onclick = async () => {
+    if (!ready) return;
+    ready = false;
+    try { const backup = await replaceData(createDefault(), '.prereset'); toast('All data cleared · ' + backup); }
+    catch (err) { toast('Reset failed: ' + err.message); }
+    finally { ready = true; }
   };
 
+  if (window.Games?.teenpatti?.registerAutoCommit) {
+    window.Games.teenpatti.registerAutoCommit(() => {
+      if (!ready || data.cur.game !== 'teenpatti') return;
+      const res = game().confirmActive ? game().confirmActive(pending) : null;
+      if (!res) return;
+      if (res.error) toast(res.error);
+      pending = res.pending;
+      if (res.commit) commit(res.commit);
+      render();
+    });
+  }
+
   document.addEventListener('keydown', (e) => {
+    if (!ready) return;
     if (e.target.matches?.('input, select, textarea') || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === 'Backspace') { e.preventDefault(); undo(); }
     else if (e.key === 'Escape') clearPending();
+    else if (['Enter', ' ', 'Tab'].includes(e.key) && data.cur.game === 'teenpatti' && pending.active) {
+      e.preventDefault(); press(e.key === ' ' ? 'space' : e.key.toLowerCase());
+    }
     else if (e.key.toLowerCase() === 'x') { e.preventDefault(); toggleNoBet(); }
     else if (e.key.length === 1) press(e.key.toLowerCase());
   });
+  }
 
-  renderPad();
-  render();
+  // Handlers are installed only after reconciliation; early clicks cannot replace file history.
+  document.querySelectorAll('button, input, select').forEach((el) => { el.disabled = true; });
   renderSaveStatus();
-  syncFromFile();
+  syncFromFile().finally(() => {
+    pending = game().emptyPending();
+    ready = true;
+    renderPad(); render(); renderSaveStatus(); wire();
+    document.querySelectorAll('button, input, select').forEach((el) => { el.disabled = false; });
+  });
 })();

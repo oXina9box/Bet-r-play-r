@@ -27,6 +27,31 @@
     return plan;
   }
 
+  function profitRange(cfg, mults) {
+    let lost = 0;
+    const profits = mults.map((mult) => {
+      const profit = mult * (cfg.payout == null ? 1 : cfg.payout) - lost;
+      lost += mult;
+      return profit;
+    });
+    const min = Math.min(...profits);
+    const max = Math.max(...profits);
+    return { profits, min, max, constant: min === max };
+  }
+
+  function recoveryProfit(cfg, recMult, level = 0) {
+    const prog = PROGRESSIONS[cfg.prog] || PROGRESSIONS.double;
+    const mults = Array.from({ length: cfg.n - 1 }, (_, k) =>
+      prog.mult(prog.ladder ? level + k : k) * recMult);
+    const range = profitRange(cfg, mults);
+    const unit = cfg.unit || 1;
+    return {
+      profitPerWin: range.constant ? range.min * unit : null,
+      profitMin: range.min * unit,
+      profitMax: range.max * unit,
+    };
+  }
+
   function recoveryOptions(cfg) {
     const n = cfg.n || 5;
     const nBets = n - 1;
@@ -47,6 +72,7 @@
     return targets.map(({ k, label }) => {
       const recMult = k === 0 ? 1 : (k === 1 ? (baseRiskUnits + 1) : Math.ceil(baseRiskUnits / k));
       const stakesUnits = baseMults.map((m) => m * recMult);
+      const range = profitRange(cfg, stakesUnits);
       const recSetRiskUnits = baseRiskUnits * recMult;
       const totalBankrollUnits = baseRiskUnits + recSetRiskUnits;
       return {
@@ -55,8 +81,13 @@
         recMult,
         stakesUnits,
         stakesLabel: stakesUnits.map((m) => m + 'x').join(' '),
-        profitPerWinUnits: recMult,
-        profitPerWinCash: recMult * unit,
+        profitPerWinUnits: range.constant && !prog.ladder ? range.min : null,
+        profitPerWinCash: range.constant && !prog.ladder ? range.min * unit : null,
+        profitByStepUnits: range.profits,
+        minProfitPerWinUnits: range.min,
+        maxProfitPerWinUnits: range.max,
+        minProfitPerWinCash: range.min * unit,
+        maxProfitPerWinCash: range.max * unit,
         bust1Units: baseRiskUnits,
         bust1Cash: baseRiskUnits * unit,
         recSetRiskUnits,
@@ -125,11 +156,12 @@
         const bet = betFor(set, set.step);
         r.role = 'bet';
         r.bet = bet;
+        set.playedMults.push(bet.mult);
         r.setNo = set.no;
         if (set.recovery) r.recovery = Object.assign({}, set.recovery);
         const win = side === bet.side && !e.lossAll;
         r.result = push ? 'push' : win ? 'win' : 'loss';
-        r.pnl = push ? 0 : win ? bet.amount * (set.cfg.payout || 1) : -bet.amount;
+        r.pnl = push ? 0 : win ? bet.amount * (set.cfg.payout == null ? 1 : set.cfg.payout) : -bet.amount;
         if (e.nb) { r.noBet = true; r.pnl = 0; } // bet skipped: flow continues, no money
         r.units = r.pnl / set.cfg.unit;
         if (win) {
@@ -140,7 +172,7 @@
             if (recoveryState.setsLeft <= 0) recoveryState = null;
           }
           if (set.cfg.prog === 'fib_ladder') {
-            ladderLevel = Math.max(0, set.ladderLevel - (curCfg.fibDrop || 2));
+            ladderLevel = Math.max(0, set.ladderLevel - set.cfg.fibDrop);
           }
           set = null;
         } else {
@@ -161,7 +193,7 @@
             if (set.recovery) {
               recoveryState = null;
             } else {
-              const recTarget = (curCfg.recovery != null) ? curCfg.recovery : (set.cfg && set.cfg.recovery != null ? set.cfg.recovery : 0);
+              const recTarget = set.cfg.recovery;
               if (recTarget > 0) {
                 const baseRisk = Array.from({ length: set.plan.length }, (_, k) => (PROGRESSIONS[set.cfg.prog] || PROGRESSIONS.double).mult(k)).reduce((a, b) => a + b, 0);
                 const recMult = recTarget === 1 ? (baseRisk + 1) : Math.ceil(baseRisk / recTarget);
@@ -169,7 +201,7 @@
                   target: recTarget,
                   setsLeft: recTarget,
                   recMult,
-                  profitPerWin: recMult * (set.cfg.unit || curCfg.unit || 1),
+                  ...recoveryProfit(set.cfg, recMult, ladderLevel),
                 };
               } else {
                 recoveryState = null;
@@ -199,6 +231,11 @@
       const n = (e.cfg && e.cfg.n) || curCfg.n;
       if (seq.length >= n) {
         const pattern = seq.slice(-n);
+        // Old recorded configurations predate recovery and ladder drop settings.
+        const setCfg = Object.assign({}, curCfg, e.cfg);
+        setCfg.recovery = e.cfg ? (e.cfg.recovery == null ? 0 : e.cfg.recovery) : (curCfg.recovery || 0);
+        setCfg.fibDrop = e.cfg ? (e.cfg.fibDrop == null ? 2 : e.cfg.fibDrop) : (curCfg.fibDrop == null ? 2 : curCfg.fibDrop);
+        if (recoveryState && setCfg.recovery !== recoveryState.target) recoveryState = null;
         let recMult = 1;
         let recInfo = null;
         if (recoveryState && recoveryState.setsLeft > 0) {
@@ -208,7 +245,7 @@
             currentSet: recoveryState.target - recoveryState.setsLeft + 1,
             totalSets: recoveryState.target,
             recMult,
-            profitPerWin: recoveryState.profitPerWin,
+            ...recoveryProfit(setCfg, recMult, ladderLevel),
           };
         }
         set = {
@@ -216,8 +253,9 @@
           pattern,
           factor: side,
           plan: betPlan(pattern, side),
-          cfg: Object.assign({}, curCfg, e.cfg),
+          cfg: setCfg,
           step: 0,
+          playedMults: [],
           ladderLevel,
           recMult,
           recovery: recInfo,
@@ -237,11 +275,14 @@
       totalSets: recoveryState.target,
       recMult: recoveryState.recMult,
       profitPerWin: recoveryState.profitPerWin,
+      profitMin: recoveryState.profitMin,
+      profitMax: recoveryState.profitMax,
     } : null;
 
     const isLadder = (set ? set.cfg.prog : curCfg.prog) === 'fib_ladder';
     const curLvl = isLadder ? (set ? (set.ladderLevel || 0) : ladderLevel) : 0;
-    const dropLvl = Math.max(0, curLvl - (curCfg.fibDrop || 2));
+    const nextCfg = set ? set.cfg : curCfg;
+    const dropLvl = Math.max(0, curLvl - (nextCfg.fibDrop == null ? 2 : nextCfg.fibDrop));
     const climbLvl = Math.min(FIB_SEQUENCE.length - 1, curLvl + 1);
     const ladderInfo = isLadder ? {
       level: curLvl,
@@ -254,7 +295,9 @@
     if (set) {
       const progObj = PROGRESSIONS[set.cfg.prog] || PROGRESSIONS.double;
       const mults = isLadder
-        ? Array.from({ length: set.plan.length }, (_, i) => FIB_SEQUENCE[Math.min(FIB_SEQUENCE.length - 1, curLvl + i)])
+        ? Array.from({ length: set.plan.length }, (_, i) => i < set.step
+          ? set.playedMults[i]
+          : progObj.mult(curLvl + i - set.step) * (set.recMult || 1))
         : set.plan.map((_, i) => progObj.mult(i) * (set.recMult || 1));
       next = Object.assign({
         phase: 'bet',
@@ -308,118 +351,101 @@
     return s;
   }
 
-  /**
-   * Post-bust recovery analysis:
-   * For each bust in rows, check what happened on subsequent non-tie rolls if the player had
-   * continued betting cyclically up to maxExtra bets (e.g. bets 5, 6, 7, 8).
-   */
+  function sameSession(a, b) {
+    return a.s === b.s && a.sessionNo === b.sessionNo;
+  }
+
+  /** Hypothetical continuation follows replay's push/skipped-bet flow within one session. */
   function analyzeBusts(rows, maxExtra = 4) {
     const busts = [];
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
-      if (r.setEnd !== 'bust') continue;
+      if (r.setEnd !== 'bust' || !r.rawPattern) continue;
       const pat = r.rawPattern;
-      if (!pat) continue;
-      const factor = r.factor;
       const n = pat.length;
       const cfg = r.setCfg || r.cfg || {};
       const prog = cfg.prog || 'double';
+      const progression = PROGRESSIONS[prog] || PROGRESSIONS.double;
       const unit = cfg.unit || 1;
-
+      const recMult = r.bet ? (r.bet.recMult || 1) : 1;
+      let level = r.bet && r.bet.ladderLevel != null ? r.bet.ladderLevel : n - 2;
+      if (r.result !== 'push') level = Math.min(FIB_SEQUENCE.length - 1, level + 1);
+      let previousSide = r.effSide || r.side;
       const extraSteps = [];
-      let j = i + 1;
-      let stepCount = 0;
-      while (j < rows.length && stepCount < maxExtra) {
-        const sub = rows[j++];
-        if (sub.side == null) continue; // skip ties
-        const step = (n - 1) + stepCount;
-        const repeatSide = pat[(step + 1) % n] === pat[0] ? factor : opp(factor);
+      for (let j = i + 1; j < rows.length && extraSteps.length < maxExtra; j++) {
+        const sub = rows[j];
+        if (!sameSession(r, sub)) break;
+        const push = sub.side == null;
+        const side = push ? previousSide : sub.side;
+        const step = n - 1 + extraSteps.length;
+        const repeatSide = pat[(step + 1) % n] === pat[0] ? r.factor : opp(r.factor);
         const betSide = opp(repeatSide);
-        const win = sub.side === betSide && !sub.lossAll;
-        const mult = PROGRESSIONS[prog] ? PROGRESSIONS[prog].mult(step) : (2 ** step);
-        extraSteps.push({
-          step: step + 1,
-          betSide,
-          actualSide: sub.side,
-          win,
-          mult,
-          amount: mult * unit,
-        });
-        stepCount++;
+        const win = side === betSide && !sub.lossAll;
+        const mult = progression.mult(progression.ladder ? level : step) * recMult;
+        const amount = mult * unit;
+        const noBet = !!(sub.nb || sub.noBet);
+        const pnl = push || noBet ? 0 : win ? amount * (cfg.payout == null ? 1 : cfg.payout) : -amount;
+        extraSteps.push({ step: step + 1, betSide, actualSide: sub.side, win, push, noBet, mult, amount, pnl });
+        previousSide = side;
         if (win) break;
+        if (!push && progression.ladder) level = Math.min(FIB_SEQUENCE.length - 1, level + 1);
       }
-
-      const hitIdx = extraSteps.findIndex((s) => s.win);
-      const hitOnBet = hitIdx !== -1 ? extraSteps[hitIdx].step : null;
+      const hit = extraSteps.find(s => s.win);
       busts.push({
-        setNo: r.setNo,
-        rowIdx: i,
-        pattern: r.pattern,
-        factor,
-        n,
-        prog,
-        unit,
-        extraSteps,
-        hitOnBet,
-        resolved: hitOnBet !== null,
+        setNo: r.setNo, rowIdx: i, pattern: r.pattern, factor: r.factor, n, prog, unit,
+        extraSteps, hitOnBet: hit ? hit.step : null, resolved: !!hit,
       });
     }
 
     const countsByExtra = Array(maxExtra).fill(0);
+    const pnlImpact = Array(maxExtra).fill(0);
+    const evaluatedByExtra = Array(maxExtra).fill(0);
+    const pendingByExtra = Array(maxExtra).fill(0);
     let resolvedCount = 0;
     for (const b of busts) {
-      if (b.hitOnBet) {
-        const extraIdx = b.hitOnBet - b.n;
-        if (extraIdx >= 0 && extraIdx < maxExtra) {
-          countsByExtra[extraIdx]++;
-          resolvedCount++;
-        }
+      if (b.resolved) {
+        countsByExtra[b.extraSteps.length - 1]++;
+        resolvedCount++;
       }
-    }
-
-    const pnlImpact = Array(maxExtra).fill(0);
-    for (const b of busts) {
-      const prog = b.prog;
-      const unit = b.unit;
       for (let e = 1; e <= maxExtra; e++) {
-        const hitExtra = b.hitOnBet ? (b.hitOnBet - b.n + 1) : 999;
-        if (hitExtra <= e) {
-          let baseLoss = 0;
-          for (let k = 0; k < b.n - 1; k++) baseLoss += (PROGRESSIONS[prog] ? PROGRESSIONS[prog].mult(k) : (2 ** k)) * unit;
-          pnlImpact[e - 1] += (baseLoss + unit);
-        } else {
-          let addedLoss = 0;
-          for (let k = b.n - 1; k < b.n - 1 + e; k++) addedLoss += (PROGRESSIONS[prog] ? PROGRESSIONS[prog].mult(k) : (2 ** k)) * unit;
-          pnlImpact[e - 1] -= addedLoss;
+        // A win ends every longer horizon. Otherwise, all e outcomes must be recorded.
+        if (!b.resolved && b.extraSteps.length < e) {
+          pendingByExtra[e - 1]++;
+          continue;
         }
+        evaluatedByExtra[e - 1]++;
+        pnlImpact[e - 1] += b.extraSteps.slice(0, e).reduce((sum, step) => sum + step.pnl, 0);
       }
     }
-
     return {
-      total: busts.length,
-      countsByExtra,
-      resolvedCount,
-      unresolvedCount: busts.length - resolvedCount,
-      pnlImpact,
-      busts,
+      total: busts.length, countsByExtra, resolvedCount, unresolvedCount: busts.length - resolvedCount,
+      pnlImpact, evaluatedByExtra, pendingByExtra, busts,
     };
   }
 
-  /**
-   * Simulate different re-entry delays (e.g. wait 0, 1, 2, 3 rolls after a bust)
-   * on the exact same roll history.
-   */
+  /** Replay each session independently, overriding only the simulated delay in copied settings. */
   function simulateDelays(entries, baseCfg, delays = [0, 1, 2, 3]) {
-    return delays.map((d) => {
-      const cfg = Object.assign({}, baseCfg, { waitBust: d });
-      const res = run(entries, cfg);
-      const s = stats(res.rows);
-      return { delay: d, stats: s, next: res.next };
+    const sessions = [];
+    for (const entry of entries) {
+      const last = sessions[sessions.length - 1];
+      if (!last || !sameSession(last[0], entry)) sessions.push([entry]);
+      else last.push(entry);
+    }
+    return delays.map((delay) => {
+      const cfg = Object.assign({}, baseCfg, { waitBust: delay });
+      const results = sessions.map(session => run(session.map(entry => Object.assign({}, entry, {
+        cfg: Object.assign({}, entry.cfg || cfg, { waitBust: delay }),
+      })), cfg));
+      return {
+        delay,
+        stats: stats(results.flatMap(result => result.rows)),
+        next: results.length ? results[results.length - 1].next : run([], cfg).next,
+      };
     });
   }
 
   /**
-   * Probability and overdue status for rare game outcomes:
+   * Roll gaps and historical interval probabilities for independent rare outcomes:
    * - Sic Bo: Triples (1 in 36 rolls, 2.78%)
    * - The Kickoff: Ties (1 in 6 rolls, 16.67%)
    */
@@ -446,10 +472,8 @@
         cumPct,
         isOverdue,
         isHigh,
-        message: isHigh
-          ? `⚡ High Triple Alert: Overdue by ${rollsSince} rolls (${cumPct}% cumulative chance · avg is 36)`
-          : isOverdue
-          ? `⚠️ Triple Overdue: ${rollsSince} rolls without triple (avg is 36)`
+        message: isOverdue
+          ? `${rollsSince} rolls since last triple; next-roll chance remains 1/36 (2.78%). Historical chance of at least one triple across ${rollsSince} independent rolls: ${cumPct}%.`
           : null,
       };
     } else if (gameId === 'kickoff') {
@@ -473,10 +497,8 @@
         cumPct,
         isOverdue,
         isHigh,
-        message: isHigh
-          ? `⚡ High Tie Alert: Overdue by ${rollsSince} rolls (${cumPct}% cumulative chance · avg is 6)`
-          : isOverdue
-          ? `⚠️ Tie Overdue: ${rollsSince} rolls without tie (avg is 6)`
+        message: isOverdue
+          ? `${rollsSince} rolls since last tie; next-roll chance remains 1/6 (16.67%). Historical chance of at least one tie across ${rollsSince} independent rolls: ${cumPct}%.`
           : null,
       };
     }

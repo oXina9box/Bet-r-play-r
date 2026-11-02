@@ -64,14 +64,15 @@ r = E.run(entries([11, 14, 9, 14, 6, 13, 12, 8], c3), c3);
 assert.deepStrictEqual(r.next.mults, [1, 2, 4, 8, 16, 32]);
 
 // Teen Patti ranking: AKQ > KQJ > ... > 432 > A23 (lowest)
-const w = (c) => TP.outcome({ c }).side;
-assert.strictEqual(w(['Ah', 'Ad', 'As', 'Kh', 'Qh', 'Jh']), 'A'); // trail > pure seq
-assert.strictEqual(w(['Ah', '2d', '3s', 'Kh', 'Qd', 'Js']), 'B'); // KQJ > A23 (A23 is lowest)
-assert.strictEqual(w(['4h', '3d', '2s', 'Ah', '2c', '3d']), 'A'); // 432 > A23
-assert.strictEqual(w(['Ah', 'Kd', 'Qs', 'Ah', '2d', '3c']), 'A'); // AKQ > A23
-assert.strictEqual(w(['2h', '5h', '9h', 'Ah', 'Ad', 'Ks']), 'A'); // color > pair
-assert.strictEqual(w(['Kh', 'Kd', '2s', 'Kc', 'Ks', '3h']), 'B'); // pair kicker
-assert.strictEqual(w(['Kh', '9d', '2s', 'Kc', '9s', '2h']), null); // exact tie
+// Alternating dealing order: [P1_1, P2_1, P1_2, P2_2, P1_3, P2_3]
+const w = (c) => TP.outcome({ c, order: 'alternating' }).side;
+assert.strictEqual(w(['Ah', 'Kh', 'Ad', 'Qh', 'As', 'Jh']), 'A'); // trail > pure seq
+assert.strictEqual(w(['Ah', 'Kh', '2d', 'Qd', '3s', 'Js']), 'B'); // KQJ > A23 (A23 is lowest)
+assert.strictEqual(w(['4h', 'Ah', '3d', '2c', '2s', '3d']), 'A'); // 432 > A23
+assert.strictEqual(w(['Ah', 'Ad', 'Kd', '2d', 'Qs', '3c']), 'A'); // AKQ > A23
+assert.strictEqual(w(['2h', 'Ah', '5h', 'Ad', '9h', 'Ks']), 'A'); // color > pair
+assert.strictEqual(w(['Kh', 'Kc', 'Kd', 'Ks', '2s', '3h']), 'B'); // pair kicker
+assert.strictEqual(w(['Kh', 'Kc', '9d', '9s', '2s', '2h']), null); // exact tie
 
 // Tie plays as last winner, pushes money, flow continues
 const tpe = (list) => list.map((x) => { const raw = { w: x }; const o = TP.outcome(raw); return { raw, o, side: o.side, lossAll: false, cfg }; });
@@ -94,9 +95,37 @@ const st = E.stats(r.rows);
 assert.strictEqual(st.skipped, 1);
 assert.strictEqual(st.wagered, 0);
 
-// Card input: duplicate rejected, 6 cards commit
+// Card input: duplicate rejected, multi-tap keying, and 6 cards commit
 let p = TP.emptyPending();
-for (const k of ['a', 'h', 'a', 'h']) p = TP.input(p, k).pending;
+for (const k of ['a', 'h']) p = TP.input(p, k).pending;
+assert.deepStrictEqual(p.cards, ['Ah']);
+// duplicate rejection
+const dupRes = TP.input(p, 'a');
+const dupAttempt = TP.input(dupRes.pending, 'h');
+assert.strictEqual(dupAttempt.error, 'Ah already dealt');
+
+// Multi-tap test: 'aa' gives As (2 taps = Spades)
+let pMulti = TP.emptyPending();
+pMulti = TP.input(pMulti, 'a').pending;
+assert.strictEqual(pMulti.active.rank, 'A');
+assert.strictEqual(pMulti.active.suitIdx, 0); // 1 tap = Hearts
+pMulti = TP.input(pMulti, 'a').pending;
+assert.strictEqual(pMulti.active.suitIdx, 1); // 2 taps = Spades (aa = A♠)
+
+// 4 taps gives Diamonds: '5555' = 5♦
+let p5 = TP.emptyPending();
+for (let i = 0; i < 4; i++) p5 = TP.input(p5, '5').pending;
+assert.strictEqual(p5.active.rank, '5');
+assert.strictEqual(p5.active.suitIdx, 3); // 4 taps = Diamonds (5555 = 5♦)
+
+// Switching rank commits previous card:
+let pSwitch = TP.emptyPending();
+pSwitch = TP.input(pSwitch, 'a').pending;
+pSwitch = TP.input(pSwitch, 'a').pending; // As active
+pSwitch = TP.input(pSwitch, 'k').pending; // Switching to K commits As!
+assert.deepStrictEqual(pSwitch.cards, ['As']);
+assert.strictEqual(pSwitch.active.rank, 'K');
+assert.strictEqual(pSwitch.active.suitIdx, 0); // K♥ active
 // Delay simulation: waitBust = 1 should insert a cooldown roll after a bust
 const bustSeq = [11, 14, 9, 14, 6, 13, 12, 8, 12, 9, 6, 14, 15, 11, 12];
 const rNoDelay = E.run(entries(bustSeq), Object.assign({}, cfg, { waitBust: 0 }));
@@ -143,7 +172,9 @@ assert.strictEqual(opt1.totalBankrollUnits, 255);
 assert.deepStrictEqual(opt1.stakesUnits, [16, 32, 64, 128]);
 
 // Recovery gameplay: with recovery = 3, after bust at roll 10, next set bets with 5x multiplier
-const rRec = E.run(entries(bustSeq), Object.assign({}, cfg, { waitBust: 0, recovery: 3 }));
+// Recovery is a recorded factor setting; changing today's setting cannot rewrite history.
+const recCfg = Object.assign({}, cfg, { waitBust: 0, recovery: 3 });
+const rRec = E.run(entries(bustSeq, recCfg), recCfg);
 assert.strictEqual(rRec.rows[9].setEnd, 'bust');
 assert.strictEqual(rRec.next.phase, 'bet');
 assert.strictEqual(rRec.next.recMult, 5);
@@ -261,4 +292,208 @@ assert.strictEqual(tp105Stats.sets, 37);
 assert.strictEqual(tp105Stats.won, 37);
 assert.strictEqual(tp105Stats.bust, 0); // 0 busts!
 
-console.log('All engine tests passed (including Fibonacci, Kickoff, Probabilities, and Session #3)');
+// Regressions: historical snapshots, simulations, observed extension P&L, and ladder previews.
+const regressions = [
+  ['Teen Patti preserves grouped history and marks alternating deals', () => {
+    const cards = ['Ah', 'Ad', 'As', 'Kh', 'Kd', 'Qh'];
+    const before = JSON.stringify(cards);
+    assert.strictEqual(TP.outcome({ c: cards }).side, 'A');
+    assert.strictEqual(TP.outcome({ c: cards, order: 'alternating' }).side, 'B');
+    assert.strictEqual(JSON.stringify(cards), before);
+    for (const complete of [pending => TP.confirmActive(pending), pending => TP.input(pending, 'h'), pending => TP.input(pending, 'j')]) {
+      const pending = { cards: cards.slice(0, 5), active: { rank: 'Q', suitIdx: 0 } };
+      const snapshot = JSON.stringify(pending);
+      const result = complete(pending);
+      assert.deepStrictEqual(result.commit, { c: cards, order: 'alternating' });
+      assert.deepStrictEqual(result.pending, { cards: [], active: null });
+      assert.strictEqual(JSON.stringify(pending), snapshot);
+    }
+  }],
+  ['Teen Patti multitap, confirmation, duplicates and undo preserve input', () => {
+    const missingCards = {};
+    let pending = TP.input(missingCards, 'a').pending;
+    assert.deepStrictEqual(missingCards, {});
+    assert.deepStrictEqual(pending.active, { rank: 'A', suitIdx: 0 });
+    for (const suitIdx of [1, 2, 3, 0]) {
+      const previous = pending;
+      const before = JSON.stringify(previous);
+      pending = TP.input(previous, 'a').pending;
+      assert.strictEqual(pending.active.suitIdx, suitIdx);
+      assert.strictEqual(JSON.stringify(previous), before);
+    }
+    const confirmed = TP.input(pending, 'enter');
+    assert.deepStrictEqual(confirmed.pending, { cards: ['Ah'], active: null });
+    const duplicate = { cards: ['Ah'], active: { rank: 'A', suitIdx: 0 } };
+    const before = JSON.stringify(duplicate);
+    for (const confirm of [p => TP.confirmActive(p), p => TP.input(p, 'h'), p => TP.input(p, 'k')]) {
+      assert.strictEqual(confirm(duplicate).error, 'Ah already dealt');
+      assert.strictEqual(JSON.stringify(duplicate), before);
+    }
+    assert.deepStrictEqual(TP.undoInput(duplicate), { cards: ['Ah'], active: null });
+    assert.deepStrictEqual(TP.undoInput({ cards: ['Ah'], active: null }), { cards: [], active: null });
+    const changed = TP.input({ cards: [], active: { rank: 'A', suitIdx: 1 } }, 'k');
+    assert.deepStrictEqual(changed.pending, { cards: ['As'], active: { rank: 'K', suitIdx: 0 } });
+    assert.deepStrictEqual(TP.input(changed.pending, 'wa').commit, { w: 'A' });
+    TP.emptyPending();
+  }],
+  ['recovery changes preserve recorded and legacy history', () => {
+    const recorded = entries(bustSeq, { ...cfg, recovery: 0 });
+    assert.deepStrictEqual(E.run(recorded, { ...cfg, recovery: 3 }).rows, E.run(recorded, cfg).rows);
+    const legacy = entries(bustSeq);
+    assert.strictEqual(E.stats(E.run(legacy, { ...cfg, recovery: 3 }).rows).net,
+      E.stats(E.run(legacy, cfg).rows).net);
+    const unsaved = legacy.map(({ cfg: ignored, ...entry }) => entry);
+    assert.strictEqual(E.run(unsaved, recCfg).next.recMult, 5);
+  }],
+  ['changing recovery at the next factor cancels queued escalation', () => {
+    const busted = entries(bustSeq.slice(0, 10), recCfg);
+    const before = JSON.stringify(busted);
+    for (const recovery of [0, 2]) {
+      const changed = { ...cfg, recovery };
+      const result = E.run([...busted, ...entries([6], changed)], changed);
+      assert.strictEqual(result.next.recMult, 1);
+      assert.strictEqual(result.next.recovery, null);
+      assert.strictEqual(result.next.amount, 1);
+    }
+    // The newly chosen mode begins only after the next base set busts.
+    const newMode = { ...cfg, recovery: 2 };
+    const history = [...Array.from({ length: 10 }, () => ({ side: 'A', cfg: recCfg })),
+      ...Array.from({ length: 6 }, () => ({ side: 'A', cfg: newMode }))];
+    assert.strictEqual(E.run(history, newMode).next.recMult, 8);
+    assert.strictEqual(JSON.stringify(busted), before);
+  }],
+  ['fibDrop uses recorded factor setting', () => {
+    const history = entries([11, 14, 9, 14, 6, 13, 12, 8, 6], cfgLadder);
+    const original = E.run(history, cfgLadder);
+    const changed = E.run(history, { ...cfgLadder, fibDrop: 1 });
+    assert.strictEqual(original.rows[8].setEnd, 'won');
+    assert.strictEqual(changed.next.ladder.level, original.next.ladder.level);
+    const legacy = entries([11, 14, 9, 14, 6, 13, 12, 8, 6], { ...cfgLadder, fibDrop: undefined });
+    assert.strictEqual(E.run(legacy, { ...cfgLadder, fibDrop: 1 }).next.ladder.level, 0);
+  }],
+  ['delay simulations override recorded delays without mutation', () => {
+    const history = entries(bustSeq, { ...cfg, waitBust: 0 });
+    const before = JSON.stringify(history);
+    const simulated = E.simulateDelays(history, cfg, [0, 1, 2]);
+    const expected = [0, 1, 2].map(waitBust => E.stats(E.run(
+      history.map(entry => ({ ...entry, cfg: { ...entry.cfg, waitBust } })), { ...cfg, waitBust }).rows));
+    assert.deepStrictEqual(simulated.map(x => x.stats), expected);
+    assert.strictEqual(JSON.stringify(history), before);
+  }],
+  ['delay simulations reset each session', () => {
+    for (const sessionKey of ['s', 'sessionNo']) {
+      const first = entries(bustSeq.slice(0, 10)).map(entry => ({ ...entry, [sessionKey]: 1 }));
+      const second = entries([6, 14, 15]).map(entry => ({ ...entry, [sessionKey]: 2 }));
+      const result = E.simulateDelays([...first, ...second], cfg, [0])[0];
+      const expected = E.stats([...E.run(first, cfg).rows, ...E.run(second, cfg).rows]);
+      assert.deepStrictEqual(result.stats, expected);
+      assert.strictEqual(result.next.phase, 'collect');
+    }
+  }],
+  ['unobserved extension horizons stay pending', () => {
+    const truncated = E.run(entries(bustSeq.slice(0, 10)), cfg);
+    const a = E.analyzeBusts(truncated.rows);
+    assert.deepStrictEqual(a.pnlImpact, [0, 0, 0, 0]);
+    assert.deepStrictEqual(a.evaluatedByExtra, [0, 0, 0, 0]);
+    assert.deepStrictEqual(a.pendingByExtra, [1, 1, 1, 1]);
+    const oneLoss = E.run(entries([...bustSeq.slice(0, 10), 11]), cfg);
+    const partial = E.analyzeBusts(oneLoss.rows);
+    assert.deepStrictEqual(partial.pnlImpact, [-16, 0, 0, 0]);
+    assert.deepStrictEqual(partial.evaluatedByExtra, [1, 0, 0, 0]);
+    const resolved = E.analyzeBusts(rNoDelay.rows);
+    assert.deepStrictEqual(resolved.evaluatedByExtra, [1, 1, 1, 1]);
+    assert.deepStrictEqual(resolved.pendingByExtra, [0, 0, 0, 0]);
+  }],
+  ['extension profit uses actual progression and payout', () => {
+    const history = [...bustSeq.slice(0, 10), 6];
+    for (const [prog, payout, expected] of [['plusone', 1, 31], ['double', 0.5, 8], ['fib', 1, 8]]) {
+      const settings = { ...cfg, prog, payout };
+      const a = E.analyzeBusts(E.run(entries(history, settings), settings).rows);
+      assert.deepStrictEqual(a.pnlImpact, [expected, expected, expected, expected]);
+    }
+  }],
+  ['extension horizons sum actual losses before the resolving win', () => {
+    for (const [prog, payout, expected] of [['double', 1, 16], ['plusone', 1, 32], ['double', 0.5, 0], ['fib_ladder', 1, 5]]) {
+      const settings = { ...cfg, prog, payout };
+      const history = entries([...bustSeq.slice(0, 10), 11, 6], settings);
+      const a = E.analyzeBusts(E.run(history, settings).rows);
+      const firstStake = prog === 'plusone' ? 31 : prog === 'fib_ladder' ? 8 : 16;
+      assert.deepStrictEqual(a.pnlImpact, [-firstStake, expected, expected, expected]);
+      assert.deepStrictEqual(a.countsByExtra, [0, 1, 0, 0]);
+    }
+  }],
+  ['extension analysis stops at either session identifier', () => {
+    for (const key of ['s', 'sessionNo']) {
+      const rows = E.run(entries([...bustSeq.slice(0, 10), 6]), cfg).rows.map((row, i) => ({ ...row, [key]: i < 10 ? 1 : 2 }));
+      const a = E.analyzeBusts(rows);
+      assert.deepStrictEqual(a.pnlImpact, [0, 0, 0, 0]);
+      assert.deepStrictEqual(a.pendingByExtra, [1, 1, 1, 1]);
+    }
+  }],
+  ['extension ties advance flow and skipped bets carry no money', () => {
+    const rows = E.run(entries(bustSeq.slice(0, 10)), cfg).rows;
+    // Bet 5 wants B, last outcome is B: push ends continuation with zero profit.
+    const pushed = E.analyzeBusts([...rows, { side: null }]);
+    assert.deepStrictEqual(pushed.pnlImpact, [0, 0, 0, 0]);
+    assert.deepStrictEqual(pushed.evaluatedByExtra, [1, 1, 1, 1]);
+    const skipped = E.analyzeBusts([...rows, { side: 'B', nb: true }]);
+    assert.deepStrictEqual(skipped.pnlImpact, [0, 0, 0, 0]);
+    assert.strictEqual(skipped.resolvedCount, 1);
+  }],
+  ['ladder previews align with actual next stake including recovery', () => {
+    const history = entries([11, 14, 9, 14, 6, 13, 12, 8], cfgLadder);
+    const result = E.run(history, cfgLadder);
+    assert.strictEqual(result.next.step, 2);
+    assert.strictEqual(result.next.mults[result.next.step], result.next.mult);
+    assert.deepStrictEqual(result.next.mults, [1, 2, 3, 5]);
+    const ladderRec = { ...cfgLadder, recovery: 3 };
+    const recovered = E.run(entries([...bustSeq.slice(0, 10), 6], ladderRec), ladderRec);
+    assert.strictEqual(recovered.next.recMult, 4);
+    assert.strictEqual(recovered.next.mults[recovered.next.step], recovered.next.mult);
+    assert.strictEqual(recovered.next.mult, 32);
+  }],
+  ['extension ladder stakes preserve level and recovery multiplier', () => {
+    const ladderRec = { ...cfgLadder, recovery: 3 };
+    // Two consecutive busts: first from 1,2,3,5; recovery from 8,13,21,34 at 4x.
+    const sides = ['A','A','A','A','A','A','A','A','A','A','A','A','A','A','A','B'];
+    const history = sides.map(side => ({ side, cfg: ladderRec }));
+    const rows = E.run(history, ladderRec).rows;
+    const analysis = E.analyzeBusts(rows);
+    assert.strictEqual(analysis.total, 2);
+    assert.strictEqual(analysis.busts[1].extraSteps[0].mult, 220);
+    assert.strictEqual(analysis.busts[1].extraSteps[0].amount, 220);
+    assert.strictEqual(analysis.busts[1].extraSteps[0].pnl, 220);
+  }],
+  ['zero payout stays zero consistently with recovery and extension calculations', () => {
+    const zero = { ...cfg, payout: 0 };
+    const result = E.run(entries([11, 14, 9, 14, 6, 13, 12, 15], zero), zero);
+    assert.strictEqual(result.rows[7].result, 'win');
+    assert.strictEqual(result.rows[7].pnl, 0);
+    assert.strictEqual(E.stats(result.rows).net, -1);
+  }],
+  ['rare-outcome messages keep next-roll odds independent of roll gap', () => {
+    for (const [probability, chance] of [[sbProb, '1/36 (2.78%)'], [koProb, '1/6 (16.67%)']]) {
+      assert.ok(probability.message.includes(`next-roll chance remains ${chance}`));
+      assert.ok(probability.message.includes('Historical'));
+      assert.ok(!/overdue|high.*alert/i.test(probability.message));
+    }
+  }],
+  ['recovery profit claims reflect progression and payout', () => {
+    const plus = E.recoveryOptions({ ...cfg, prog: 'plusone' }).find(o => o.k === 3);
+    assert.strictEqual(plus.profitPerWinUnits, null);
+    assert.deepStrictEqual(plus.profitByStepUnits, [9, 18, 27, 36]);
+    const fib = E.recoveryOptions(cfgFib).find(o => o.k === 3);
+    assert.strictEqual(fib.minProfitPerWinUnits, -4);
+    assert.strictEqual(fib.maxProfitPerWinUnits, 4);
+    const low = E.recoveryOptions({ ...cfg, payout: 0.5 }).find(o => o.k === 3);
+    assert.strictEqual(low.minProfitPerWinUnits, -15);
+    assert.strictEqual(low.profitPerWinUnits, null);
+  }],
+];
+const failures = [];
+for (const [name, check] of regressions) {
+  try { check(); }
+  catch (error) { failures.push(`${name}: ${error.message}`); }
+}
+assert.deepStrictEqual(failures, [], failures.join('\n'));
+console.log('All engine tests passed (including history, simulations, extension analysis, Fibonacci, and game regressions)');
