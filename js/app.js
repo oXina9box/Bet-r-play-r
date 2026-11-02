@@ -1,9 +1,9 @@
 /* Bet-R Play-R app: storage, state, rendering, input. */
 (function () {
-  const { PROGRESSIONS, GROUP_SIZES, run, stats } = window.Engine;
+  const { PROGRESSIONS, GROUP_SIZES, run, stats, analyzeBusts, simulateDelays } = window.Engine;
   const GAMES = window.Games;
   const KEY = 'betrplayr.v1';
-  const DEFAULT_CFG = { n: 5, prog: 'double', unit: 1, payout: 1 };
+  const DEFAULT_CFG = { n: 5, prog: 'double', unit: 1, payout: 1, waitBust: 0 };
   const $ = (id) => document.getElementById(id);
   const fmt = (x) => (Math.round(x * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const signed = (x) => (x > 0 ? '+' : x < 0 ? '−' : '') + fmt(Math.abs(x));
@@ -67,6 +67,7 @@
   let pending = game().emptyPending();
   let scope = 'session';
   let bdMode = 'day';
+  let insightTab = 'bust';
   let noBetArmed = false;
   let view; // last computed
 
@@ -164,6 +165,7 @@
     renderStrip();
     renderSettings();
     renderStats();
+    renderInsights();
   }
 
   function renderHeader() {
@@ -198,6 +200,11 @@
            <div class="bet-amt">${fmt(nx.amount)} <span>(${nx.mult}x)</span></div>
            <div class="plan">${plan}</div>
            <div class="pattern">Fading <b>${nx.pattern}</b> · factor ${sideTag(nx.factor)}</div>`;
+    } else if (nx.phase === 'cooldown') {
+      const unitWord = nx.left === 1 ? g.entryName.toLowerCase() : g.entryName.toLowerCase() + 's';
+      h = `<div class="phase">COOLDOWN AFTER BUST</div>
+           <div class="bet-side wait">Wait ${nx.left}</div>
+           <div class="bet-amt"><span>sitting out ${nx.left} ${unitWord} before starting a new pattern</span></div>`;
     } else if (nx.phase === 'factor') {
       h = `<div class="phase">WAIT</div>
            <div class="bet-side wait">No bet</div>
@@ -219,12 +226,12 @@
       const c = g.chip(r.raw, r.o);
       const sideCls = r.side === 'A' ? 'a' : r.side === 'B' ? 'b' : 't';
       const res = r.noBet ? '<i class="res nb">Ø</i>' : r.result === 'win' ? '<i class="res win">✓</i>' : r.result === 'loss' ? '<i class="res loss">✗</i>' : r.push ? '<i class="res push">P</i>' : '';
-      const role = r.role === 'factor' ? '<i class="role">F</i>' : '';
+      const role = r.role === 'factor' ? '<i class="role">F</i>' : r.role === 'cooldown' ? '<i class="role cd">CD</i>' : '';
       const end = r.setEnd === 'bust' ? ' bust' : r.setEnd === 'won' ? ' won' : '';
       const as = r.push && r.effSide ? ` as ${g.sides[r.effSide].label}` : '';
       if (r.push && r.effSide) c.sub = '→' + g.sides[r.effSide].short;
       const nbText = r.noBet ? ' [NO BET] ' : '';
-      const tip = `${nbText}` + (r.push ? `Tie, played${as || ' as nothing (no prior winner)'} · ` : '') + (r.role === 'factor' ? `Factor · fading ${r.pattern}` : r.bet ? `Bet ${g.sides[r.bet.side].label} ${fmt(r.bet.amount)} → ${r.result}` : '') + ' · click to toggle No Bet';
+      const tip = `${nbText}` + (r.push ? `Tie, played${as || ' as nothing (no prior winner)'} · ` : '') + (r.role === 'factor' ? `Factor · fading ${r.pattern}` : r.role === 'cooldown' ? `Cooldown after bust (${r.cooldownLeft} remaining)` : r.bet ? `Bet ${g.sides[r.bet.side].label} ${fmt(r.bet.amount)} → ${r.result}` : '') + ' · double-click to toggle No Bet';
       return `<div class="chip ${sideCls}${r.lossAll ? ' special' : ''}${end}${r.noBet ? ' no-bet' : ''}" data-entry-idx="${r.entryIdx}" title="${tip}">${role}${res}<b>${c.main}</b><small>${c.sub}</small>${c.flag ? `<i class="flag">${c.flag}</i>` : ''}</div>`;
     }).join('') || '<div class="muted">No entries yet — start tapping.</div>';
   }
@@ -235,6 +242,7 @@
     seg($('progSeg'), Object.entries(PROGRESSIONS).map(([k, p]) => [k, seqLabel(k, b.cfg.n - 1)]), b.cfg.prog, (v) => setCfg('prog', v));
     if (document.activeElement !== $('unit')) $('unit').value = b.cfg.unit;
     if (document.activeElement !== $('payout')) $('payout').value = b.cfg.payout;
+    seg($('waitSeg'), [[0, '0 (none)'], [1, '1 roll'], [2, '2 rolls'], [3, '3 rolls']], b.cfg.waitBust || 0, (v) => setCfg('waitBust', Number(v)));
     const mults = Array.from({ length: b.cfg.n - 1 }, (_, i) => PROGRESSIONS[b.cfg.prog].mult(i));
     const risk = mults.reduce((a, x) => a + x, 0) * b.cfg.unit;
     $('cfgNote').innerHTML = `Set risk: <b>${fmt(risk)}</b> (${mults.map((m) => fmt(m * b.cfg.unit)).join(' / ')})${view.next.phase === 'bet' ? ' · <span class="warn">changes apply from the next set</span>' : ''}`;
@@ -313,6 +321,108 @@
     $('breakdown').innerHTML = h + '</tbody>';
   }
 
+  function renderInsights() {
+    const b = book();
+    const rows = scopeRows();
+    seg($('insightSeg'), [['bust', 'Play Past Bust'], ['delays', 'Re-Entry Delays']], insightTab, (v) => { insightTab = v; renderInsights(); });
+
+    const cEl = $('insightContent');
+    if (!cEl) return;
+
+    if (insightTab === 'bust') {
+      const maxExtra = 4;
+      const res = analyzeBusts(rows, maxExtra);
+      const startBet = b.cfg.n;
+      let h = `<div class="insight-desc">Evaluates if continuing to bet past a bust (bets ${startBet}–${startBet + maxExtra - 1}) would have recovered the set or worsened losses. Based on ${res.total} bust${res.total === 1 ? '' : 's'} in selected scope.</div>`;
+      if (res.total === 0) {
+        h += `<div class="insight-callout">No busts recorded yet in this scope. As you play, any bust sets will be analyzed here in real-time.</div>`;
+      } else {
+        let cumHits = 0;
+        let tableRows = '';
+        for (let i = 0; i < maxExtra; i++) {
+          cumHits += res.countsByExtra[i];
+          const cumPct = ((cumHits / res.total) * 100).toFixed(1);
+          const pnl = res.pnlImpact[i];
+          tableRows += `<tr>
+            <td style="text-align:left">Bet ${startBet + i} <small class="muted">(+${i + 1} roll)</small></td>
+            <td>${res.countsByExtra[i]} / ${res.total}</td>
+            <td>${cumHits} (${cumPct}%)</td>
+            <td class="${pnl >= 0 ? 'win' : 'loss'}">${signed(pnl)}</td>
+          </tr>`;
+        }
+        h += `<div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="text-align:left">Extra Bet</th>
+                <th>Hits on Bet</th>
+                <th>Cumulative Hits</th>
+                <th>Net P&amp;L vs Reset</th>
+              </tr>
+            </thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        </div>`;
+
+        const bestIdx = res.pnlImpact.reduce((best, cur, idx) => (cur > res.pnlImpact[best] ? idx : best), 0);
+        const bestPnl = res.pnlImpact[bestIdx];
+        if (bestPnl > 0) {
+          h += `<div class="insight-callout good"><b>Positive recovery on Bet ${startBet + bestIdx}:</b> Extending by ${bestIdx + 1} bet(s) recovered a net ${signed(bestPnl)} across ${res.total} busts. Note: Requires higher progression stakes.</div>`;
+        } else {
+          h += `<div class="insight-callout bad"><b>Resetting on bust is optimal:</b> Extending bets deeper resulted in net negative P&amp;L (${signed(bestPnl)}) due to escalating loss sizes. Cutting losses at bet ${b.cfg.n - 1} preserved more capital.</div>`;
+        }
+      }
+      cEl.innerHTML = h;
+    } else {
+      const entries = rows.map((r) => ({ side: r.side, lossAll: r.lossAll, nb: r.noBet, cfg: b.cfg }));
+      const delays = simulateDelays(entries, b.cfg, [0, 1, 2, 3]);
+      const curDelay = b.cfg.waitBust || 0;
+      let h = `<div class="insight-desc">Simulates how waiting 0, 1, 2, or 3 rolls after a bust affects total sets, win rate, net P&amp;L, and max drawdown across this exact roll history.</div>`;
+      let tableRows = '';
+      for (const d of delays) {
+        const s = d.stats;
+        const isCurrent = d.delay === curDelay;
+        const bustPct = s.sets ? ((s.bust / s.sets) * 100).toFixed(1) + '%' : '–';
+        const applyBtn = isCurrent
+          ? `<span class="badge muted">Active</span>`
+          : `<button class="ghost apply-btn" data-delay="${d.delay}">Apply</button>`;
+        tableRows += `<tr>
+          <td style="text-align:left">${d.delay} roll${d.delay === 1 ? '' : 's'}${isCurrent ? ' <small class="win">●</small>' : ''}</td>
+          <td>${s.sets}</td>
+          <td>${s.won}</td>
+          <td>${s.bust} <small class="muted">(${bustPct})</small></td>
+          <td class="${s.net >= 0 ? 'win' : 'loss'}">${signed(s.net)}</td>
+          <td>${fmt(s.maxDD)}</td>
+          <td style="text-align:center">${applyBtn}</td>
+        </tr>`;
+      }
+      h += `<div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="text-align:left">Wait</th>
+              <th>Sets</th>
+              <th>Won</th>
+              <th>Bust</th>
+              <th>Net P&amp;L</th>
+              <th>Max DD</th>
+              <th style="text-align:center">Action</th>
+            </tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>`;
+
+      const best = delays.reduce((acc, cur) => (cur.stats.net > acc.stats.net ? cur : acc), delays[0]);
+      if (best.stats.sets > 0 && best.delay !== curDelay) {
+        h += `<div class="insight-callout good"><b>Recommendation:</b> Waiting ${best.delay} roll${best.delay === 1 ? '' : 's'} after a bust yields the highest net P&amp;L (${signed(best.stats.net)}) in this dataset. Click "Apply" to switch.</div>`;
+      } else {
+        h += `<div class="insight-callout">Replays past rolls to test whether cooling down after a bust aligns your entry with favorable rolls or if immediate re-entry performs better.</div>`;
+      }
+      cEl.innerHTML = h;
+    }
+  }
+
   let toastTimer;
   function toast(msg) {
     const t = $('toast');
@@ -323,6 +433,14 @@
 
   // ---------- wiring ----------
   $('pad').addEventListener('click', (e) => { const b = e.target.closest('[data-key]'); if (b) press(b.dataset.key); });
+  $('insightContent').addEventListener('click', (e) => {
+    const btn = e.target.closest('.apply-btn[data-delay]');
+    if (btn) {
+      const d = Number(btn.dataset.delay);
+      setCfg('waitBust', d);
+      toast(`Wait after bust set to ${d} roll${d === 1 ? '' : 's'}`);
+    }
+  });
   $('noBet').onclick = toggleNoBet;
   $('undo').onclick = undo;
   $('clear').onclick = clearPending;

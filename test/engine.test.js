@@ -97,6 +97,26 @@ assert.strictEqual(st.wagered, 0);
 // Card input: duplicate rejected, 6 cards commit
 let p = TP.emptyPending();
 for (const k of ['a', 'h', 'a', 'h']) p = TP.input(p, k).pending;
-assert.strictEqual(p.cards.length, 1);
+// Delay simulation: waitBust = 1 should insert a cooldown roll after a bust
+const bustSeq = [11, 14, 9, 14, 6, 13, 12, 8, 12, 9, 6, 14, 15, 11, 12];
+const rNoDelay = E.run(entries(bustSeq), Object.assign({}, cfg, { waitBust: 0 }));
+assert.strictEqual(rNoDelay.rows[9].setEnd, 'bust');
+assert.strictEqual(rNoDelay.rows[10].role, 'factor'); // roll 11 is factor immediately
+
+const rDelay1 = E.run(entries(bustSeq), Object.assign({}, cfg, { waitBust: 1 }));
+assert.strictEqual(rDelay1.rows[9].setEnd, 'bust');
+assert.strictEqual(rDelay1.rows[10].role, 'cooldown'); // roll 11 is cooldown
+assert.strictEqual(rDelay1.rows[11].role, 'factor'); // roll 12 is factor
+
+// Post-bust analysis: check if bust hit on extra Bet 5 (roll 11 was 6, which is Small -> hit!)
+const bustAnalysis = E.analyzeBusts(rNoDelay.rows);
+assert.strictEqual(bustAnalysis.total, 1);
+assert.strictEqual(bustAnalysis.countsByExtra[0], 1); // hit on Bet 5 (1 extra roll)
+assert.strictEqual(bustAnalysis.pnlImpact[0], 16); // +16 units improvement vs stopping at 4 bets
+
+const delays = E.simulateDelays(entries(bustSeq), cfg, [0, 1, 2]);
+assert.strictEqual(delays.length, 3);
+assert.strictEqual(delays[0].delay, 0);
+assert.strictEqual(delays[1].delay, 1);
 
 console.log('All engine tests passed');

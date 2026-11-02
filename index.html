@@ -52,6 +52,7 @@
           <label>Base unit</label><input id="unit" type="number" min="0" step="0.01" />
           <label>Payout</label><input id="payout" type="number" min="0" step="0.01" title="Win pays this × stake (1 = even money)" />
         </div>
+        <div class="row"><label>Wait after bust</label><div id="waitSeg" class="seg"></div></div>
         <div class="muted small" id="cfgNote"></div>
       </div>
 
@@ -68,6 +69,14 @@
           <div id="bdSeg" class="seg small"></div>
         </div>
         <div class="table-wrap"><table id="breakdown"></table></div>
+      </div>
+
+      <div class="card insights">
+        <div class="stats-head">
+          <h3>Strategy Analysis</h3>
+          <div id="insightSeg" class="seg small"></div>
+        </div>
+        <div id="insightContent"></div>
       </div>
     </section>
   </main>
