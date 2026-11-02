@@ -24,10 +24,60 @@
     return plan;
   }
 
+  function recoveryOptions(cfg) {
+    const n = cfg.n || 5;
+    const nBets = n - 1;
+    const prog = PROGRESSIONS[cfg.prog || 'double'];
+    const baseMults = Array.from({ length: nBets }, (_, i) => prog.mult(i));
+    const baseRiskUnits = baseMults.reduce((a, b) => a + b, 0);
+    const unit = cfg.unit || 1;
+
+    const targets = [
+      { k: 0, label: 'Off (Flat)' },
+      { k: 4, label: '4 Sets' },
+      { k: 3, label: '3 Sets' },
+      { k: 2, label: '2 Sets' },
+      { k: 1, label: '1 Set' },
+    ];
+
+    return targets.map(({ k, label }) => {
+      const recMult = k === 0 ? 1 : (k === 1 ? (baseRiskUnits + 1) : Math.ceil(baseRiskUnits / k));
+      const stakesUnits = baseMults.map((m) => m * recMult);
+      const recSetRiskUnits = baseRiskUnits * recMult;
+      const totalBankrollUnits = baseRiskUnits + recSetRiskUnits;
+      return {
+        k,
+        label,
+        recMult,
+        stakesUnits,
+        stakesLabel: stakesUnits.map((m) => m + 'x').join(' '),
+        profitPerWinUnits: recMult,
+        profitPerWinCash: recMult * unit,
+        bust1Units: baseRiskUnits,
+        bust1Cash: baseRiskUnits * unit,
+        recSetRiskUnits,
+        recSetRiskCash: recSetRiskUnits * unit,
+        totalBankrollUnits,
+        totalBankrollCash: totalBankrollUnits * unit,
+      };
+    });
+  }
+
   function betFor(set, step) {
     const cfg = set.cfg;
-    const mult = PROGRESSIONS[cfg.prog].mult(step);
-    return { side: set.plan[step], step, of: set.plan.length, mult, amount: mult * cfg.unit };
+    const recMult = set.recMult || 1;
+    const baseMult = PROGRESSIONS[cfg.prog].mult(step);
+    const mult = baseMult * recMult;
+    return {
+      side: set.plan[step],
+      step,
+      of: set.plan.length,
+      mult,
+      baseMult,
+      recMult,
+      amount: mult * cfg.unit,
+      recovery: set.recovery || null,
+    };
   }
 
   /**
@@ -41,6 +91,7 @@
     let set = null;
     let setNo = 0;
     let cooldown = 0;
+    let recoveryState = null;
 
     for (const e of entries) {
       const r = Object.assign({}, e, { role: 'collect', bet: null, result: null, pnl: 0, setEnd: null });
@@ -61,13 +112,21 @@
         r.role = 'bet';
         r.bet = bet;
         r.setNo = set.no;
+        if (set.recovery) r.recovery = Object.assign({}, set.recovery);
         const win = side === bet.side && !e.lossAll;
         r.result = push ? 'push' : win ? 'win' : 'loss';
         r.pnl = push ? 0 : win ? bet.amount * (set.cfg.payout || 1) : -bet.amount;
         if (e.nb) { r.noBet = true; r.pnl = 0; } // bet skipped: flow continues, no money
         r.units = r.pnl / set.cfg.unit;
-        if (win) { r.setEnd = 'won'; r.setStep = set.step; set = null; }
-        else if (++set.step >= set.plan.length) {
+        if (win) {
+          r.setEnd = 'won';
+          r.setStep = set.step;
+          if (recoveryState && recoveryState.setsLeft > 0) {
+            recoveryState.setsLeft--;
+            if (recoveryState.setsLeft <= 0) recoveryState = null;
+          }
+          set = null;
+        } else if (++set.step >= set.plan.length) {
           r.setEnd = 'bust';
           r.setStep = set.step - 1;
           r.pattern = abstract(set.pattern);
@@ -76,6 +135,25 @@
           r.plan = set.plan.slice();
           r.setCfg = Object.assign({}, set.cfg);
           cooldown = (set.cfg && set.cfg.waitBust != null) ? set.cfg.waitBust : (curCfg.waitBust || 0);
+
+          // If recovery was already active and busted, reset it to protect bankroll
+          if (set.recovery) {
+            recoveryState = null;
+          } else {
+            const recTarget = (curCfg.recovery != null) ? curCfg.recovery : (set.cfg && set.cfg.recovery != null ? set.cfg.recovery : 0);
+            if (recTarget > 0) {
+              const baseRisk = Array.from({ length: set.plan.length }, (_, k) => PROGRESSIONS[set.cfg.prog].mult(k)).reduce((a, b) => a + b, 0);
+              const recMult = recTarget === 1 ? (baseRisk + 1) : Math.ceil(baseRisk / recTarget);
+              recoveryState = {
+                target: recTarget,
+                setsLeft: recTarget,
+                recMult,
+                profitPerWin: recMult * (set.cfg.unit || curCfg.unit || 1),
+              };
+            } else {
+              recoveryState = null;
+            }
+          }
           set = null;
         }
         seq.push(side);
@@ -95,7 +173,28 @@
       const n = e.cfg.n;
       if (seq.length >= n) {
         const pattern = seq.slice(-n);
-        set = { no: ++setNo, pattern, factor: side, plan: betPlan(pattern, side), cfg: Object.assign({}, e.cfg), step: 0 };
+        let recMult = 1;
+        let recInfo = null;
+        if (recoveryState && recoveryState.setsLeft > 0) {
+          recMult = recoveryState.recMult;
+          recInfo = {
+            target: recoveryState.target,
+            currentSet: recoveryState.target - recoveryState.setsLeft + 1,
+            totalSets: recoveryState.target,
+            recMult,
+            profitPerWin: recoveryState.profitPerWin,
+          };
+        }
+        set = {
+          no: ++setNo,
+          pattern,
+          factor: side,
+          plan: betPlan(pattern, side),
+          cfg: Object.assign({}, e.cfg),
+          step: 0,
+          recMult,
+          recovery: recInfo,
+        };
         r.role = 'factor';
         r.setNo = set.no;
         r.pattern = abstract(pattern);
@@ -105,15 +204,29 @@
     }
 
     let next;
+    const recInfo = recoveryState ? {
+      target: recoveryState.target,
+      currentSet: recoveryState.target - recoveryState.setsLeft + 1,
+      totalSets: recoveryState.target,
+      recMult: recoveryState.recMult,
+      profitPerWin: recoveryState.profitPerWin,
+    } : null;
+
     if (set) {
-      next = Object.assign({ phase: 'bet', pattern: abstract(set.pattern), factor: set.factor, plan: set.plan,
-        mults: set.plan.map((_, i) => PROGRESSIONS[set.cfg.prog].mult(i)) }, betFor(set, set.step));
+      next = Object.assign({
+        phase: 'bet',
+        pattern: abstract(set.pattern),
+        factor: set.factor,
+        plan: set.plan,
+        mults: set.plan.map((_, i) => PROGRESSIONS[set.cfg.prog].mult(i) * (set.recMult || 1)),
+        recovery: set.recovery,
+      }, betFor(set, set.step));
     } else if (cooldown > 0) {
-      next = { phase: 'cooldown', left: cooldown, have: seq.length, need: curCfg.n };
+      next = { phase: 'cooldown', left: cooldown, have: seq.length, need: curCfg.n, recovery: recInfo };
     } else if (seq.length >= curCfg.n) {
-      next = { phase: 'factor', pattern: abstract(seq.slice(-curCfg.n)), raw: seq.slice(-curCfg.n) };
+      next = { phase: 'factor', pattern: abstract(seq.slice(-curCfg.n)), raw: seq.slice(-curCfg.n), recovery: recInfo };
     } else {
-      next = { phase: 'collect', have: seq.length, need: curCfg.n };
+      next = { phase: 'collect', have: seq.length, need: curCfg.n, recovery: recInfo };
     }
     return { rows, next };
   }
@@ -261,7 +374,7 @@
     });
   }
 
-  const api = { PROGRESSIONS, GROUP_SIZES, opp, abstract, betPlan, run, stats, analyzeBusts, simulateDelays };
+  const api = { PROGRESSIONS, GROUP_SIZES, opp, abstract, betPlan, run, stats, analyzeBusts, simulateDelays, recoveryOptions };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Engine = api;
 })(this);

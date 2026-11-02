@@ -1,9 +1,9 @@
 /* Bet-R Play-R app: storage, state, rendering, input. */
 (function () {
-  const { PROGRESSIONS, GROUP_SIZES, run, stats, analyzeBusts, simulateDelays } = window.Engine;
+  const { PROGRESSIONS, GROUP_SIZES, run, stats, analyzeBusts, simulateDelays, recoveryOptions } = window.Engine;
   const GAMES = window.Games;
   const KEY = 'betrplayr.v1';
-  const DEFAULT_CFG = { n: 5, prog: 'double', unit: 1, payout: 1, waitBust: 0 };
+  const DEFAULT_CFG = { n: 5, prog: 'double', unit: 1, payout: 1, waitBust: 0, recovery: 0 };
   const $ = (id) => document.getElementById(id);
   const fmt = (x) => (Math.round(x * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const signed = (x) => (x > 0 ? '+' : x < 0 ? '−' : '') + fmt(Math.abs(x));
@@ -187,9 +187,15 @@
     if (last && (last.result || last.noBet)) {
       if (last.noBet) lastLine = `<div class="last muted">NO BET · skipped ($0) · flow continues</div>`;
       else if (last.setEnd === 'bust') lastLine = `<div class="last loss">SET BUST · ${signed(last.pnl)} · pattern repeated</div>`;
-      else if (last.result === 'win') lastLine = `<div class="last win">WIN on bet ${last.bet.step + 1} · ${signed(last.pnl)}</div>`;
+      else if (last.result === 'win') lastLine = `<div class="last win">${last.recovery ? `RECOVERY WIN (Set ${last.recovery.currentSet} of ${last.recovery.totalSets})` : `WIN on bet ${last.bet.step + 1}`} · ${signed(last.pnl)}</div>`;
       else if (last.result === 'loss') lastLine = `<div class="last loss">Loss · ${signed(last.pnl)}</div>`;
       else if (last.result === 'push') lastLine = `<div class="last push">TIE · PUSH — played as ${g.sides[last.effSide].label} → ${last.setEnd === 'won' ? 'set ends (no money)' : last.setEnd === 'bust' ? 'set bust (no money)' : 'moves to next bet'}</div>`;
+    }
+
+    let recBanner = '';
+    if (nx.recovery) {
+      const rec = nx.recovery;
+      recBanner = `<div class="recovery-banner">⚡ RECOVERY MODE · SET ${rec.currentSet} OF ${rec.totalSets} (Target ${signed(rec.profitPerWin || 0)}/win)</div>`;
     }
 
     let h;
@@ -215,8 +221,8 @@
            <div class="bet-side wait">${nx.have} / ${nx.need}</div>
            <div class="bet-amt"><span>need ${nx.need} ${g.entryName.toLowerCase()}s for a pattern</span></div>`;
     }
-    $('next').className = 'next ' + nx.phase + (nx.phase === 'bet' ? ' side-' + nx.side.toLowerCase() : '');
-    $('next').innerHTML = h + lastLine;
+    $('next').className = 'next ' + nx.phase + (nx.phase === 'bet' ? ' side-' + nx.side.toLowerCase() : '') + (nx.recovery ? ' recovery' : '');
+    $('next').innerHTML = recBanner + h + lastLine;
   }
 
   function renderStrip() {
@@ -231,7 +237,8 @@
       const as = r.push && r.effSide ? ` as ${g.sides[r.effSide].label}` : '';
       if (r.push && r.effSide) c.sub = '→' + g.sides[r.effSide].short;
       const nbText = r.noBet ? ' [NO BET] ' : '';
-      const tip = `${nbText}` + (r.push ? `Tie, played${as || ' as nothing (no prior winner)'} · ` : '') + (r.role === 'factor' ? `Factor · fading ${r.pattern}` : r.role === 'cooldown' ? `Cooldown after bust (${r.cooldownLeft} remaining)` : r.bet ? `Bet ${g.sides[r.bet.side].label} ${fmt(r.bet.amount)} → ${r.result}` : '') + ' · double-click to toggle No Bet';
+      const recText = r.recovery ? ` [Recovery ${r.recovery.currentSet}/${r.recovery.totalSets}] ` : '';
+      const tip = `${nbText}${recText}` + (r.push ? `Tie, played${as || ' as nothing (no prior winner)'} · ` : '') + (r.role === 'factor' ? `Factor · fading ${r.pattern}` : r.role === 'cooldown' ? `Cooldown after bust (${r.cooldownLeft} remaining)` : r.bet ? `Bet ${g.sides[r.bet.side].label} ${fmt(r.bet.amount)} → ${r.result}` : '') + ' · double-click to toggle No Bet';
       return `<div class="chip ${sideCls}${r.lossAll ? ' special' : ''}${end}${r.noBet ? ' no-bet' : ''}" data-entry-idx="${r.entryIdx}" title="${tip}">${role}${res}<b>${c.main}</b><small>${c.sub}</small>${c.flag ? `<i class="flag">${c.flag}</i>` : ''}</div>`;
     }).join('') || '<div class="muted">No entries yet — start tapping.</div>';
   }
@@ -243,9 +250,59 @@
     if (document.activeElement !== $('unit')) $('unit').value = b.cfg.unit;
     if (document.activeElement !== $('payout')) $('payout').value = b.cfg.payout;
     seg($('waitSeg'), [[0, '0 (none)'], [1, '1 roll'], [2, '2 rolls'], [3, '3 rolls']], b.cfg.waitBust || 0, (v) => setCfg('waitBust', Number(v)));
+    seg($('recSeg'), [
+      [0, 'Off (Flat)'],
+      [4, '4 Sets'],
+      [3, '3 Sets'],
+      [2, '2 Sets'],
+      [1, '1 Set'],
+    ], b.cfg.recovery || 0, (v) => setCfg('recovery', Number(v)));
+    renderRecNotes(b.cfg);
     const mults = Array.from({ length: b.cfg.n - 1 }, (_, i) => PROGRESSIONS[b.cfg.prog].mult(i));
     const risk = mults.reduce((a, x) => a + x, 0) * b.cfg.unit;
     $('cfgNote').innerHTML = `Set risk: <b>${fmt(risk)}</b> (${mults.map((m) => fmt(m * b.cfg.unit)).join(' / ')})${view.next.phase === 'bet' ? ' · <span class="warn">changes apply from the next set</span>' : ''}`;
+  }
+
+  function renderRecNotes(cfg) {
+    const el = $('recNotes');
+    if (!el) return;
+    const opts = recoveryOptions(cfg);
+    const activeK = cfg.recovery || 0;
+    const baseOpt = opts.find((o) => o.k === 0) || opts[0];
+
+    const rows = opts.map((o) => {
+      const isActive = o.k === activeK;
+      const targetLabel = o.k === 0 ? 'Off (Flat Reset)' : `<b>${o.k} Set${o.k === 1 ? '' : 's'}</b>`;
+      const stakes = o.stakesLabel;
+      const winLabel = signed(o.profitPerWinCash) + ` <small class="muted">(${o.profitPerWinUnits}u)</small>`;
+      const riskLabel = `${o.recSetRiskUnits}u <small class="muted">(${fmt(o.recSetRiskCash)})</small>`;
+      const totalLabel = `<span class="rec-total">${o.totalBankrollUnits} units</span> <small class="muted">(${fmt(o.totalBankrollCash)})</small>`;
+      return `<tr class="${isActive ? 'active' : ''}" data-k="${o.k}" style="cursor:pointer" title="Click to select ${o.label}">
+        <td>${isActive ? '<span class="rec-badge">● </span>' : ''}${targetLabel}</td>
+        <td><code>${stakes}</code></td>
+        <td class="win">${winLabel}</td>
+        <td>${riskLabel}</td>
+        <td>${totalLabel}</td>
+      </tr>`;
+    }).join('');
+
+    el.innerHTML = `
+      <div class="rec-notes-head">
+        <span>Session Entry Bankroll: <b>Survive 1 Bust + Run Full 2nd Factor</b></span>
+        <span>Bust 1 cost: <b>${baseOpt.bust1Units}u</b> (${fmt(baseOpt.bust1Cash)})</span>
+      </div>
+      <table class="rec-table">
+        <thead>
+          <tr>
+            <th>Recovery Mode</th>
+            <th>Stakes (x Unit)</th>
+            <th>Win / Set</th>
+            <th>2nd Set Risk</th>
+            <th>Total Bankroll Needed</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
   }
 
   function seqLabel(k, nBets) {
@@ -439,6 +496,14 @@
       const d = Number(btn.dataset.delay);
       setCfg('waitBust', d);
       toast(`Wait after bust set to ${d} roll${d === 1 ? '' : 's'}`);
+    }
+  });
+  $('recNotes').addEventListener('click', (e) => {
+    const tr = e.target.closest('tr[data-k]');
+    if (tr && tr.dataset.k != null) {
+      const k = Number(tr.dataset.k);
+      setCfg('recovery', k);
+      toast(`Recovery mode set to ${k === 0 ? 'Off (Flat)' : k + ' sets'}`);
     }
   });
   $('noBet').onclick = toggleNoBet;

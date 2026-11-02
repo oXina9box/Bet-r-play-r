@@ -119,4 +119,36 @@ assert.strictEqual(delays.length, 3);
 assert.strictEqual(delays[0].delay, 0);
 assert.strictEqual(delays[1].delay, 1);
 
+// Recovery mode unit tests
+const recOpts = E.recoveryOptions(cfg);
+assert.strictEqual(recOpts.length, 5);
+const opt4 = recOpts.find((o) => o.k === 4);
+assert.strictEqual(opt4.recMult, 4);
+assert.strictEqual(opt4.totalBankrollUnits, 75);
+assert.deepStrictEqual(opt4.stakesUnits, [4, 8, 16, 32]);
+
+const opt3 = recOpts.find((o) => o.k === 3);
+assert.strictEqual(opt3.recMult, 5);
+assert.strictEqual(opt3.totalBankrollUnits, 90);
+assert.deepStrictEqual(opt3.stakesUnits, [5, 10, 20, 40]);
+
+const opt2 = recOpts.find((o) => o.k === 2);
+assert.strictEqual(opt2.recMult, 8);
+assert.strictEqual(opt2.totalBankrollUnits, 135);
+assert.deepStrictEqual(opt2.stakesUnits, [8, 16, 32, 64]);
+
+const opt1 = recOpts.find((o) => o.k === 1);
+assert.strictEqual(opt1.recMult, 16);
+assert.strictEqual(opt1.totalBankrollUnits, 255);
+assert.deepStrictEqual(opt1.stakesUnits, [16, 32, 64, 128]);
+
+// Recovery gameplay: with recovery = 3, after bust at roll 10, next set bets with 5x multiplier
+const rRec = E.run(entries(bustSeq), Object.assign({}, cfg, { waitBust: 0, recovery: 3 }));
+assert.strictEqual(rRec.rows[9].setEnd, 'bust');
+assert.strictEqual(rRec.next.phase, 'bet');
+assert.strictEqual(rRec.next.recMult, 5);
+assert.strictEqual(rRec.next.amount, 5); // bet 1 is 1 * 5 = 5
+assert.deepStrictEqual(rRec.next.mults, [5, 10, 20, 40]);
+assert.strictEqual(rRec.next.recovery.totalSets, 3);
+
 console.log('All engine tests passed');

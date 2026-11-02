@@ -145,6 +145,19 @@ main { display: grid; grid-template-columns: minmax(420px, 1fr) minmax(380px, 1f
 .settings label { width: 110px; color: var(--muted); font-size: 13px; }
 .settings .row label + input + label { width: auto; margin-left: 12px; }
 
+/* recovery notes */
+.rec-notes { margin: 10px 0 6px; background: var(--panel2); border-radius: 8px; padding: 10px 12px; border: 1px solid var(--line); font-size: 12px; }
+.rec-notes-head { font-weight: 700; font-size: 12px; color: var(--text); margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center; }
+.rec-notes-head span { color: var(--muted); font-weight: normal; font-size: 11px; }
+.rec-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+.rec-table th, .rec-table td { padding: 4px 6px; text-align: right; border-bottom: 1px solid var(--line); }
+.rec-table th:first-child, .rec-table td:first-child { text-align: left; }
+.rec-table tr.active { background: rgba(255,190,83,.09); }
+.rec-table tr.active td:first-child { font-weight: 700; color: #ffbe53; }
+.rec-total { font-weight: 800; color: #ffbe53; }
+.recovery-banner { font-size: 11px; font-weight: 800; color: #ffbe53; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 6px; background: rgba(255,190,83,.12); padding: 3px 8px; border-radius: 4px; display: inline-block; }
+.next.recovery { border-color: #ffbe53; }
+
 /* insights */
 .insight-desc { font-size: 13px; color: var(--muted); margin: 6px 0 10px; line-height: 1.4; }
 .insight-callout { background: var(--panel2); border-left: 3px solid var(--line); padding: 8px 12px; border-radius: 0 8px 8px 0; font-size: 13px; margin: 10px 0; }
