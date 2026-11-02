@@ -343,10 +343,10 @@
   const siteInput = $('newSite');
   $('addSite').onclick = () => { siteInput.hidden = false; siteInput.value = ''; siteInput.focus(); };
   siteInput.onkeydown = (e) => {
-    if (e.key === 'Escape') siteInput.blur();
+    if (e.key === 'Escape') siteInput.hidden = true;
     if (e.key !== 'Enter') return;
     const name = siteInput.value.trim();
-    siteInput.blur();
+    siteInput.hidden = true;
     if (!name) return;
     const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-') || uid();
     if (!data.sites.some((s) => s.id === id)) data.sites.push({ id, name });
