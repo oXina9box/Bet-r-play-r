@@ -496,6 +496,18 @@
     } catch (err) { toast('Import failed: ' + err.message); }
     e.target.value = '';
   };
+  $('resetAll').onclick = () => {
+    const prev = JSON.stringify(data);
+    localStorage.setItem(KEY + '.prereset', prev);
+    fetch(API + '/snapshot', { method: 'POST', body: prev }).catch(() => {});
+    localStorage.removeItem(KEY);
+    data = { v: 1, sites: [{ id: 'shuff', name: 'Shuff' }], cur: { site: 'shuff', game: 'sicbo' }, books: {}, savedAt: Date.now() };
+    save();
+    pending = game().emptyPending();
+    renderPad();
+    render();
+    toast('All data cleared · fresh start');
+  };
 
   document.addEventListener('keydown', (e) => {
     if (e.target.matches?.('input, select, textarea') || e.ctrlKey || e.metaKey || e.altKey) return;
