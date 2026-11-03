@@ -261,6 +261,11 @@
            <div class="bet-amt">${fmt(nx.amount)} <span>(${nx.mult}x)</span></div>
            <div class="plan">${plan}</div>
            <div class="pattern">Fading <b>${nx.pattern}</b> · factor ${sideTag(nx.factor)}</div>`;
+    } else if (nx.phase === 'continue') {
+      h = `<div class="phase">OPTIONAL CONTINUE AFTER BUST</div>
+           <div class="bet-side ${nx.side === 'A' ? 'a' : 'b'}">${g.sides[nx.side].label}</div>
+           <div class="bet-amt">${fmt(nx.amount)} <span>(${nx.mult}x) · bet ${nx.step + 1}</span></div>
+           <div class="pattern">Run resumes only when a matching visible wager is detected.</div>`;
     } else if (nx.phase === 'cooldown') {
       const unitWord = nx.left === 1 ? g.entryName.toLowerCase() : g.entryName.toLowerCase() + 's';
       const reason = nx.reason === 'win' ? 'WIN' : 'BUST';
@@ -278,7 +283,30 @@
            <div class="bet-amt"><span>need ${nx.need} ${g.entryName.toLowerCase()}s for a pattern</span></div>`;
     }
     $('next').className = 'next ' + nx.phase + (nx.phase === 'bet' ? ' side-' + nx.side.toLowerCase() : '') + (nx.recovery ? ' recovery' : '');
-    $('next').innerHTML = recBanner + alertBanner + h + ladderBadge + lastLine;
+    const skip = nx.phase === 'bet' ? `<button id="skipBetOnce" class="skip-bet ${noBetArmed ? 'armed' : ''}">${noBetArmed ? 'Cancel one-time skip' : 'Skip this bet once'}</button>` : '';
+    $('next').innerHTML = recBanner + alertBanner + h + ladderBadge + lastLine + skip;
+    $('skipBetOnce')?.addEventListener('click', toggleNoBet);
+    announceNext(last, nx, g);
+  }
+
+  function announceNext(last, next, g) {
+    if (!last || data.audioFeedback !== true || !window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
+    const raw = Array.isArray(last.raw) ? last.raw.join(', ') : last.raw?.c ? last.raw.c.join(', ') : last.raw?.w || '';
+    const outcome = last.side ? g.sides[last.side].label : 'tie';
+    const result = last.setEnd === 'bust' ? 'Bust.' : last.setEnd === 'won' ? 'Set won.' : last.result === 'loss' ? 'Bet lost.' : last.result === 'win' ? 'Bet won.' : '';
+    const advice = next.phase === 'bet' ? `Bet ${g.sides[next.side].label}, ${fmt(next.amount)}.`
+      : next.phase === 'continue' ? `Optional continue after bust: bet ${g.sides[next.side].label}, ${fmt(next.amount)}. I will resume this run if that wager is visible.`
+        : next.phase === 'factor-delay' ? `Waiting ${next.left} rolls for the pattern.`
+          : next.phase === 'cooldown' ? `Waiting ${next.left} rolls after ${next.reason}.`
+            : next.phase === 'factor' ? 'No bet. Next roll sets the factor.'
+              : `No bet. Collecting ${next.have} of ${next.need} rolls.`;
+    const signature = [last.t, next.phase, next.side, next.amount, next.left, result].join(':');
+    if (signature === spokenSignature) return;
+    spokenSignature = signature;
+    const detail = last.o.total ? `total ${last.o.total}.` : last.o.red ? `red ${last.o.red}, blue ${last.o.blue}.` : '';
+    const text = `${g.entryName}: ${raw}. ${outcome}. ${detail} ${last.lossAll ? 'Triple. ' : ''}${result} ${advice}`;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(new window.SpeechSynthesisUtterance(text));
   }
 
   function historyChip(r) {
@@ -647,6 +675,12 @@
 
   // ---------- wiring ----------
   function wire() {
+  $('audioFeedback').onchange = (e) => {
+    data = validate({ ...data, audioFeedback: !!e.target.checked });
+    spokenSignature = '';
+    save(); render();
+    toast(data.audioFeedback ? 'Spoken feedback on' : 'Spoken feedback off');
+  };
   if (window.ScreenReader) screenReader = window.ScreenReader.init({
     getContext: () => ({ site: data.cur.site, game: game(), session: curSession().id, entries: book().entries }),
     record: (observation, bound) => {

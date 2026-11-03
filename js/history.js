@@ -19,7 +19,7 @@
       if (row.role === 'factor-wait' || row.role === 'factor-break') waitIndices.push(i);
       else if (row.role === 'bet') betIndices.push(i);
       else break;
-      if (row.setEnd) break;
+      if (row.setEnd && !(row.setEnd === 'bust' && rows[i + 1]?.bet?.continuation && rows[i + 1].setNo === factor.setNo)) break;
     }
     const indices = [...sourceIndices, index, ...waitIndices, ...betIndices].sort((a, b) => a - b);
     const lastIndex = indices.at(-1) ?? index;
