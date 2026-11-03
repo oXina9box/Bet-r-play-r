@@ -150,6 +150,23 @@ assert.strictEqual(rDelay1.rows[9].setEnd, 'bust');
 assert.strictEqual(rDelay1.rows[10].role, 'cooldown'); // roll 11 is cooldown
 assert.strictEqual(rDelay1.rows[11].role, 'factor'); // roll 12 is factor
 
+// Wait after a win consumes completed games before detecting the next factor.
+const winWait = E.run(entries([11, 14, 9, 14, 6, 13, 12, 15, 9, 6], { ...cfg, waitWin: 1 }), { ...cfg, waitWin: 1 });
+assert.equal(winWait.rows[8].role, 'cooldown');
+assert.equal(winWait.rows[8].cooldownReason, 'win');
+assert.equal(winWait.rows[9].role, 'factor');
+
+// Delayed betting waits only while the first planned bet would still lose.
+const delayed = E.run(entries([11, 14, 9, 14, 6, 13, 12, 15], { ...cfg, waitBet: 1 }), { ...cfg, waitBet: 1 });
+assert.equal(delayed.rows[5].role, 'factor');
+assert.equal(delayed.rows[6].role, 'factor-wait');
+assert.equal(delayed.rows[7].role, 'bet');
+const broken = E.run(entries([11, 14, 9, 14, 6, 13, 9, 14, 9, 14, 6], { ...cfg, waitBet: 1 }), { ...cfg, waitBet: 1 });
+assert.equal(broken.rows[6].role, 'factor-break');
+assert.equal(broken.rows[6].pnl, 0);
+assert.equal(broken.rows[6].setEnd, 'delay-break');
+assert.equal(broken.rows[7].role, 'collect', 'a broken pattern clears state and starts collection fresh');
+
 // Post-bust analysis: check if bust hit on extra Bet 5 (roll 11 was 6, which is Small -> hit!)
 const bustAnalysis = E.analyzeBusts(rNoDelay.rows);
 assert.strictEqual(bustAnalysis.total, 1);

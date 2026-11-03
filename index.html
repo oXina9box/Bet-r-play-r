@@ -18,10 +18,21 @@
     <div class="session">
       <span id="saveStatus" class="save-status"></span>
       <span id="sessionInfo"></span>
-      <button id="newSession" class="ghost">New session</button>
-      <button id="export" class="ghost" title="Download a JSON backup">Export</button>
-      <label class="ghost btn" title="Restore from a JSON backup">Import<input id="import" type="file" accept="application/json" hidden /></label>
-      <button id="resetAll" class="ghost" title="Clear all saved data and start fresh">Reset data</button>
+      <details id="recorderMenu" class="recorder-menu"><summary id="recorderToggle" class="ghost">Recorder</summary>
+        <div class="recorder-panel"><div class="card screen-card">
+          <div class="screen-actions"><b>Visual recorder</b><button id="screenStart">Start</button><button id="screenStop" disabled>Stop</button><button id="screenSelectArea">Draw watch area</button></div>
+          <div id="screenStatus" class="muted small" role="status" aria-live="polite">Select casino and game above, then Start. Choose the casino tab or window to share.</div>
+          <details id="screenDetails">
+            <summary>Preview &amp; adjust</summary>
+            <p class="muted small">Draw around the game video to choose what to watch. Area saved per casino/game. Recorded rounds use your PC date and time.</p>
+            <div class="screen-actions"><label class="ghost btn">Test screenshot<input id="screenImage" type="file" accept="image/png,image/jpeg,image/webp" hidden /></label><button id="screenSave" disabled>Record reviewed screenshot</button><button id="screenDefaults">Reset regions</button></div>
+            <details><summary>Advanced reading regions</summary><label for="screenField">Adjust region</label> <select id="screenField"></select><p class="muted small">Optional: adjust a card, dice, result or wager region by dragging on the preview. Wager regions must show your actual stake with currency.</p></details>
+            <canvas id="screenPreview" width="640" height="1" aria-label="Captured screen; drag to adjust selected region"></canvas>
+            <p class="muted small">Reads completed rounds only. Unclear reads wait. Missing wagers remain unknown. No bets are placed.</p>
+          </details>
+        </div></div>
+      </details>
+      <button id="optionsToggle" class="ghost" popovertarget="optionsMenu">Options</button>
     </div>
   </header>
 
@@ -48,6 +59,39 @@
     </section>
 
     <section class="right">
+      <div class="card stats">
+        <div class="stats-head">
+          <h3>Strategy simulation</h3>
+          <div id="scopeSeg" class="seg"></div>
+        </div>
+        <div id="statGrid" class="stat-grid"></div>
+        <div id="observedWagers" class="muted small"></div>
+        <div id="stepBars"></div>
+        <div id="extra"></div>
+        <div class="breakdown-head">
+          <h4>Breakdown</h4>
+          <div id="bdSeg" class="seg small"></div>
+        </div>
+        <div class="table-wrap"><table id="breakdown"></table></div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="screenAreaDialog" class="watch-dialog" aria-labelledby="screenAreaTitle" aria-describedby="screenAreaHint">
+    <div class="options-head"><h2 id="screenAreaTitle">Draw watch area</h2><button id="screenAreaCancel" autofocus>Cancel</button></div>
+    <p id="screenAreaHint">Drag around the whole game video. Recording resumes when you release.</p>
+    <canvas id="screenAreaPreview" width="640" height="1" aria-label="Drag a rectangle around the game video"></canvas>
+  </dialog>
+
+  <div id="optionsMenu" class="options-panel" popover="auto" role="dialog" aria-labelledby="optionsTitle">
+    <div class="options-head"><h2 id="optionsTitle">Options</h2><button id="optionsClose" popovertarget="optionsMenu" popovertargetaction="hide" autofocus>Close</button></div>
+    <div class="options-content">
+      <div class="card"><h3>Session &amp; backups</h3><div class="data-actions">
+      <button id="newSession" class="ghost">New session</button>
+      <button id="export" class="ghost" title="Download a JSON backup">Export</button>
+      <label class="ghost btn" title="Restore from a JSON backup">Import<input id="import" type="file" accept="application/json" hidden /></label>
+      <button id="resetAll" class="ghost" title="Clear all saved data and start fresh">Reset data</button>
+      </div></div>
       <div class="card settings">
         <div class="settings-head">
           <h3>Settings</h3>
@@ -60,24 +104,12 @@
           <label>Payout</label><input id="payout" type="number" min="0" step="0.01" title="Win pays this × stake (1 = even money)" />
         </div>
         <div class="row"><label>Wait after bust</label><div id="waitSeg" class="seg"></div></div>
+        <div class="row"><label>Wait after win</label><div id="waitWinSeg" class="seg"></div></div>
+        <div class="row"><label>Delay after factor</label><div id="waitBetSeg" class="seg"></div></div>
         <div class="row"><label>Recovery mode</label><div id="recSeg" class="seg"></div></div>
+        <label class="audio-setting"><input id="audioFeedback" type="checkbox" /> Spoken roll and bet advice</label>
         <div id="recNotes" class="rec-notes"></div>
         <div class="muted small" id="cfgNote"></div>
-      </div>
-
-      <div class="card stats">
-        <div class="stats-head">
-          <h3>Stats</h3>
-          <div id="scopeSeg" class="seg"></div>
-        </div>
-        <div id="statGrid" class="stat-grid"></div>
-        <div id="stepBars"></div>
-        <div id="extra"></div>
-        <div class="breakdown-head">
-          <h4>Breakdown</h4>
-          <div id="bdSeg" class="seg small"></div>
-        </div>
-        <div class="table-wrap"><table id="breakdown"></table></div>
       </div>
 
       <div class="card insights">
@@ -87,8 +119,8 @@
         </div>
         <div id="insightContent"></div>
       </div>
-    </section>
-  </main>
+    </div>
+  </div>
 
   <div id="toast" class="toast"></div>
 
@@ -98,6 +130,10 @@
   <script src="js/games/kickoff.js"></script>
   <script src="js/voice.js"></script>
   <script src="js/data.js"></script>
+  <script src="js/vision.js"></script>
+  <script src="js/capture.js"></script>
+  <script src="js/screen.js"></script>
+  <script src="js/history.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

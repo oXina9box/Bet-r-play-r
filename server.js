@@ -4,12 +4,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { validate } = require('./js/data');
+const { decodeImages, createOCR } = require('./ocr');
 const PORT = 47615;
 const ASSETS = {
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/index.html': ['index.html', 'text/html; charset=utf-8'],
   '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
-  ...Object.fromEntries(['data', 'app', 'engine', 'voice', 'games/sicbo', 'games/teenpatti', 'games/kickoff']
+  ...Object.fromEntries(['data', 'app', 'history', 'engine', 'voice', 'vision', 'capture', 'screen', 'games/sicbo', 'games/teenpatti', 'games/kickoff']
     .map(name => [`/js/${name}.js`, [`js/${name}.js`, 'text/javascript; charset=utf-8']])),
 };
 const HEADERS = {
@@ -25,7 +26,8 @@ function write(file, body) {
   finally { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); }
 }
 
-function createServer({ dataDir = path.join(__dirname, 'data'), maxBodyBytes = 10 * 1024 * 1024, requestLimit = 1200 } = {}) {
+function createServer({ dataDir = path.join(__dirname, 'data'), maxBodyBytes = 10 * 1024 * 1024, requestLimit = 1200, ocr = createOCR() } = {}) {
+  let recognizing = false;
   const file = path.join(dataDir, 'betrplayr.json');
   const backups = path.join(dataDir, 'backups');
   const reply = (res, status, body = '', type = 'text/plain; charset=utf-8') => {
@@ -56,7 +58,18 @@ function createServer({ dataDir = path.join(__dirname, 'data'), maxBodyBytes = 1
         if (!res.writableEnded) reply(res, 413, 'Backup too large');
       } else chunks.push(chunk);
     });
-    req.on('end', () => { if (!res.writableEnded) persist(res, req.url, Buffer.concat(chunks).toString('utf8')); });
+    req.on('end', async () => {
+      if (res.writableEnded) return;
+      const text = Buffer.concat(chunks).toString('utf8');
+      if (req.url !== '/ocr') return persist(res, req.url, text);
+      let images;
+      try { images = decodeImages(text); } catch { return reply(res, 400, 'Invalid OCR images'); }
+      if (recognizing) return reply(res, 429, 'OCR busy; retry shortly');
+      recognizing = true;
+      try { reply(res, 200, JSON.stringify(await ocr.recognize(images)), 'application/json'); }
+      catch { reply(res, 503, 'Local OCR unavailable. Run npm install and retry.'); }
+      finally { recognizing = false; }
+    });
     req.on('error', () => { if (!res.writableEnded) reply(res, 400, 'Invalid request'); });
   }
   let requests = 0;
@@ -78,7 +91,7 @@ function createServer({ dataDir = path.join(__dirname, 'data'), maxBodyBytes = 1
         return reply(res, 200, body, 'application/json');
       } catch { return reply(res, 500, 'Unable to read data'); }
     }
-    if (req.method === 'POST' && ['/data', '/snapshot'].includes(req.url)) return receive(req, res);
+    if (req.method === 'POST' && ['/data', '/snapshot', '/ocr'].includes(req.url)) return receive(req, res);
     if (req.method === 'GET' && Object.hasOwn(ASSETS, req.url)) {
       const [asset, type] = ASSETS[req.url];
       try { return reply(res, 200, fs.readFileSync(path.join(__dirname, asset)), type); }
@@ -88,12 +101,24 @@ function createServer({ dataDir = path.join(__dirname, 'data'), maxBodyBytes = 1
   });
   server.requestTimeout = 30000;
   server.headersTimeout = 10000;
+  server.on('close', () => { ocr.close?.().catch(() => {}); });
   return server;
 }
 
-module.exports = { createServer };
+function parsePort(value = PORT) {
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new RangeError('Port must be an integer from 1024 to 65535');
+  return port;
+}
+
+module.exports = { createServer, parsePort };
 if (require.main === module) {
-  const server = createServer();
-  server.on('error', err => { console.error(`Unable to start Bet-R Play-R: ${err.code || 'server error'}`); process.exitCode = 1; });
-  server.listen(PORT, '127.0.0.1', () => console.log(`Bet-R Play-R on http://127.0.0.1:${PORT}/`));
+  let port;
+  try { port = parsePort(process.argv.find(arg => arg.startsWith('--port='))?.slice(7)); }
+  catch (err) { console.error(err.message); process.exitCode = 1; }
+  if (port !== undefined) {
+    const server = createServer();
+    server.on('error', err => { console.error(`Unable to start Bet-R Play-R: ${err.code || 'server error'}`); process.exitCode = 1; });
+    server.listen(port, '127.0.0.1', () => console.log(`Bet-R Play-R on http://127.0.0.1:${port}/`));
+  }
 }

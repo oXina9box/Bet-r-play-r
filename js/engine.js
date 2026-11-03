@@ -112,7 +112,7 @@
     }
     const mult = baseMult * recMult;
     return {
-      side: set.plan[step],
+      side: set.plan[step] || continuationSide(set.pattern, set.factor, step),
       step,
       of: set.plan.length,
       mult,
@@ -121,7 +121,19 @@
       ladderLevel: set.ladderLevel,
       amount: mult * cfg.unit,
       recovery: set.recovery || null,
+      continuation: !!set.continuing,
     };
+  }
+
+  function continuationSide(pattern, factor, step) {
+    const repeatSide = pattern[(step + 1) % pattern.length] === pattern[0] ? factor : opp(factor);
+    return opp(repeatSide);
+  }
+
+  function continueSet(set, ladderLevel) {
+    const extra = Array.from({ length: 4 }, (_, i) => continuationSide(set.pattern, set.factor, set.plan.length + i));
+    return { ...set, plan: [...set.plan, ...extra], step: set.plan.length, playedMults: [...set.playedMults],
+      ladderLevel, delayLeft: 0, continuing: true };
   }
 
   /**
@@ -135,6 +147,8 @@
     let set = null;
     let setNo = 0;
     let cooldown = 0;
+    let cooldownReason = 'bust';
+    let continuation = null;
     let recoveryState = null;
     let ladderLevel = 0;
 
@@ -152,7 +166,36 @@
         if (!side) { r.role = 'tie'; continue; } // no prior winner this session: ignore
       }
 
+      if (!set && continuation) {
+        const expected = betFor(continuation, continuation.step);
+        const confirmed = e.wager?.status === 'observed' && e.wager.bets.some(b => b.market === expected.side && b.amount > 0);
+        if (confirmed) { set = continuation; continuation = null; cooldown = 0; }
+        else if (cooldown === 0) continuation = null;
+      }
+
       if (set) {
+        if (set.delayLeft > 0) {
+          const firstBet = betFor(set, set.step);
+          r.setNo = set.no;
+          if (!push && !e.lossAll && side === firstBet.side) {
+            r.role = 'factor-break';
+            r.setEnd = 'delay-break';
+            r.setNo = set.no;
+            r.pattern = abstract(set.pattern);
+            r.pnl = 0;
+            seq.length = 0;
+            set = null;
+            recoveryState = null;
+            ladderLevel = 0;
+            cooldown = 0;
+            continue;
+          }
+          r.role = 'factor-wait';
+          r.delayLeft = set.delayLeft;
+          set.delayLeft--;
+          seq.push(side);
+          continue;
+        }
         const bet = betFor(set, set.step);
         r.role = 'bet';
         r.bet = bet;
@@ -174,6 +217,8 @@
           if (set.cfg.prog === 'fib_ladder') {
             ladderLevel = Math.max(0, set.ladderLevel - set.cfg.fibDrop);
           }
+          cooldown = set.cfg.waitWin || 0;
+          cooldownReason = 'win';
           set = null;
         } else {
           if (!push && set.cfg.prog === 'fib_ladder') {
@@ -187,7 +232,9 @@
             r.factor = set.factor;
             r.plan = set.plan.slice();
             r.setCfg = Object.assign({}, set.cfg);
+            continuation = continueSet(set, ladderLevel);
             cooldown = (set.cfg && set.cfg.waitBust != null) ? set.cfg.waitBust : (curCfg.waitBust || 0);
+            cooldownReason = 'bust';
 
             // If recovery was already active and busted, reset it to protect bankroll
             if (set.recovery) {
@@ -222,6 +269,7 @@
       if (cooldown > 0) {
         r.role = 'cooldown';
         r.cooldownLeft = cooldown;
+        r.cooldownReason = cooldownReason;
         cooldown--;
         seq.push(side);
         continue;
@@ -259,6 +307,7 @@
           ladderLevel,
           recMult,
           recovery: recInfo,
+          delayLeft: setCfg.waitBet || 0,
         };
         r.role = 'factor';
         r.setNo = set.no;
@@ -300,7 +349,8 @@
           : progObj.mult(curLvl + i - set.step) * (set.recMult || 1))
         : set.plan.map((_, i) => progObj.mult(i) * (set.recMult || 1));
       next = Object.assign({
-        phase: 'bet',
+        phase: set.delayLeft > 0 ? 'factor-delay' : 'bet',
+        left: set.delayLeft,
         pattern: abstract(set.pattern),
         factor: set.factor,
         plan: set.plan,
@@ -308,8 +358,13 @@
         recovery: set.recovery,
         ladder: ladderInfo,
       }, betFor(set, set.step));
+    } else if (continuation) {
+      next = Object.assign({ phase: 'continue', optional: true, cooldownLeft: cooldown,
+        pattern: abstract(continuation.pattern), factor: continuation.factor, plan: continuation.plan,
+        mults: continuation.plan.map((_, i) => (PROGRESSIONS[continuation.cfg.prog] || PROGRESSIONS.double).mult(i) * (continuation.recMult || 1)),
+        recovery: continuation.recovery }, betFor(continuation, continuation.step));
     } else if (cooldown > 0) {
-      next = { phase: 'cooldown', left: cooldown, have: seq.length, need: curCfg.n, recovery: recInfo, ladder: ladderInfo };
+      next = { phase: 'cooldown', left: cooldown, reason: cooldownReason, have: seq.length, need: curCfg.n, recovery: recInfo, ladder: ladderInfo };
     } else if (seq.length >= curCfg.n) {
       next = { phase: 'factor', pattern: abstract(seq.slice(-curCfg.n)), raw: seq.slice(-curCfg.n), recovery: recInfo, ladder: ladderInfo };
     } else {

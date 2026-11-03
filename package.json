@@ -1,0 +1,19 @@
+{
+  "name": "bet-r-play-r",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js",
+    "test:e2e": "node test/server.test.js && node test/browser.test.js",
+    "audit:data": "node scripts/audit-data.js",
+    "generate:tracker": "node scripts/generate-tracker.js"
+  },
+  "dependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
+    "tesseract.js": "^7.0.0"
+  },
+  "devDependencies": {
+    "exceljs": "^4.4.0"
+  }
+}

@@ -34,7 +34,7 @@ function boot({ cache = null, get = async () => ({ ok: true, json: async () => f
   };
   context.window = context;
   vm.createContext(context);
-  for (const file of ['js/engine.js', 'js/games/sicbo.js', 'js/games/teenpatti.js', 'js/games/kickoff.js', 'js/voice.js']) {
+  for (const file of ['js/history.js', 'js/engine.js', 'js/games/sicbo.js', 'js/games/teenpatti.js', 'js/games/kickoff.js', 'js/voice.js']) {
     vm.runInContext(fs.readFileSync(file, 'utf8'), context, { filename: path.resolve(file) });
   }
   context.AppData = require('../js/data.js');
@@ -54,6 +54,8 @@ function boot({ cache = null, get = async () => ({ ok: true, json: async () => f
 }
 
 (async () => {
+  const keyboard = boot(); await tick();
+  assert.equal(keyboard.key('6').prevented, true, 'recorder number shortcuts suppress browser quick-find');
   let release;
   const pending = new Promise((resolve) => { release = resolve; });
   const slow = boot({ get: () => pending });

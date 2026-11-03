@@ -3,7 +3,7 @@
   const { PROGRESSIONS, GROUP_SIZES, run, stats, analyzeBusts, simulateDelays, recoveryOptions } = window.Engine;
   const GAMES = window.Games;
   const KEY = 'betrplayr.v1';
-  const DEFAULT_CFG = { n: 5, prog: 'double', unit: 1, payout: 1, waitBust: 0, recovery: 0 };
+  const DEFAULT_CFG = { n: 5, prog: 'double', unit: 1, payout: 1, waitBust: 0, waitWin: 1, waitBet: 0, recovery: 0 };
   const $ = (id) => document.getElementById(id);
   const fmt = (x) => (Math.round(x * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const signed = (x) => (x > 0 ? '+' : x < 0 ? '−' : '') + fmt(Math.abs(x));
@@ -89,7 +89,9 @@
   let bdMode = 'day';
   let insightTab = 'bust';
   let noBetArmed = false;
+  let spokenSignature = '';
   let view; // last computed
+  let screenReader = null;
 
   function compute() {
     const b = book(), g = game();
@@ -155,6 +157,7 @@
     if (!ready) return;
     const b = book();
     if (!b.entries.some((e) => e.s === curSession().id)) return toast('Current session is already empty');
+    screenReader?.stop('New session selected; click Start to record');
     b.sessions.push({ id: uid(), start: Date.now() });
     pending = game().emptyPending();
     save(); render();
@@ -163,12 +166,14 @@
 
   function switchTo(site, gameId) {
     if (!ready) return;
+    screenReader?.stop('Casino/game changed; click Start to record');
     game().emptyPending(); // Cancel an active card timer before leaving its game.
     data.cur = { site, game: gameId };
     pending = game().emptyPending();
     save();
     renderPad();
     render();
+    screenReader?.refresh();
   }
 
   // ---------- render ----------
@@ -244,7 +249,12 @@
     }
 
     let h;
-    if (nx.phase === 'bet') {
+    if (nx.phase === 'factor-delay') {
+      h = `<div class="phase">FACTOR FOUND · WAITING</div>
+           <div class="bet-side wait">Wait ${nx.left}</div>
+           <div class="bet-amt"><span>watching ${g.entryName.toLowerCase()}s; a pattern break resets the sequence</span></div>
+           <div class="pattern">Fading <b>${nx.pattern}</b> · factor ${sideTag(nx.factor)}</div>`;
+    } else if (nx.phase === 'bet') {
       const plan = nx.plan.map((s, i) => `<div class="plan-step ${i < nx.step ? 'done' : i === nx.step ? 'now' : ''}">${sideTag(s)}<em>${nx.mults[i]}x</em></div>`).join('');
       h = `<div class="phase">BET ${nx.step + 1} of ${nx.of}</div>
            <div class="bet-side ${nx.side === 'A' ? 'a' : 'b'}">${g.sides[nx.side].label}</div>
@@ -253,7 +263,8 @@
            <div class="pattern">Fading <b>${nx.pattern}</b> · factor ${sideTag(nx.factor)}</div>`;
     } else if (nx.phase === 'cooldown') {
       const unitWord = nx.left === 1 ? g.entryName.toLowerCase() : g.entryName.toLowerCase() + 's';
-      h = `<div class="phase">COOLDOWN AFTER BUST</div>
+      const reason = nx.reason === 'win' ? 'WIN' : 'BUST';
+      h = `<div class="phase">COOLDOWN AFTER ${reason}</div>
            <div class="bet-side wait">Wait ${nx.left}</div>
            <div class="bet-amt"><span>sitting out ${nx.left} ${unitWord} before starting a new pattern</span></div>`;
     } else if (nx.phase === 'factor') {
@@ -270,21 +281,33 @@
     $('next').innerHTML = recBanner + alertBanner + h + ladderBadge + lastLine;
   }
 
-  function renderStrip() {
+  function historyChip(r) {
     const g = game();
-    const rows = view.rows.slice(-80).reverse();
-    $('strip').innerHTML = rows.map((r) => {
-      const c = g.chip(r.raw, r.o);
-      const sideCls = r.side === 'A' ? 'a' : r.side === 'B' ? 'b' : 't';
-      const res = r.noBet ? '<i class="res nb">Ø</i>' : r.result === 'win' ? '<i class="res win">✓</i>' : r.result === 'loss' ? '<i class="res loss">✗</i>' : r.push ? '<i class="res push">P</i>' : '';
-      const role = r.role === 'factor' ? '<i class="role">F</i>' : r.role === 'cooldown' ? '<i class="role cd">CD</i>' : '';
-      const end = r.setEnd === 'bust' ? ' bust' : r.setEnd === 'won' ? ' won' : '';
-      const as = r.push && r.effSide ? ` as ${g.sides[r.effSide].label}` : '';
-      if (r.push && r.effSide) c.sub = '→' + g.sides[r.effSide].short;
-      const nbText = r.noBet ? ' [NO BET] ' : '';
-      const recText = r.recovery ? ` [Recovery ${r.recovery.currentSet}/${r.recovery.totalSets}] ` : '';
-      const tip = `${nbText}${recText}` + (r.push ? `Tie, played${as || ' as nothing (no prior winner)'} · ` : '') + (r.role === 'factor' ? `Factor · fading ${r.pattern}` : r.role === 'cooldown' ? `Cooldown after bust (${r.cooldownLeft} remaining)` : r.bet ? `Bet ${g.sides[r.bet.side].label} ${fmt(r.bet.amount)} → ${r.result}` : '') + ' · double-click to toggle No Bet';
-      return `<div class="chip ${sideCls}${r.lossAll ? ' special' : ''}${end}${r.noBet ? ' no-bet' : ''}" data-entry-idx="${r.entryIdx}" title="${escapeHTML(tip)}">${role}${res}<b>${escapeHTML(c.main)}</b><small>${escapeHTML(c.sub)}</small>${c.flag ? `<i class="flag">${escapeHTML(c.flag)}</i>` : ''}</div>`;
+    const c = g.chip(r.raw, r.o);
+    const sideCls = r.side === 'A' ? 'a' : r.side === 'B' ? 'b' : 't';
+    const res = r.noBet ? '<i class="res nb">Ø</i>' : r.result === 'win' ? '<i class="res win">✓</i>' : r.result === 'loss' ? '<i class="res loss">✗</i>' : r.push ? '<i class="res push">P</i>' : '';
+    const role = r.role === 'factor' ? '<i class="role">F</i>' : r.role === 'factor-wait' ? '<i class="role cd">W</i>' : r.role === 'factor-break' ? '<i class="role cd">↻</i>' : r.role === 'cooldown' ? '<i class="role cd">CD</i>' : '';
+    const end = r.setEnd === 'bust' ? ' bust' : r.setEnd === 'won' ? ' won' : '';
+    const as = r.push && r.effSide ? ` as ${g.sides[r.effSide].label}` : '';
+    if (r.push && r.effSide) c.sub = '→' + g.sides[r.effSide].short;
+    const nbText = r.noBet ? ' [NO BET] ' : '';
+    const recText = r.recovery ? ` [Recovery ${r.recovery.currentSet}/${r.recovery.totalSets}] ` : '';
+    const tip = `${nbText}${recText}` + (r.push ? `Tie, played${as || ' as nothing (no prior winner)'} · ` : '') + (r.role === 'factor' ? `Factor · fading ${r.pattern}` : r.role === 'factor-wait' ? `Delayed bet wait (${r.delayLeft} remaining)` : r.role === 'factor-break' ? 'Pattern broke during delay; sequence reset' : r.role === 'cooldown' ? `Cooldown after ${r.cooldownReason || 'bust'} (${r.cooldownLeft} remaining)` : r.bet ? `Bet ${g.sides[r.bet.side].label} ${fmt(r.bet.amount)} → ${r.result}` : '') + ' · double-click to toggle No Bet';
+    return `<div class="chip ${sideCls}${r.lossAll ? ' special' : ''}${end}${r.noBet ? ' no-bet' : ''}" data-entry-idx="${r.entryIdx}" title="${escapeHTML(tip)}">${role}${res}<b>${escapeHTML(c.main)}</b><small>${escapeHTML(c.sub)}</small>${c.flag ? `<i class="flag">${escapeHTML(c.flag)}</i>` : ''}</div>`;
+  }
+
+
+  function renderStrip() {
+    const groups = window.History.groupRows(view.rows).slice(-40).reverse();
+    $('strip').innerHTML = groups.map(group => {
+      const title = group.kind === 'set' ? `Set ${group.setNo} · Group ${group.size} · ${group.status}`
+        : group.kind === 'cooldown' ? 'Cooldown' : 'Collecting';
+      const bottom = group.factor ? [group.factor, ...(group.waits || []), ...group.bets] : [];
+      return `<div class="history-group" data-size="${group.size || ''}" data-set="${group.setNo || ''}">
+        <div class="history-title">${escapeHTML(title)}</div>
+        <div class="history-pattern">${group.pattern.map(historyChip).join('')}</div>
+        ${bottom.length ? `<div class="history-label">Factor, waits &amp; played results</div><div class="history-played">${bottom.map(historyChip).join('')}</div>` : ''}
+      </div>`;
     }).join('') || '<div class="muted">No entries yet — start tapping.</div>';
   }
 
@@ -341,7 +364,10 @@
     seg($('progSeg'), Object.entries(PROGRESSIONS).map(([k, p]) => [k, seqLabel(k, b.cfg.n - 1)]), b.cfg.prog, (v) => setCfg('prog', v));
     if (document.activeElement !== $('unit')) $('unit').value = b.cfg.unit;
     if (document.activeElement !== $('payout')) $('payout').value = b.cfg.payout;
+    $('audioFeedback').checked = data.audioFeedback === true;
     seg($('waitSeg'), [[0, '0 (none)'], [1, '1 roll'], [2, '2 rolls'], [3, '3 rolls']], b.cfg.waitBust || 0, (v) => setCfg('waitBust', Number(v)));
+    seg($('waitWinSeg'), [[0, '0'], [1, '1 (standard)'], [2, '2'], [3, '3'], [4, '4']], b.cfg.waitWin || 0, (v) => setCfg('waitWin', Number(v)));
+    seg($('waitBetSeg'), [[0, '0 (none)'], [1, '1'], [2, '2'], [3, '3']], b.cfg.waitBet || 0, (v) => setCfg('waitBet', Number(v)));
     seg($('recSeg'), [
       [0, 'Off (Flat)'],
       [4, '4 Sets'],
@@ -455,6 +481,10 @@
       ['Bust streak', `${s.bustStreak} <small>max ${s.maxBustStreak}</small>`],
     ];
     $('statGrid').innerHTML = tiles.map(([k, v, c]) => `<div class="tile ${c || ''}"><label>${k}</label><b>${v}</b></div>`).join('');
+    const observed = rows.filter(r => r.wager?.status === 'observed');
+    const currencies = [...new Set(observed.map(r => r.wager.currency))];
+    const amounts = currencies.map(c => `${c} ${fmt(observed.filter(r => r.wager.currency === c).reduce((sum, r) => sum + r.wager.bets.reduce((n, b) => n + b.amount, 0), 0))}`);
+    $('observedWagers').textContent = `Observed wagers: ${amounts.join(' / ') || 'none read'} · ${rows.filter(r => r.screen && r.wager?.status !== 'observed').length} screen rounds with unknown wagers. Net above uses strategy settings.`;
 
     const maxStep = Math.max(1, ...s.byStep);
     const used = s.byStep.reduce((m, x, i) => (x ? i + 1 : m), book().cfg.n - 1);
@@ -591,6 +621,7 @@
   }
 
   async function replaceData(next, backupKey) {
+    screenReader?.stop('Data changed; click Start to record');
     const replacement = validate({ ...next, savedAt: Date.now() });
     const prev = JSON.stringify(data);
     // Both browser writes must succeed before replacing live data or scheduling a disk write.
@@ -616,6 +647,18 @@
 
   // ---------- wiring ----------
   function wire() {
+  if (window.ScreenReader) screenReader = window.ScreenReader.init({
+    getContext: () => ({ site: data.cur.site, game: game(), session: curSession().id, entries: book().entries }),
+    record: (observation, bound) => {
+      if (!ready || !bound || bound.site !== data.cur.site || bound.game !== data.cur.game || bound.session !== curSession().id) return false;
+      const key = `${data.cur.site}:${data.cur.game}`, b = book();
+      if (b.entries.some(e => e.screen?.round === observation.screen.round)) return false;
+      const entry = { t: Date.now(), s: curSession().id, cfg: { ...b.cfg }, ...observation, ...(noBetArmed ? { nb: true } : {}) };
+      try { data = validate({ ...data, books: { ...data.books, [key]: { ...b, entries: [...b.entries, entry] } } }); }
+      catch { toast('Screen reading invalid; nothing recorded'); return false; }
+      pending = game().emptyPending(); noBetArmed = false; save(); render(); return true;
+    },
+  });
   $('pad').addEventListener('click', (e) => { const b = e.target.closest('[data-key]'); if (b) press(b.dataset.key); });
   $('insightContent').addEventListener('click', (e) => {
     const btn = e.target.closest('.apply-btn[data-delay]');
@@ -789,7 +832,7 @@
   }
 
   document.addEventListener('keydown', (e) => {
-    if (!ready) return;
+    if (!ready || $('optionsMenu')?.matches?.(':popover-open') || $('screenAreaDialog')?.open) return;
     if (e.target.matches?.('input, select, textarea') || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === 'Backspace') { e.preventDefault(); undo(); }
     else if (e.key === 'Escape') clearPending();
@@ -801,6 +844,7 @@
       toggleVoice();
     }
     else if (e.key.toLowerCase() === 'x') { e.preventDefault(); toggleNoBet(); }
+    else if (/^[0-9]$/.test(e.key)) { e.preventDefault(); press(e.key); }
     else if (e.key.length === 1) press(e.key.toLowerCase());
   });
   }
@@ -811,7 +855,8 @@
   syncFromFile().finally(() => {
     pending = game().emptyPending();
     ready = true;
-    renderPad(); render(); renderSaveStatus(); wire();
+    renderPad(); render(); renderSaveStatus();
     document.querySelectorAll('button, input, select').forEach((el) => { el.disabled = false; });
+    wire();
   });
 })();
