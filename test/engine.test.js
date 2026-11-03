@@ -44,7 +44,7 @@ assert.strictEqual(r.next.pattern, 'XYXXX');
 r = E.run(entries([11, 14, 9, 14, 6, 13, 12, 8, 12, 9]), cfg);
 assert.strictEqual(r.rows[9].setEnd, 'bust');
 assert.strictEqual(r.rows.reduce((a, x) => a + x.pnl, 0), -15);
-assert.strictEqual(r.next.phase, 'factor');
+assert.strictEqual(r.next.phase, 'continue');
 
 // Triple loses the bet but counts in pattern: bet S on roll 7, roll is 2-2-2 (total 6, Small) -> loss
 r = E.run(entries([11, 14, 9, 14, 6, 13, [2, 2, 2]]), cfg);
@@ -166,6 +166,18 @@ assert.equal(broken.rows[6].role, 'factor-break');
 assert.equal(broken.rows[6].pnl, 0);
 assert.equal(broken.rows[6].setEnd, 'delay-break');
 assert.equal(broken.rows[7].role, 'collect', 'a broken pattern clears state and starts collection fresh');
+
+// A bust displays an optional next step; visible matching stake resumes the same run.
+const atBust = entries(bustSeq.slice(0, 10));
+const extension = E.analyzeBusts(rNoDelay.rows).busts[0].extraSteps[0];
+assert.equal(E.run(atBust, cfg).next.phase, 'continue');
+const resumed = E.run([...atBust, { side: extension.betSide, cfg, wager: {
+  status: 'observed', currency: 'GC', bets: [{ market: extension.betSide, amount: extension.amount }],
+} }], cfg);
+assert.equal(resumed.rows.at(-1).role, 'bet');
+assert.equal(resumed.rows.at(-1).bet.continuation, true);
+assert.equal(resumed.rows.at(-1).setNo, resumed.rows[9].setNo);
+assert.equal(resumed.rows.at(-1).bet.amount, extension.amount);
 
 // Post-bust analysis: check if bust hit on extra Bet 5 (roll 11 was 6, which is Small -> hit!)
 const bustAnalysis = E.analyzeBusts(rNoDelay.rows);
