@@ -1,16 +1,11 @@
 /**
- * Bet-R Play-R: Betting Bankroll Sprint Tracker Spreadsheet Generator (Enhanced v2.0)
- * Generates professional Excel (.xlsx) and LibreOffice Calc (.ods) workbooks.
+ * Bet-R Play-R: Betting Bankroll Sprint Tracker Spreadsheet Generator (Enhanced v3.0)
  *
- * Features:
- * - 4-way Dual Growth Target Engine (% per session, % per day, dollar profit, final bankroll)
- * - Automatic Calendar Day calculation from start and target end dates
- * - Session Performance Log with Day #, Safe Stake Cap (5%), Target Curve, and 4-state Target Status
- * - Deep Risk KPIs: Peak Bankroll, Max Drawdown ($ and %), Profit Factor, Win-Loss Record
- * - In-cell Unicode Visual Progress Bar
- * - Native Excel Conditional Formatting (Green/Red highlighting)
- * - Multi-Sprint Portfolio Dashboard linking Sprint 1 ($100) and Sprint 2 ($250)
- * - Growth Target Matrix with Staking Unit & Risk Management Guide
+ * Game Classification Architecture:
+ * - Each session row is classified by exactly ONE game type (via strict dropdown data validation).
+ * - A sprint sheet can be single-game dedicated (100% Sic Bo, etc.) OR multi-game (mixing Sic Bo, Teen Patti, Kickoff, Sports, etc.).
+ * - Per-Game Performance Breakdown table on every sprint tab calculates sessions, staked, net P/L, win rate, and ROI per game.
+ * - Multi-Sprint Dashboard aggregates portfolio results across all sprints by game type.
  */
 const path = require('node:path');
 const { execSync } = require('node:child_process');
@@ -30,6 +25,8 @@ const COLORS = {
   kpiBorder: 'FF10B981',     // Emerald 500
   statsHeaderBg: 'FF1E3A8A', // Blue 900
   statsBg: 'FFEFF6FF',       // Blue 50
+  gameHeaderBg: 'FF4C1D95',  // Purple 900
+  gameBg: 'FFF5F3FF',        // Purple 50
   inputFill: 'FFEFF6FF',     // Sky 50 (Editable input cell)
   inputBorder: 'FF60A5FA',   // Sky 400
   tableHeaderBg: 'FF1E293B', // Slate 800
@@ -61,6 +58,19 @@ const BORDER_INPUT = {
   bottom: { style: 'medium', color: { argb: COLORS.inputBorder } },
   right: { style: 'medium', color: { argb: COLORS.inputBorder } },
 };
+
+const GAME_TYPES = [
+  'Sic Bo',
+  'Teen Patti',
+  'The Kickoff',
+  'Baccarat',
+  'Blackjack',
+  'Roulette',
+  'Sports',
+  'Other',
+];
+
+const GAME_DROPDOWN_FORMULA = `"${GAME_TYPES.join(',')}"`;
 
 function applyCellStyles(cell, {
   val,
@@ -105,7 +115,10 @@ function applyCellStyles(cell, {
 }
 
 /**
- * Builds a Sprint Tab with 4-way growth target engine, pacing KPIs, and 50 session rows.
+ * Builds a Sprint Tab with:
+ * - 4-way Target Engine (Rows 3-13)
+ * - Per-Game Breakdown & Game Discipline Insights (Rows 15-25)
+ * - 50-Row Session Performance Log with 1-Game Classification per session (Rows 28-78)
  */
 function buildSprintSheet(wb, sheetName, opts = {}) {
   const {
@@ -127,30 +140,31 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
     views: [{ showGridLines: true, state: 'normal' }],
   });
 
-  // 18 Column Widths (A to R)
+  // 19 Columns (A to S)
   ws.columns = [
     { width: 11 }, // A: Session #
     { width: 9 },  // B: Day #
     { width: 13 }, // C: Date
     { width: 10 }, // D: Time
-    { width: 26 }, // E: Game / Market / Sport
-    { width: 16 }, // F: Start Bankroll ($)
-    { width: 16 }, // G: Safe Stake Cap (5%)
-    { width: 17 }, // H: Benchmark Target ($)
-    { width: 15 }, // I: Target $ Gain
-    { width: 15 }, // J: Actual Stake ($)
-    { width: 16 }, // K: End Bankroll ($)
-    { width: 16 }, // L: Net P/L ($)
-    { width: 14 }, // M: Growth %
-    { width: 18 }, // N: Target Status
-    { width: 15 }, // O: Variance ($)
-    { width: 16 }, // P: Cumulative P/L ($)
-    { width: 14 }, // Q: Sprint ROI %
-    { width: 34 }, // R: Session Notes / Strategy
+    { width: 18 }, // E: Game Type (Dropdown)
+    { width: 26 }, // F: Market / Wager Details
+    { width: 16 }, // G: Start Bankroll ($)
+    { width: 16 }, // H: Safe Stake Cap (5%)
+    { width: 17 }, // I: Benchmark Target ($)
+    { width: 15 }, // J: Target $ Gain
+    { width: 15 }, // K: Actual Stake ($)
+    { width: 16 }, // L: End Bankroll ($)
+    { width: 16 }, // M: Net P/L ($)
+    { width: 14 }, // N: Growth %
+    { width: 18 }, // O: Target Status
+    { width: 15 }, // P: Variance ($)
+    { width: 16 }, // Q: Cumulative P/L ($)
+    { width: 14 }, // R: Sprint ROI %
+    { width: 34 }, // S: Session Notes / Strategy
   ];
 
   // Row 1: Title Banner
-  ws.mergeCells('A1:R1');
+  ws.mergeCells('A1:S1');
   applyCellStyles(ws.getCell('A1'), {
     val: title,
     font: { size: 14, bold: true, color: { argb: COLORS.headerText } },
@@ -160,10 +174,10 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
   });
   ws.getRow(1).height = 36;
 
-  // Row 2: Subtitle & Instructions
-  ws.mergeCells('A2:R2');
+  // Row 2: Subtitle
+  ws.mergeCells('A2:S2');
   applyCellStyles(ws.getCell('A2'), {
-    val: 'Dual Target Engine: Choose % target per session/day to equate dollar targets, OR choose dollar profit to solve backwards to required % per session/day.',
+    val: 'Game Classification: Each session is classified by exactly 1 game in Column E. Sheets can track 1 dedicated game or multiple mixed games with auto-breakdown.',
     font: { size: 9.5, italic: true, color: { argb: COLORS.textMuted } },
     fill: COLORS.zebraLight,
     alignment: { horizontal: 'left', indent: 1 },
@@ -171,18 +185,16 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
   });
   ws.getRow(2).height = 20;
 
-  // Row 3: 4 Section Headers Across the 18 Columns
-  // Block 1: Setup & Inputs (B3:D3)
+  // Row 3: 4 KPI / Goal Headers
   ws.mergeCells('B3:D3');
   applyCellStyles(ws.getCell('B3'), {
-    val: '⚙ SPRINT SETUP & TARGET CONFIG (INPUTS)',
+    val: '⚙ SPRINT SETUP & CONFIG (INPUTS)',
     font: { bold: true, size: 9.5, color: { argb: COLORS.headerText } },
     fill: COLORS.subHeaderBg,
     alignment: { horizontal: 'center' },
   });
 
-  // Block 2: Calculated Target Goals (F3:I3)
-  ws.mergeCells('F3:I3');
+  ws.mergeCells('F3:J3');
   applyCellStyles(ws.getCell('F3'), {
     val: '🎯 EQUATED TARGET GOALS (DUAL-ENGINE OUTPUT)',
     font: { bold: true, size: 9.5, color: { argb: COLORS.headerText } },
@@ -190,19 +202,17 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
     alignment: { horizontal: 'center' },
   });
 
-  // Block 3: Live Pacing & Drawdown (K3:O3)
-  ws.mergeCells('K3:O3');
-  applyCellStyles(ws.getCell('K3'), {
+  ws.mergeCells('L3:P3');
+  applyCellStyles(ws.getCell('L3'), {
     val: '📊 LIVE PERFORMANCE, PACING & DRAWDOWN',
     font: { bold: true, size: 9.5, color: { argb: COLORS.headerText } },
     fill: COLORS.kpiHeaderBg,
     alignment: { horizontal: 'center' },
   });
 
-  // Block 4: Win/Loss & Discipline Stats (P3:R3)
-  ws.mergeCells('P3:R3');
-  applyCellStyles(ws.getCell('P3'), {
-    val: '🏆 WIN/LOSS & DISCIPLINE STATS',
+  ws.mergeCells('R3:S3');
+  applyCellStyles(ws.getCell('R3'), {
+    val: '🏆 WIN/LOSS & PACING',
     font: { bold: true, size: 9.5, color: { argb: COLORS.headerText } },
     fill: COLORS.statsHeaderBg,
     alignment: { horizontal: 'center' },
@@ -222,15 +232,15 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
       fResult: 265.33,
       fFmt: '$#,##0.00',
       fBold: true,
-      kLabel: 'Current Bankroll ($)',
-      kFormula: 'IF(COUNT(K16:K65)>0, LOOKUP(2, 1/(K16:K65<>""), K16:K65), D4)',
-      kResult: sampleData.length > 0 ? sampleData[sampleData.length - 1].end : startingBankroll,
-      kFmt: '$#,##0.00',
-      kBold: true,
-      pLabel: 'Sessions Logged / Left',
-      pFormula: 'COUNT(K16:K65) & " / " & MAX(0, D7-COUNT(K16:K65))',
-      pResult: `${sampleData.length} / ${Math.max(0, horizonCount - sampleData.length)}`,
-      pFmt: '@',
+      lLabel: 'Current Bankroll ($)',
+      lFormula: 'IF(COUNT(L29:L78)>0, LOOKUP(2, 1/(L29:L78<>""), L29:L78), D4)',
+      lResult: sampleData.length > 0 ? sampleData[sampleData.length - 1].end : startingBankroll,
+      lFmt: '$#,##0.00',
+      lBold: true,
+      rLabel: 'Sessions Logged / Left',
+      rFormula: 'COUNT(L29:L78) & " / " & MAX(0, D7-COUNT(L29:L78))',
+      rResult: `${sampleData.length} / ${Math.max(0, horizonCount - sampleData.length)}`,
+      rFmt: '@',
     },
     {
       row: 5,
@@ -243,19 +253,19 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
       },
       bIsInput: true,
       fLabel: 'Target Total Profit ($)',
-      fFormula: 'I4-D4',
+      fFormula: 'J4-D4',
       fResult: 165.33,
       fFmt: '$#,##0.00',
       fBold: true,
-      kLabel: 'Current Net Profit / Loss ($)',
-      kFormula: 'N4-D4',
-      kResult: sampleData.length > 0 ? sampleData[sampleData.length - 1].end - startingBankroll : 0.0,
-      kFmt: '$#,##0.00;[Red]($#,##0.00);"-"',
-      kBold: true,
-      pLabel: 'Session Win / Loss Record',
-      pFormula: 'COUNTIF(L16:L65, ">0") & "W - " & COUNTIF(L16:L65, "<0") & "L"',
-      pResult: '4W - 1L',
-      pFmt: '@',
+      lLabel: 'Current Net Profit / Loss ($)',
+      lFormula: 'P4-D4',
+      lResult: sampleData.length > 0 ? sampleData[sampleData.length - 1].end - startingBankroll : 0.0,
+      lFmt: '$#,##0.00;[Red]($#,##0.00);"-"',
+      lBold: true,
+      rLabel: 'Win / Loss Record',
+      rFormula: 'COUNTIF(M29:M78, ">0") & "W - " & COUNTIF(M29:M78, "<0") & "L"',
+      rResult: '4W - 1L',
+      rFmt: '@',
     },
     {
       row: 6,
@@ -268,20 +278,20 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
       },
       bIsInput: true,
       fLabel: 'Target Total Growth %',
-      fFormula: '(I4-D4)/D4',
+      fFormula: '(J4-D4)/D4',
       fResult: 1.6533,
       fFmt: '0.00%',
       fBold: true,
-      kLabel: 'Current Sprint ROI %',
-      kFormula: '(N4-D4)/D4',
-      kResult: sampleData.length > 0 ? (sampleData[sampleData.length - 1].end - startingBankroll) / startingBankroll : 0.0,
-      kFmt: '+0.00%;-0.00%;0.00%',
-      kBold: true,
-      pLabel: 'Session Win Rate %',
-      pFormula: 'IF(COUNT(K16:K65)=0, 0, COUNTIF(L16:L65, ">0")/COUNT(K16:K65))',
-      pResult: sampleData.length > 0 ? 0.8 : 0.0,
-      pFmt: '0.0%',
-      pBold: true,
+      lLabel: 'Current Sprint ROI %',
+      lFormula: '(P4-D4)/D4',
+      lResult: sampleData.length > 0 ? (sampleData[sampleData.length - 1].end - startingBankroll) / startingBankroll : 0.0,
+      lFmt: '+0.00%;-0.00%;0.00%',
+      lBold: true,
+      rLabel: 'Session Win Rate %',
+      rFormula: 'IF(COUNT(L29:L78)=0, 0, COUNTIF(M29:M78, ">0")/COUNT(L29:L78))',
+      rResult: sampleData.length > 0 ? 0.8 : 0.0,
+      rFmt: '0.0%',
+      rBold: true,
     },
     {
       row: 7,
@@ -290,20 +300,20 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
       bFmt: '0',
       bIsInput: true,
       fLabel: 'Equated % per Session',
-      fFormula: 'IF(D5="% Target per Session", D9, IF(D8="Compounded", (I4/D4)^(1/D7)-1, (I4-D4)/(D4*D7)))',
+      fFormula: 'IF(D5="% Target per Session", D9, IF(D8="Compounded", (J4/D4)^(1/D7)-1, (J4-D4)/(D4*D7)))',
       fResult: 0.05,
       fFmt: '0.00%',
       fBold: true,
-      kLabel: 'Target Progress %',
-      kFormula: 'IF(I5=0, 0, (N4-D4)/I5)',
-      kResult: sampleData.length > 0 ? 0.1512 : 0.0,
-      kFmt: '0.00%',
-      kBold: true,
-      pLabel: 'Profit Factor (Wins / Losses)',
-      pFormula: 'IF(SUMIF(L16:L65, "<0")=0, "Undefeated", ROUND(ABS(SUMIF(L16:L65, ">0")/SUMIF(L16:L65, "<0")), 2))',
-      pResult: 8.14,
-      pFmt: '@',
-      pBold: true,
+      lLabel: 'Target Progress %',
+      lFormula: 'IF(J5=0, 0, (P4-D4)/J5)',
+      lResult: sampleData.length > 0 ? 0.1512 : 0.0,
+      lFmt: '0.00%',
+      lBold: true,
+      rLabel: 'Profit Factor',
+      rFormula: 'IF(SUMIF(M29:M78, "<0")=0, "Undefeated", ROUND(ABS(SUMIF(M29:M78, ">0")/SUMIF(M29:M78, "<0")), 2))',
+      rResult: 8.14,
+      rFmt: '@',
+      rBold: true,
     },
     {
       row: 8,
@@ -316,18 +326,18 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
       },
       bIsInput: true,
       fLabel: 'Equated % per Day',
-      fFormula: 'IF(D5="% Target per Day", D9, IF(D8="Compounded", (I4/D4)^(1/D13)-1, (I4-D4)/(D4*D13)))',
+      fFormula: 'IF(D5="% Target per Day", D9, IF(D8="Compounded", (J4/D4)^(1/D13)-1, (J4-D4)/(D4*D13)))',
       fResult: 0.05,
       fFmt: '0.00%',
       fBold: true,
-      kLabel: 'Goal Progress Bar',
-      kFormula: 'REPT("█", MIN(12, MAX(0, INT(N7*12)))) & REPT("░", 12 - MIN(12, MAX(0, INT(N7*12)))) & " " & TEXT(N7, "0.0%")',
-      kResult: sampleData.length > 0 ? '█░░░░░░░░░░░ 15.1%' : '░░░░░░░░░░░░ 0.0%',
-      kFmt: '@',
-      pLabel: 'Avg Profit on Wins ($)',
-      pFormula: 'IF(COUNTIF(L16:L65, ">0")=0, 0, SUMIF(L16:L65, ">0")/COUNTIF(L16:L65, ">0"))',
-      pResult: sampleData.length > 0 ? 7.13 : 0.0,
-      pFmt: '$#,##0.00',
+      lLabel: 'Goal Progress Bar',
+      lFormula: 'REPT("█", MIN(12, MAX(0, INT(P7*12)))) & REPT("░", 12 - MIN(12, MAX(0, INT(P7*12)))) & " " & TEXT(P7, "0.0%")',
+      lResult: sampleData.length > 0 ? '█░░░░░░░░░░░ 15.1%' : '░░░░░░░░░░░░ 0.0%',
+      lFmt: '@',
+      rLabel: 'Avg Profit on Wins ($)',
+      rFormula: 'IF(COUNTIF(M29:M78, ">0")=0, 0, SUMIF(M29:M78, ">0")/COUNTIF(M29:M78, ">0"))',
+      rResult: sampleData.length > 0 ? 7.13 : 0.0,
+      rFmt: '$#,##0.00',
     },
     {
       row: 9,
@@ -336,17 +346,17 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
       bFmt: '0.00%',
       bIsInput: true,
       fLabel: 'Equated Avg $ Gain / Session',
-      fFormula: 'I5/D7',
+      fFormula: 'J5/D7',
       fResult: 8.27,
       fFmt: '$#,##0.00',
-      kLabel: 'Remaining to Target ($)',
-      kFormula: 'MAX(0, I4-N4)',
-      kResult: sampleData.length > 0 ? 140.33 : 165.33,
-      kFmt: '$#,##0.00',
-      pLabel: 'Avg Loss on Losses ($)',
-      pFormula: 'IF(COUNTIF(L16:L65, "<0")=0, 0, SUMIF(L16:L65, "<0")/COUNTIF(L16:L65, "<0"))',
-      pResult: sampleData.length > 0 ? -3.5 : 0.0,
-      pFmt: '$#,##0.00;[Red]($#,##0.00);"-"',
+      lLabel: 'Remaining to Target ($)',
+      lFormula: 'MAX(0, J4-P4)',
+      lResult: sampleData.length > 0 ? 140.33 : 165.33,
+      lFmt: '$#,##0.00',
+      rLabel: 'Avg Loss on Losses ($)',
+      rFormula: 'IF(COUNTIF(M29:M78, "<0")=0, 0, SUMIF(M29:M78, "<0")/COUNTIF(M29:M78, "<0"))',
+      rResult: sampleData.length > 0 ? -3.5 : 0.0,
+      rFmt: '$#,##0.00;[Red]($#,##0.00);"-"',
     },
     {
       row: 10,
@@ -355,18 +365,18 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
       bFmt: '$#,##0.00',
       bIsInput: true,
       fLabel: 'Equated Avg $ Gain / Day',
-      fFormula: 'I5/D13',
+      fFormula: 'J5/D13',
       fResult: 8.27,
       fFmt: '$#,##0.00',
-      kLabel: 'Peak Bankroll Reached ($)',
-      kFormula: 'MAX(D4, K16:K65)',
-      kResult: sampleData.length > 0 ? 125.0 : startingBankroll,
-      kFmt: '$#,##0.00',
-      pLabel: 'Pacing vs Target Curve',
-      pFormula: 'IF(N4>=I4, "GOAL HIT 🎯", IF(COUNT(K16:K65)=0, "READY", IF(N4>=INDEX(H16:H65, COUNT(K16:K65)), "AHEAD OF PACE 🚀", "BEHIND PACE ⏳")))',
-      pResult: sampleData.length > 0 ? 'BEHIND PACE ⏳' : 'READY',
-      pFmt: '@',
-      pBold: true,
+      lLabel: 'Peak Bankroll Reached ($)',
+      lFormula: 'MAX(D4, L29:L78)',
+      lResult: sampleData.length > 0 ? 125.0 : startingBankroll,
+      lFmt: '$#,##0.00',
+      rLabel: 'Pacing vs Target Curve',
+      rFormula: 'IF(P4>=J4, "GOAL HIT 🎯", IF(COUNT(L29:L78)=0, "READY", IF(P4>=INDEX(I29:I78, COUNT(L29:L78)), "AHEAD OF PACE 🚀", "BEHIND PACE ⏳")))',
+      rResult: sampleData.length > 0 ? 'BEHIND PACE ⏳' : 'READY',
+      rFmt: '@',
+      rBold: true,
     },
     {
       row: 11,
@@ -375,17 +385,17 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
       bFmt: 'YYYY-MM-DD',
       bIsInput: true,
       fLabel: 'Target Multiplier',
-      fFormula: 'I4/D4',
+      fFormula: 'J4/D4',
       fResult: 2.65,
       fFmt: '0.00"x"',
-      kLabel: 'Max Drawdown from Peak ($)',
-      kFormula: 'MAX(0, N10-N4)',
-      kResult: 0.0,
-      kFmt: '$#,##0.00;[Red]($#,##0.00);"-"',
-      pLabel: 'Active Sprint Horizon',
-      pFormula: 'D7 & " Sessions (" & D13 & " Days)"',
-      pResult: `${horizonCount} Sessions (20 Days)`,
-      pFmt: '@',
+      lLabel: 'Max Drawdown from Peak ($)',
+      lFormula: 'MAX(0, P10-P4)',
+      lResult: 0.0,
+      lFmt: '$#,##0.00;[Red]($#,##0.00);"-"',
+      rLabel: 'Active Sprint Horizon',
+      rFormula: 'D7 & " Sessions (" & D13 & " Days)"',
+      rResult: `${horizonCount} Sessions (20 Days)`,
+      rFmt: '@',
     },
     {
       row: 12,
@@ -397,14 +407,14 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
       fFormula: 'D4*0.01',
       fResult: startingBankroll * 0.01,
       fFmt: '$#,##0.00',
-      kLabel: 'Max Drawdown %',
-      kFormula: 'IF(N10>0, (N10-N4)/N10, 0)',
-      kResult: 0.0,
-      kFmt: '0.00%',
-      pLabel: 'Growth Structure',
-      pFormula: 'D8',
-      pResult: compoundingMethod,
-      pFmt: '@',
+      lLabel: 'Max Drawdown %',
+      lFormula: 'IF(P10>0, (P10-P4)/P10, 0)',
+      lResult: 0.0,
+      lFmt: '0.00%',
+      rLabel: 'Growth Structure',
+      rFormula: 'D8',
+      rResult: compoundingMethod,
+      rFmt: '@',
     },
     {
       row: 13,
@@ -417,22 +427,22 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
       fFormula: 'D4*0.05',
       fResult: startingBankroll * 0.05,
       fFmt: '$#,##0.00',
-      kLabel: 'Required Remaining Pace',
-      kFormula: 'IF(OR(MAX(0, D7-COUNT(K16:K65))<=0, N4<=0), 0, IF(N4>=I4, 0, (I4/N4)^(1/MAX(1, D7-COUNT(K16:K65)))-1))',
-      kResult: sampleData.length > 0 ? 0.0519 : 0.05,
-      kFmt: '0.00%',
-      kBold: true,
-      pLabel: 'Active Target Engine',
-      pFormula: 'D5',
-      pResult: targetMode,
-      pFmt: '@',
+      lLabel: 'Required Remaining Pace',
+      lFormula: 'IF(OR(MAX(0, D7-COUNT(L29:L78))<=0, P4<=0), 0, IF(P4>=J4, 0, (J4/P4)^(1/MAX(1, D7-COUNT(L29:L78)))-1))',
+      lResult: sampleData.length > 0 ? 0.0519 : 0.05,
+      lFmt: '0.00%',
+      lBold: true,
+      rLabel: 'Target Engine Mode',
+      rFormula: 'D5',
+      rResult: targetMode,
+      rFmt: '@',
     },
   ];
 
   gridRows.forEach((r) => {
     ws.getRow(r.row).height = 20;
 
-    // Block 1: Setup (B: label, D: value)
+    // Block 1: Setup (B:C label, D value)
     ws.mergeCells(`B${r.row}:C${r.row}`);
     applyCellStyles(ws.getCell(`B${r.row}`), {
       val: r.bLabel,
@@ -462,8 +472,8 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
       });
     }
 
-    // Block 2: Equated Target Goals (F:G label, I: value)
-    ws.mergeCells(`F${r.row}:H${r.row}`);
+    // Block 2: Equated Target Goals (F:I label, J value)
+    ws.mergeCells(`F${r.row}:I${r.row}`);
     applyCellStyles(ws.getCell(`F${r.row}`), {
       val: r.fLabel,
       font: { size: 9.5, color: { argb: COLORS.textDark } },
@@ -471,7 +481,7 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
       alignment: { horizontal: 'left' },
     });
 
-    applyCellStyles(ws.getCell(`I${r.row}`), {
+    applyCellStyles(ws.getCell(`J${r.row}`), {
       formula: r.fFormula,
       result: r.fResult,
       font: { bold: !!r.fBold, size: 9.5, color: { argb: COLORS.textDark } },
@@ -480,90 +490,319 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
       numFmt: r.fFmt,
     });
 
-    // Block 3: Live Pacing & Drawdown (K:L label, N:O value)
-    ws.mergeCells(`K${r.row}:M${r.row}`);
-    applyCellStyles(ws.getCell(`K${r.row}`), {
-      val: r.kLabel,
+    // Block 3: Live Pacing & Drawdown (L:O label, P value)
+    ws.mergeCells(`L${r.row}:O${r.row}`);
+    applyCellStyles(ws.getCell(`L${r.row}`), {
+      val: r.lLabel,
       font: { size: 9.5, color: { argb: COLORS.textDark } },
       fill: COLORS.kpiBg,
       alignment: { horizontal: 'left' },
     });
 
-    ws.mergeCells(`N${r.row}:O${r.row}`);
-    applyCellStyles(ws.getCell(`N${r.row}`), {
-      formula: r.kFormula,
-      result: r.kResult,
-      font: { bold: !!r.kBold, size: 9.5, color: { argb: COLORS.textDark } },
+    applyCellStyles(ws.getCell(`P${r.row}`), {
+      formula: r.lFormula,
+      result: r.lResult,
+      font: { bold: !!r.lBold, size: 9.5, color: { argb: COLORS.textDark } },
       fill: COLORS.zebraWhite,
       alignment: { horizontal: 'right' },
-      numFmt: r.kFmt,
+      numFmt: r.lFmt,
     });
 
-    // Block 4: Win/Loss Stats (P:Q label, R: value)
-    ws.mergeCells(`P${r.row}:Q${r.row}`);
-    applyCellStyles(ws.getCell(`P${r.row}`), {
-      val: r.pLabel,
+    // Block 4: Win/Loss Stats (R label, S value)
+    applyCellStyles(ws.getCell(`R${r.row}`), {
+      val: r.rLabel,
       font: { size: 9, color: { argb: COLORS.textDark } },
       fill: COLORS.statsBg,
       alignment: { horizontal: 'left' },
     });
 
-    applyCellStyles(ws.getCell(`R${r.row}`), {
-      formula: r.pFormula,
-      result: r.pResult,
-      font: { bold: !!r.pBold, size: 9.5, color: { argb: COLORS.textDark } },
+    applyCellStyles(ws.getCell(`S${r.row}`), {
+      formula: r.rFormula,
+      result: r.rResult,
+      font: { bold: !!r.rBold, size: 9.5, color: { argb: COLORS.textDark } },
       fill: COLORS.zebraWhite,
       alignment: { horizontal: 'right' },
-      numFmt: r.pFmt,
+      numFmt: r.rFmt,
     });
   });
 
-  // Row 14: Session Log Section Banner
-  ws.mergeCells('A14:R14');
-  applyCellStyles(ws.getCell('A14'), {
-    val: 'SESSION PERFORMANCE LOG // Log Date, Time, Game/Market, Stake, and Ending Bankroll below. Starting Bankroll, Safe Cap (5%), Targets, Growth %, and Status calculate automatically.',
+  // SECTION 2: PER-GAME PERFORMANCE BREAKDOWN (Rows 15 to 25)
+  ws.mergeCells('B15:I15');
+  applyCellStyles(ws.getCell('B15'), {
+    val: '🎮 PER-GAME SPRINT PERFORMANCE BREAKDOWN (SINGLE OR MULTI-GAME)',
+    font: { size: 9.5, bold: true, color: { argb: COLORS.headerText } },
+    fill: COLORS.gameHeaderBg,
+    alignment: { horizontal: 'left', indent: 1 },
+    border: null,
+  });
+
+  ws.mergeCells('K15:S15');
+  applyCellStyles(ws.getCell('K15'), {
+    val: '🎯 SPRINT GAME CLASSIFICATION RULES & INSIGHTS',
+    font: { size: 9.5, bold: true, color: { argb: COLORS.headerText } },
+    fill: COLORS.calcHeaderBg,
+    alignment: { horizontal: 'left', indent: 1 },
+    border: null,
+  });
+  ws.getRow(15).height = 22;
+
+  // Breakdown Table Headers (Row 16)
+  const breakdownHeaders = [
+    { col: 'B', text: 'Game Classification' },
+    { col: 'D', text: 'Sessions' },
+    { col: 'E', text: 'Total Staked ($)' },
+    { col: 'F', text: 'Net P/L ($)' },
+    { col: 'G', text: 'Win Rate %' },
+    { col: 'H', text: 'ROI on Stake %' },
+    { col: 'I', text: 'Performance Status' },
+  ];
+
+  ws.mergeCells('B16:C16');
+  applyCellStyles(ws.getCell('B16'), {
+    val: 'Game Classification',
+    font: { bold: true, size: 9, color: { argb: COLORS.headerText } },
+    fill: COLORS.tableHeaderBg,
+    alignment: { horizontal: 'left', indent: 1 },
+  });
+
+  breakdownHeaders.slice(1).forEach((bh) => {
+    applyCellStyles(ws.getCell(`${bh.col}16`), {
+      val: bh.text,
+      font: { bold: true, size: 9, color: { argb: COLORS.headerText } },
+      fill: COLORS.tableHeaderBg,
+      alignment: { horizontal: 'center' },
+    });
+  });
+
+  // Insights Headers
+  ws.mergeCells('K16:M16');
+  applyCellStyles(ws.getCell('K16'), {
+    val: 'Allocation Metric',
+    font: { bold: true, size: 9, color: { argb: COLORS.headerText } },
+    fill: COLORS.tableHeaderBg,
+    alignment: { horizontal: 'left', indent: 1 },
+  });
+
+  ws.mergeCells('N16:S16');
+  applyCellStyles(ws.getCell('N16'), {
+    val: 'Sprint Breakdown Status / Analysis',
+    font: { bold: true, size: 9, color: { argb: COLORS.headerText } },
+    fill: COLORS.tableHeaderBg,
+    alignment: { horizontal: 'left', indent: 1 },
+  });
+  ws.getRow(16).height = 22;
+
+  // 8 Game Rows (Rows 17 to 24)
+  GAME_TYPES.forEach((game, idx) => {
+    const r = 17 + idx;
+    const isEven = idx % 2 === 0;
+    const fill = isEven ? COLORS.zebraLight : COLORS.zebraWhite;
+    ws.getRow(r).height = 20;
+
+    ws.mergeCells(`B${r}:C${r}`);
+    applyCellStyles(ws.getCell(`B${r}`), {
+      val: game,
+      font: { bold: true, size: 9.5 },
+      fill,
+      alignment: { horizontal: 'left', indent: 1 },
+    });
+
+    // D: Sessions Played
+    applyCellStyles(ws.getCell(`D${r}`), {
+      formula: `COUNTIF(E$29:E$78, B${r})`,
+      font: { size: 9.5 },
+      fill,
+      alignment: { horizontal: 'center' },
+      numFmt: '0',
+    });
+
+    // E: Total Staked ($)
+    applyCellStyles(ws.getCell(`E${r}`), {
+      formula: `SUMIF(E$29:E$78, B${r}, K$29:K$78)`,
+      font: { size: 9.5 },
+      fill,
+      alignment: { horizontal: 'right' },
+      numFmt: '$#,##0.00',
+    });
+
+    // F: Net P/L ($)
+    applyCellStyles(ws.getCell(`F${r}`), {
+      formula: `SUMIF(E$29:E$78, B${r}, M$29:M$78)`,
+      font: { bold: true, size: 9.5 },
+      fill,
+      alignment: { horizontal: 'right' },
+      numFmt: '$#,##0.00;[Red]($#,##0.00);"-"',
+    });
+
+    // G: Win Rate %
+    applyCellStyles(ws.getCell(`G${r}`), {
+      formula: `IF(D${r}=0, 0, COUNTIFS(E$29:E$78, B${r}, M$29:M$78, ">0") / D${r})`,
+      font: { size: 9.5 },
+      fill,
+      alignment: { horizontal: 'right' },
+      numFmt: '0.0%',
+    });
+
+    // H: ROI on Stake %
+    applyCellStyles(ws.getCell(`H${r}`), {
+      formula: `IF(E${r}=0, 0, F${r} / E${r})`,
+      font: { size: 9.5 },
+      fill,
+      alignment: { horizontal: 'right' },
+      numFmt: '+0.00%;-0.00%;0.00%',
+    });
+
+    // I: Status
+    applyCellStyles(ws.getCell(`I${r}`), {
+      formula: `IF(D${r}=0, "No Sessions", IF(F${r}>0, "PROFITABLE ✅", IF(F${r}=0, "BREAK-EVEN ⚖", "IN DRAWDOWN 🔻")))`,
+      font: { bold: true, size: 9 },
+      fill,
+      alignment: { horizontal: 'center' },
+    });
+  });
+
+  // Row 25: Total (All Games)
+  ws.getRow(25).height = 22;
+  ws.mergeCells('B25:C25');
+  applyCellStyles(ws.getCell('B25'), {
+    val: 'TOTAL (ALL GAMES)',
+    font: { bold: true, size: 9.5, color: { argb: COLORS.textDark } },
+    fill: COLORS.kpiBg,
+    alignment: { horizontal: 'left', indent: 1 },
+  });
+
+  applyCellStyles(ws.getCell('D25'), {
+    formula: 'SUM(D17:D24)',
+    font: { bold: true, size: 9.5 },
+    fill: COLORS.kpiBg,
+    alignment: { horizontal: 'center' },
+    numFmt: '0',
+  });
+
+  applyCellStyles(ws.getCell('E25'), {
+    formula: 'SUM(E17:E24)',
+    font: { bold: true, size: 9.5 },
+    fill: COLORS.kpiBg,
+    alignment: { horizontal: 'right' },
+    numFmt: '$#,##0.00',
+  });
+
+  applyCellStyles(ws.getCell('F25'), {
+    formula: 'SUM(F17:F24)',
+    font: { bold: true, size: 9.5 },
+    fill: COLORS.kpiBg,
+    alignment: { horizontal: 'right' },
+    numFmt: '$#,##0.00;[Red]($#,##0.00);"-"',
+  });
+
+  applyCellStyles(ws.getCell('G25'), {
+    formula: 'IF(D25=0, 0, COUNTIF(M$29:M$78, ">0") / D25)',
+    font: { bold: true, size: 9.5 },
+    fill: COLORS.kpiBg,
+    alignment: { horizontal: 'right' },
+    numFmt: '0.0%',
+  });
+
+  applyCellStyles(ws.getCell('H25'), {
+    formula: 'IF(E25=0, 0, F25 / E25)',
+    font: { bold: true, size: 9.5 },
+    fill: COLORS.kpiBg,
+    alignment: { horizontal: 'right' },
+    numFmt: '+0.00%;-0.00%;0.00%',
+  });
+
+  applyCellStyles(ws.getCell('I25'), {
+    formula: 'IF(D25=0, "No Sessions", IF(F25>0, "PROFITABLE ✅", IF(F25=0, "BREAK-EVEN ⚖", "IN DRAWDOWN 🔻")))',
+    font: { bold: true, size: 9 },
+    fill: COLORS.kpiBg,
+    alignment: { horizontal: 'center' },
+  });
+
+  // Insights on the Right (Rows 17 to 25, Columns K to S)
+  const insights = [
+    { row: 17, label: 'Sprint Game Scope', formula: 'IF(D25=0, "Ready for First Session", IF(MAX(D17:D24)=D25, "Single-Game Dedicated (" & INDEX(B17:B24, MATCH(MAX(D17:D24), D17:D24, 0)) & ")", "Multi-Game Portfolio (" & COUNTIF(D17:D24, ">0") & " Game Types Active)"))', isBold: true },
+    { row: 18, label: 'Most Active Game', formula: 'IF(D25=0, "None", INDEX(B17:B24, MATCH(MAX(D17:D24), D17:D24, 0)) & " (" & MAX(D17:D24) & " sessions)")', isBold: false },
+    { row: 19, label: 'Highest Profit Game', formula: 'IF(D25=0, "None", INDEX(B17:B24, MATCH(MAX(F17:F24), F17:F24, 0)) & " (" & TEXT(MAX(F17:F24), "$#,##0.00") & ")")', isBold: true },
+    { row: 20, label: 'Classification Rule', val: '1 Game per session strictly enforced via Column E dropdown.', isBold: false },
+  ];
+
+  insights.forEach((ins) => {
+    ws.mergeCells(`K${ins.row}:M${ins.row}`);
+    applyCellStyles(ws.getCell(`K${ins.row}`), {
+      val: ins.label,
+      font: { bold: true, size: 9, color: { argb: COLORS.textDark } },
+      fill: COLORS.zebraLight,
+      alignment: { horizontal: 'left', indent: 1 },
+    });
+
+    ws.mergeCells(`N${ins.row}:S${ins.row}`);
+    applyCellStyles(ws.getCell(`N${ins.row}`), {
+      val: ins.val,
+      formula: ins.formula,
+      font: { bold: !!ins.isBold, size: 9.5, color: { argb: COLORS.textDark } },
+      fill: COLORS.zebraWhite,
+      alignment: { horizontal: 'left', indent: 1 },
+      numFmt: '@',
+    });
+  });
+
+  // Multi-line guidance card in rows 21-25
+  ws.mergeCells('K21:S25');
+  applyCellStyles(ws.getCell('K21'), {
+    val: '💡 GAME CLASSIFICATION INSTRUCTIONS:\n• Every session must select exactly ONE game type from the Column E dropdown.\n• You can dedicate the entire sheet to 1 game (e.g. 100% Sic Bo), OR mix multiple games across sessions.\n• The breakdown table on the left automatically updates your volume, profit, win rate, and ROI per game.',
+    font: { size: 9, color: { argb: COLORS.textDark } },
+    fill: COLORS.gameBg,
+    border: BORDER_INPUT,
+    alignment: { horizontal: 'left', vertical: 'top', wrapText: true },
+  });
+
+  // Row 27: Session Log Section Banner
+  ws.mergeCells('A27:S27');
+  applyCellStyles(ws.getCell('A27'), {
+    val: 'SESSION PERFORMANCE LOG // Each session is classified by exactly 1 game in Column E. Starting Bankroll, Safe Cap (5%), Benchmarks, P/L, Growth %, and Status calculate automatically.',
     font: { size: 9, bold: true, color: { argb: COLORS.headerText } },
     fill: COLORS.headerBg,
     alignment: { horizontal: 'left', indent: 1 },
     border: null,
   });
-  ws.getRow(14).height = 22;
+  ws.getRow(27).height = 22;
 
-  // Row 15: Table Headers (A to R)
+  // Row 28: Table Headers (A to S)
   const tableHeaders = [
     { col: 'A', text: 'Session #' },
     { col: 'B', text: 'Day #' },
     { col: 'C', text: 'Date' },
     { col: 'D', text: 'Time' },
-    { col: 'E', text: 'Game / Market / Sport' },
-    { col: 'F', text: 'Start Bankroll ($)' },
-    { col: 'G', text: 'Safe Cap (5%)' },
-    { col: 'H', text: 'Benchmark Target ($)' },
-    { col: 'I', text: 'Target $ Gain' },
-    { col: 'J', text: 'Actual Stake ($)' },
-    { col: 'K', text: 'End Bankroll ($)' },
-    { col: 'L', text: 'Net P/L ($)' },
-    { col: 'M', text: 'Growth %' },
-    { col: 'N', text: 'Target Status' },
-    { col: 'O', text: 'Variance ($)' },
-    { col: 'P', text: 'Cumulative P/L ($)' },
-    { col: 'Q', text: 'Sprint ROI %' },
-    { col: 'R', text: 'Session Notes / Strategy / Discipline' },
+    { col: 'E', text: 'Game Type' },
+    { col: 'F', text: 'Market / Wager Details' },
+    { col: 'G', text: 'Start Bankroll ($)' },
+    { col: 'H', text: 'Safe Cap (5%)' },
+    { col: 'I', text: 'Benchmark Target ($)' },
+    { col: 'J', text: 'Target $ Gain' },
+    { col: 'K', text: 'Actual Stake ($)' },
+    { col: 'L', text: 'End Bankroll ($)' },
+    { col: 'M', text: 'Net P/L ($)' },
+    { col: 'N', text: 'Growth %' },
+    { col: 'O', text: 'Target Status' },
+    { col: 'P', text: 'Variance ($)' },
+    { col: 'Q', text: 'Cumulative P/L ($)' },
+    { col: 'R', text: 'Sprint ROI %' },
+    { col: 'S', text: 'Session Notes / Strategy / Discipline' },
   ];
 
   tableHeaders.forEach((th) => {
-    applyCellStyles(ws.getCell(`${th.col}15`), {
+    applyCellStyles(ws.getCell(`${th.col}28`), {
       val: th.text,
       font: { bold: true, size: 9.5, color: { argb: COLORS.headerText } },
       fill: COLORS.tableHeaderBg,
       alignment: { horizontal: 'center', wrapText: true },
     });
   });
-  ws.getRow(15).height = 28;
+  ws.getRow(28).height = 28;
 
-  // 50 Session Rows (Row 16 to Row 65)
+  // 50 Session Rows (Row 29 to Row 78)
   for (let i = 1; i <= 50; i++) {
-    const rowNum = 15 + i;
+    const rowNum = 28 + i;
     const isEven = i % 2 === 0;
     const rowFill = isEven ? COLORS.zebraLight : COLORS.zebraWhite;
     const sample = sampleData[i - 1];
@@ -607,17 +846,31 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
       numFmt: 'HH:MM',
     });
 
-    // E: Game / Market (Editable)
+    // E: Game Type (Strict 1-Game Dropdown Validation)
     applyCellStyles(ws.getCell(`E${rowNum}`), {
+      val: sample ? sample.game : '',
+      font: { bold: true, size: 9.5 },
+      fill: sample ? rowFill : COLORS.inputFill,
+      border: sample ? BORDER_THIN : BORDER_INPUT,
+      alignment: { horizontal: 'center' },
+      dataValidation: {
+        type: 'list',
+        allowBlank: true,
+        formulae: [GAME_DROPDOWN_FORMULA],
+      },
+    });
+
+    // F: Market / Wager Details (Editable)
+    applyCellStyles(ws.getCell(`F${rowNum}`), {
       val: sample ? sample.market : '',
       fill: sample ? rowFill : COLORS.inputFill,
       border: sample ? BORDER_THIN : BORDER_INPUT,
       alignment: { horizontal: 'left' },
     });
 
-    // F: Starting Bankroll ($)
-    const startFormula = i === 1 ? 'D$4' : `IF(K${rowNum - 1}="","", K${rowNum - 1})`;
-    applyCellStyles(ws.getCell(`F${rowNum}`), {
+    // G: Starting Bankroll ($)
+    const startFormula = i === 1 ? 'D$4' : `IF(L${rowNum - 1}="","", L${rowNum - 1})`;
+    applyCellStyles(ws.getCell(`G${rowNum}`), {
       formula: startFormula,
       font: { size: 9.5 },
       fill: rowFill,
@@ -625,28 +878,28 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
       numFmt: '$#,##0.00',
     });
 
-    // G: Safe Stake Cap (5%)
-    applyCellStyles(ws.getCell(`G${rowNum}`), {
-      formula: `IF(F${rowNum}="","", F${rowNum}*0.05)`,
+    // H: Safe Stake Cap (5%)
+    applyCellStyles(ws.getCell(`H${rowNum}`), {
+      formula: `IF(G${rowNum}="","", G${rowNum}*0.05)`,
       font: { size: 9, color: { argb: COLORS.textMuted } },
       fill: rowFill,
       alignment: { horizontal: 'right' },
       numFmt: '$#,##0.00',
     });
 
-    // H: Benchmark Target ($) (Pre-plotted roadmap curve)
-    applyCellStyles(ws.getCell(`H${rowNum}`), {
-      formula: `IF(D$8="Compounded", D$4*(1+I$7)^A${rowNum}, D$4+(D$4*I$7*A${rowNum}))`,
+    // I: Benchmark Target ($) (Compounding roadmap curve)
+    applyCellStyles(ws.getCell(`I${rowNum}`), {
+      formula: `IF(D$8="Compounded", D$4*(1+J$7)^A${rowNum}, D$4+(D$4*J$7*A${rowNum}))`,
       font: { size: 9.5, color: { argb: COLORS.textMuted } },
       fill: rowFill,
       alignment: { horizontal: 'right' },
       numFmt: '$#,##0.00',
     });
 
-    // I: Target $ Gain
+    // J: Target $ Gain
     const targetGainFormula =
-      i === 1 ? `IF(H${rowNum}="","", H${rowNum}-D$4)` : `IF(H${rowNum}="","", H${rowNum}-H${rowNum - 1})`;
-    applyCellStyles(ws.getCell(`I${rowNum}`), {
+      i === 1 ? `IF(I${rowNum}="","", I${rowNum}-D$4)` : `IF(I${rowNum}="","", I${rowNum}-I${rowNum - 1})`;
+    applyCellStyles(ws.getCell(`J${rowNum}`), {
       formula: targetGainFormula,
       font: { size: 9, color: { argb: COLORS.textMuted } },
       fill: rowFill,
@@ -654,8 +907,8 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
       numFmt: '$#,##0.00',
     });
 
-    // J: Actual Stake ($) (Editable)
-    applyCellStyles(ws.getCell(`J${rowNum}`), {
+    // K: Actual Stake ($) (Editable)
+    applyCellStyles(ws.getCell(`K${rowNum}`), {
       val: sample ? sample.stake : null,
       fill: sample ? rowFill : COLORS.inputFill,
       border: sample ? BORDER_THIN : BORDER_INPUT,
@@ -663,8 +916,8 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
       numFmt: '$#,##0.00',
     });
 
-    // K: Ending Bankroll ($) (Editable - Primary User Input)
-    applyCellStyles(ws.getCell(`K${rowNum}`), {
+    // L: Ending Bankroll ($) (Editable - Primary User Input)
+    applyCellStyles(ws.getCell(`L${rowNum}`), {
       val: sample ? sample.end : null,
       font: { bold: true, size: 9.5 },
       fill: sample ? rowFill : COLORS.inputFill,
@@ -673,61 +926,61 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
       numFmt: '$#,##0.00',
     });
 
-    // L: Net P/L ($)
-    applyCellStyles(ws.getCell(`L${rowNum}`), {
-      formula: `IF(OR(K${rowNum}="", F${rowNum}=""), "", K${rowNum}-F${rowNum})`,
+    // M: Net P/L ($)
+    applyCellStyles(ws.getCell(`M${rowNum}`), {
+      formula: `IF(OR(L${rowNum}="", G${rowNum}=""), "", L${rowNum}-G${rowNum})`,
       font: { bold: true, size: 9.5 },
       fill: rowFill,
       alignment: { horizontal: 'right' },
       numFmt: '$#,##0.00;[Red]($#,##0.00);"-"',
     });
 
-    // M: Growth %
-    applyCellStyles(ws.getCell(`M${rowNum}`), {
-      formula: `IF(OR(K${rowNum}="", F${rowNum}="", F${rowNum}=0), "", (K${rowNum}-F${rowNum})/F${rowNum})`,
+    // N: Growth %
+    applyCellStyles(ws.getCell(`N${rowNum}`), {
+      formula: `IF(OR(L${rowNum}="", G${rowNum}="", G${rowNum}=0), "", (L${rowNum}-G${rowNum})/G${rowNum})`,
       font: { size: 9.5 },
       fill: rowFill,
       alignment: { horizontal: 'right' },
       numFmt: '+0.00%;-0.00%;0.00%',
     });
 
-    // N: Target Status (4 states)
-    applyCellStyles(ws.getCell(`N${rowNum}`), {
-      formula: `IF(K${rowNum}="","", IF(K${rowNum}>=H${rowNum}, "EXCEEDED TARGET", IF(L${rowNum}>0, "PROFITABLE", IF(L${rowNum}=0, "BREAK-EVEN", "MISSED TARGET"))))`,
+    // O: Target Status (4 states)
+    applyCellStyles(ws.getCell(`O${rowNum}`), {
+      formula: `IF(L${rowNum}="","", IF(L${rowNum}>=I${rowNum}, "EXCEEDED TARGET", IF(M${rowNum}>0, "PROFITABLE", IF(M${rowNum}=0, "BREAK-EVEN", "MISSED TARGET"))))`,
       font: { bold: true, size: 9 },
       fill: rowFill,
       alignment: { horizontal: 'center' },
     });
 
-    // O: Variance vs Target ($)
-    applyCellStyles(ws.getCell(`O${rowNum}`), {
-      formula: `IF(OR(K${rowNum}="", I${rowNum}=""), "", L${rowNum}-I${rowNum})`,
+    // P: Variance vs Target ($)
+    applyCellStyles(ws.getCell(`P${rowNum}`), {
+      formula: `IF(OR(L${rowNum}="", J${rowNum}=""), "", M${rowNum}-J${rowNum})`,
       font: { size: 9.5 },
       fill: rowFill,
       alignment: { horizontal: 'right' },
       numFmt: '+$#,##0.00;[Red]-$#,##0.00;$0.00',
     });
 
-    // P: Cumulative P/L ($)
-    applyCellStyles(ws.getCell(`P${rowNum}`), {
-      formula: `IF(K${rowNum}="","", K${rowNum}-D$4)`,
+    // Q: Cumulative P/L ($)
+    applyCellStyles(ws.getCell(`Q${rowNum}`), {
+      formula: `IF(L${rowNum}="","", L${rowNum}-D$4)`,
       font: { bold: true, size: 9.5 },
       fill: rowFill,
       alignment: { horizontal: 'right' },
       numFmt: '$#,##0.00;[Red]($#,##0.00);"-"',
     });
 
-    // Q: Sprint ROI %
-    applyCellStyles(ws.getCell(`Q${rowNum}`), {
-      formula: `IF(K${rowNum}="","", (K${rowNum}-D$4)/D$4)`,
+    // R: Sprint ROI %
+    applyCellStyles(ws.getCell(`R${rowNum}`), {
+      formula: `IF(L${rowNum}="","", (L${rowNum}-D$4)/D$4)`,
       font: { bold: true, size: 9.5 },
       fill: rowFill,
       alignment: { horizontal: 'right' },
       numFmt: '+0.00%;-0.00%;0.00%',
     });
 
-    // R: Notes (Editable)
-    applyCellStyles(ws.getCell(`R${rowNum}`), {
+    // S: Notes (Editable)
+    applyCellStyles(ws.getCell(`S${rowNum}`), {
       val: sample ? sample.notes : '',
       fill: sample ? rowFill : COLORS.inputFill,
       border: sample ? BORDER_THIN : BORDER_INPUT,
@@ -735,9 +988,9 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
     });
   }
 
-  // Native Excel / Calc Conditional Formatting Rules
+  // Conditional Formatting
   ws.addConditionalFormatting({
-    ref: 'L16:L65',
+    ref: 'M29:M78',
     rules: [
       {
         type: 'cellIs',
@@ -761,7 +1014,7 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
   });
 
   ws.addConditionalFormatting({
-    ref: 'M16:M65',
+    ref: 'N29:N78',
     rules: [
       {
         type: 'cellIs',
@@ -779,7 +1032,7 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
   });
 
   ws.addConditionalFormatting({
-    ref: 'N16:N65',
+    ref: 'O29:O78',
     rules: [
       {
         type: 'cellIs',
@@ -822,7 +1075,7 @@ function buildSprintSheet(wb, sheetName, opts = {}) {
 }
 
 /**
- * Builds the Multi-Sprint Portfolio Dashboard (aggregating Sprint 1 & Sprint 2)
+ * Builds the Multi-Sprint Portfolio Dashboard (aggregating Sprint 1 & Sprint 2 and cross-sprint game breakdown)
  */
 function buildDashboardSheet(wb) {
   const ws = wb.addWorksheet('Multi-Sprint Dashboard', {
@@ -948,13 +1201,13 @@ function buildDashboardSheet(wb) {
   applyCellStyles(ws.getCell('B10'), { val: 'Sprint 1 - $100', font: { bold: true } });
   applyCellStyles(ws.getCell('C10'), { formula: "'Sprint 1 - $100'!D4", result: 100.0, numFmt: '$#,##0.00', alignment: { horizontal: 'right' } });
   applyCellStyles(ws.getCell('D10'), { formula: "'Sprint 1 - $100'!D5", result: '% Target per Session', alignment: { horizontal: 'center' } });
-  applyCellStyles(ws.getCell('E10'), { formula: "'Sprint 1 - $100'!I4", result: 265.33, numFmt: '$#,##0.00', alignment: { horizontal: 'right' } });
-  applyCellStyles(ws.getCell('F10'), { formula: "'Sprint 1 - $100'!N4", result: 125.0, numFmt: '$#,##0.00', alignment: { horizontal: 'right' }, font: { bold: true } });
-  applyCellStyles(ws.getCell('G10'), { formula: "'Sprint 1 - $100'!N5", result: 25.0, numFmt: '$#,##0.00;[Red]($#,##0.00);"-"', alignment: { horizontal: 'right' }, font: { bold: true } });
-  applyCellStyles(ws.getCell('H10'), { formula: "'Sprint 1 - $100'!N6", result: 0.25, numFmt: '+0.00%;-0.00%;0.00%', alignment: { horizontal: 'right' } });
-  applyCellStyles(ws.getCell('I10'), { formula: "'Sprint 1 - $100'!N7", result: 0.1512, numFmt: '0.00%', alignment: { horizontal: 'right' } });
-  applyCellStyles(ws.getCell('J10'), { formula: "COUNT('Sprint 1 - $100'!K16:K65)", result: 5, numFmt: '0', alignment: { horizontal: 'center' } });
-  applyCellStyles(ws.getCell('K10'), { formula: "'Sprint 1 - $100'!R6", result: 0.8, numFmt: '0.0%', alignment: { horizontal: 'right' } });
+  applyCellStyles(ws.getCell('E10'), { formula: "'Sprint 1 - $100'!J4", result: 265.33, numFmt: '$#,##0.00', alignment: { horizontal: 'right' } });
+  applyCellStyles(ws.getCell('F10'), { formula: "'Sprint 1 - $100'!P4", result: 125.0, numFmt: '$#,##0.00', alignment: { horizontal: 'right' }, font: { bold: true } });
+  applyCellStyles(ws.getCell('G10'), { formula: "'Sprint 1 - $100'!P5", result: 25.0, numFmt: '$#,##0.00;[Red]($#,##0.00);"-"', alignment: { horizontal: 'right' }, font: { bold: true } });
+  applyCellStyles(ws.getCell('H10'), { formula: "'Sprint 1 - $100'!P6", result: 0.25, numFmt: '+0.00%;-0.00%;0.00%', alignment: { horizontal: 'right' } });
+  applyCellStyles(ws.getCell('I10'), { formula: "'Sprint 1 - $100'!P7", result: 0.1512, numFmt: '0.00%', alignment: { horizontal: 'right' } });
+  applyCellStyles(ws.getCell('J10'), { formula: "'Sprint 1 - $100'!D25", result: 5, numFmt: '0', alignment: { horizontal: 'center' } });
+  applyCellStyles(ws.getCell('K10'), { formula: "'Sprint 1 - $100'!G25", result: 0.8, numFmt: '0.0%', alignment: { horizontal: 'right' } });
   applyCellStyles(ws.getCell('L10'), {
     formula: 'IF(F10>=E10, "GOAL ACHIEVED", IF(F10<=0.25*C10, "CRITICAL DRAWDOWN", "IN PROGRESS"))',
     result: 'IN PROGRESS',
@@ -962,19 +1215,19 @@ function buildDashboardSheet(wb) {
     font: { bold: true },
   });
 
-  // Row 11: Sprint 2 ($250 Challenge - Demonstrating Dollar Profit Mode)
+  // Row 11: Sprint 2 ($250 Challenge - Single-Game Dedicated)
   ws.getRow(11).height = 22;
   applyCellStyles(ws.getCell('A11'), { val: 2, alignment: { horizontal: 'center' }, font: { bold: true } });
   applyCellStyles(ws.getCell('B11'), { val: 'Sprint 2 - $250', font: { bold: true } });
   applyCellStyles(ws.getCell('C11'), { formula: "'Sprint 2 - $250'!D4", result: 250.0, numFmt: '$#,##0.00', alignment: { horizontal: 'right' } });
   applyCellStyles(ws.getCell('D11'), { formula: "'Sprint 2 - $250'!D5", result: 'Dollar Profit Target', alignment: { horizontal: 'center' } });
-  applyCellStyles(ws.getCell('E11'), { formula: "'Sprint 2 - $250'!I4", result: 500.0, numFmt: '$#,##0.00', alignment: { horizontal: 'right' } });
-  applyCellStyles(ws.getCell('F11'), { formula: "'Sprint 2 - $250'!N4", result: 270.0, numFmt: '$#,##0.00', alignment: { horizontal: 'right' }, font: { bold: true } });
-  applyCellStyles(ws.getCell('G11'), { formula: "'Sprint 2 - $250'!N5", result: 20.0, numFmt: '$#,##0.00;[Red]($#,##0.00);"-"', alignment: { horizontal: 'right' }, font: { bold: true } });
-  applyCellStyles(ws.getCell('H11'), { formula: "'Sprint 2 - $250'!N6", result: 0.08, numFmt: '+0.00%;-0.00%;0.00%', alignment: { horizontal: 'right' } });
-  applyCellStyles(ws.getCell('I11'), { formula: "'Sprint 2 - $250'!N7", result: 0.08, numFmt: '0.00%', alignment: { horizontal: 'right' } });
-  applyCellStyles(ws.getCell('J11'), { formula: "COUNT('Sprint 2 - $250'!K16:K65)", result: 2, numFmt: '0', alignment: { horizontal: 'center' } });
-  applyCellStyles(ws.getCell('K11'), { formula: "'Sprint 2 - $250'!R6", result: 1.0, numFmt: '0.0%', alignment: { horizontal: 'right' } });
+  applyCellStyles(ws.getCell('E11'), { formula: "'Sprint 2 - $250'!J4", result: 500.0, numFmt: '$#,##0.00', alignment: { horizontal: 'right' } });
+  applyCellStyles(ws.getCell('F11'), { formula: "'Sprint 2 - $250'!P4", result: 270.0, numFmt: '$#,##0.00', alignment: { horizontal: 'right' }, font: { bold: true } });
+  applyCellStyles(ws.getCell('G11'), { formula: "'Sprint 2 - $250'!P5", result: 20.0, numFmt: '$#,##0.00;[Red]($#,##0.00);"-"', alignment: { horizontal: 'right' }, font: { bold: true } });
+  applyCellStyles(ws.getCell('H11'), { formula: "'Sprint 2 - $250'!P6", result: 0.08, numFmt: '+0.00%;-0.00%;0.00%', alignment: { horizontal: 'right' } });
+  applyCellStyles(ws.getCell('I11'), { formula: "'Sprint 2 - $250'!P7", result: 0.08, numFmt: '0.00%', alignment: { horizontal: 'right' } });
+  applyCellStyles(ws.getCell('J11'), { formula: "'Sprint 2 - $250'!D25", result: 2, numFmt: '0', alignment: { horizontal: 'center' } });
+  applyCellStyles(ws.getCell('K11'), { formula: "'Sprint 2 - $250'!G25", result: 1.0, numFmt: '0.0%', alignment: { horizontal: 'right' } });
   applyCellStyles(ws.getCell('L11'), {
     formula: 'IF(F11>=E11, "GOAL ACHIEVED", IF(F11<=0.25*C11, "CRITICAL DRAWDOWN", "IN PROGRESS"))',
     result: 'IN PROGRESS',
@@ -1003,10 +1256,128 @@ function buildDashboardSheet(wb) {
     applyCellStyles(ws.getCell(`L${r}`), { val: 'READY TO START', fill, alignment: { horizontal: 'center' }, font: { italic: true, color: { argb: COLORS.textMuted } } });
   }
 
-  // Row 21: Instruction Callout Box
-  ws.mergeCells('A21:L24');
+  // Row 21: Section Banner for Portfolio Game Breakdown
+  ws.mergeCells('A21:L21');
   applyCellStyles(ws.getCell('A21'), {
-    val: '💡 HOW TO ADD A NEW SPRINT:\n1. Right-click the "Sprint Template" tab at the bottom and choose "Move or Copy..." -> check "Create a copy".\n2. Rename the new sheet to "Sprint 3" (or your preferred challenge name).\n3. In this Dashboard on Row 12, link the cells: C12 = \'Sprint 3\'!D4, D12 = \'Sprint 3\'!D5, E12 = \'Sprint 3\'!I4, F12 = \'Sprint 3\'!N4, etc.\n4. Your portfolio totals in the cards above update automatically across all active sprints!',
+    val: '🎮 PORTFOLIO BREAKDOWN BY GAME TYPE (CROSS-SPRINT PERFORMANCE)',
+    font: { size: 10, bold: true, color: { argb: COLORS.headerText } },
+    fill: COLORS.gameHeaderBg,
+    alignment: { horizontal: 'left', indent: 1 },
+    border: null,
+  });
+  ws.getRow(21).height = 24;
+
+  // Row 22: Portfolio Game Headers
+  const pGameHeaders = [
+    { col: 'A', text: '#' },
+    { col: 'B', text: 'Game Classification' },
+    { col: 'C', text: 'Sprints Featuring' },
+    { col: 'D', text: 'Total Sessions' },
+    { col: 'E', text: 'Total Staked ($)' },
+    { col: 'F', text: 'Total Net P/L ($)' },
+    { col: 'G', text: 'Win Rate %' },
+    { col: 'H', text: 'ROI on Stake %' },
+    { col: 'I', text: 'Portfolio Share %' },
+    { col: 'J', text: 'Overall Game Status' },
+  ];
+
+  pGameHeaders.forEach((pgh) => {
+    applyCellStyles(ws.getCell(`${pgh.col}22`), {
+      val: pgh.text,
+      font: { bold: true, size: 9, color: { argb: COLORS.headerText } },
+      fill: COLORS.tableHeaderBg,
+      alignment: { horizontal: 'center' },
+    });
+  });
+  ws.mergeCells('J22:L22');
+  ws.getRow(22).height = 22;
+
+  // Rows 23 to 30: The 8 Games across sprints
+  GAME_TYPES.forEach((game, gIdx) => {
+    const r = 23 + gIdx;
+    const isEven = gIdx % 2 === 0;
+    const fill = isEven ? COLORS.zebraLight : COLORS.zebraWhite;
+    const sprintRow = 17 + gIdx; // Row index inside each sprint's game breakdown
+
+    ws.getRow(r).height = 20;
+
+    // A: #
+    applyCellStyles(ws.getCell(`A${r}`), { val: gIdx + 1, fill, alignment: { horizontal: 'center' }, numFmt: '0' });
+
+    // B: Game
+    applyCellStyles(ws.getCell(`B${r}`), { val: game, font: { bold: true }, fill, alignment: { horizontal: 'left', indent: 1 } });
+
+    // C: Sprints Featuring
+    applyCellStyles(ws.getCell(`C${r}`), {
+      formula: `IF('Sprint 1 - $100'!D${sprintRow}>0, 1, 0) + IF('Sprint 2 - $250'!D${sprintRow}>0, 1, 0)`,
+      fill,
+      alignment: { horizontal: 'center' },
+      numFmt: '0',
+    });
+
+    // D: Total Sessions
+    applyCellStyles(ws.getCell(`D${r}`), {
+      formula: `'Sprint 1 - $100'!D${sprintRow} + 'Sprint 2 - $250'!D${sprintRow}`,
+      fill,
+      alignment: { horizontal: 'center' },
+      numFmt: '0',
+    });
+
+    // E: Total Staked ($)
+    applyCellStyles(ws.getCell(`E${r}`), {
+      formula: `'Sprint 1 - $100'!E${sprintRow} + 'Sprint 2 - $250'!E${sprintRow}`,
+      fill,
+      alignment: { horizontal: 'right' },
+      numFmt: '$#,##0.00',
+    });
+
+    // F: Total Net P/L ($)
+    applyCellStyles(ws.getCell(`F${r}`), {
+      formula: `'Sprint 1 - $100'!F${sprintRow} + 'Sprint 2 - $250'!F${sprintRow}`,
+      font: { bold: true },
+      fill,
+      alignment: { horizontal: 'right' },
+      numFmt: '$#,##0.00;[Red]($#,##0.00);"-"',
+    });
+
+    // G: Win Rate %
+    applyCellStyles(ws.getCell(`G${r}`), {
+      formula: `IF(D${r}=0, 0, (('Sprint 1 - $100'!D${sprintRow}*'Sprint 1 - $100'!G${sprintRow}) + ('Sprint 2 - $250'!D${sprintRow}*'Sprint 2 - $250'!G${sprintRow})) / D${r})`,
+      fill,
+      alignment: { horizontal: 'right' },
+      numFmt: '0.0%',
+    });
+
+    // H: ROI on Stake %
+    applyCellStyles(ws.getCell(`H${r}`), {
+      formula: `IF(E${r}=0, 0, F${r}/E${r})`,
+      fill,
+      alignment: { horizontal: 'right' },
+      numFmt: '+0.00%;-0.00%;0.00%',
+    });
+
+    // I: Portfolio Share %
+    applyCellStyles(ws.getCell(`I${r}`), {
+      formula: `IF(F$4=0, 0, F${r}/F$4)`,
+      fill,
+      alignment: { horizontal: 'right' },
+      numFmt: '0.0%',
+    });
+
+    // J: Status
+    ws.mergeCells(`J${r}:L${r}`);
+    applyCellStyles(ws.getCell(`J${r}`), {
+      formula: `IF(D${r}=0, "Not Played Yet", IF(F${r}>0, "PROFITABLE ✅", IF(F${r}=0, "BREAK-EVEN ⚖", "IN DRAWDOWN 🔻")))`,
+      font: { bold: true, size: 9 },
+      fill,
+      alignment: { horizontal: 'center' },
+    });
+  });
+
+  // Instruction Box
+  ws.mergeCells('A32:L35');
+  applyCellStyles(ws.getCell('A32'), {
+    val: '💡 HOW TO ADD A NEW SPRINT:\n1. Right-click the "Sprint Template" tab at the bottom and choose "Move or Copy..." -> check "Create a copy".\n2. Rename the new sheet to "Sprint 3" (or your preferred challenge name).\n3. In this Dashboard on Row 12, link the cells: C12 = \'Sprint 3\'!D4, D12 = \'Sprint 3\'!D5, E12 = \'Sprint 3\'!J4, F12 = \'Sprint 3\'!P4, etc.\n4. Your portfolio totals and game breakdowns update automatically in real time!',
     font: { size: 9, bold: false, color: { argb: COLORS.textDark } },
     fill: COLORS.inputFill,
     border: BORDER_INPUT,
@@ -1236,7 +1607,7 @@ function buildTargetMatrixSheet(wb) {
     applyCellStyles(ws.getCell(`J${rNum}`), { val: 'Strict Professional', fill: rowFill, alignment: { horizontal: 'center' }, font: { italic: true } });
   });
 
-  // Callout Box at bottom
+  // Callout Box
   const calloutStart = table3Start + 2 + bankrolls.length + 1;
   ws.mergeCells(`A${calloutStart}:J${calloutStart + 2}`);
   applyCellStyles(ws.getCell(`A${calloutStart}`), {
@@ -1252,7 +1623,7 @@ function buildTargetMatrixSheet(wb) {
  * Main Generator
  */
 async function generateWorkbook() {
-  console.log('Generating Enhanced Betting Bankroll Sprint Tracker...');
+  console.log('Generating Enhanced Betting Bankroll Sprint Tracker (v3.0 with Game Classification)...');
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Bet-R Play-R';
   wb.lastModifiedBy = 'Bet-R Play-R';
@@ -1262,9 +1633,9 @@ async function generateWorkbook() {
   // 1. Multi-Sprint Dashboard
   buildDashboardSheet(wb);
 
-  // 2. Sprint 1 ($100 Bankroll Active - Mode A: % Target)
+  // 2. Sprint 1 ($100 Bankroll Active - Demonstrates Multi-Game Mix across sessions)
   buildSprintSheet(wb, 'Sprint 1 - $100', {
-    title: 'BET-R PLAY-R // SPRINT 1 ($100 BANKROLL CHALLENGE - MODE A: % TARGET DRIVEN)',
+    title: 'BET-R PLAY-R // SPRINT 1 ($100 CHALLENGE - MULTI-GAME MIX DEMONSTRATION)',
     startingBankroll: 100.0,
     targetMode: '% Target per Session',
     horizonType: 'By Sessions',
@@ -1279,7 +1650,8 @@ async function generateWorkbook() {
         dayNum: 1,
         date: '2026-11-03',
         time: '10:15',
-        market: 'Sic Bo (Small/Big + Double)',
+        game: 'Sic Bo',
+        market: 'Small/Big + Double hedge',
         stake: 12.0,
         end: 106.5,
         notes: 'Hit stop-win after 4 winning spins; locked profit.',
@@ -1288,7 +1660,8 @@ async function generateWorkbook() {
         dayNum: 1,
         date: '2026-11-03',
         time: '14:30',
-        market: 'Teen Patti (Pair Plus Focus)',
+        game: 'Teen Patti',
+        market: 'Pair Plus Focus',
         stake: 15.0,
         end: 112.0,
         notes: 'Hit flush on hand 7 and exited cleanly.',
@@ -1297,7 +1670,8 @@ async function generateWorkbook() {
         dayNum: 2,
         date: '2026-11-04',
         time: '11:00',
-        market: 'Kickoff (Over/Under Goals)',
+        game: 'The Kickoff',
+        market: 'Over/Under 2.5 Goals',
         stake: 10.0,
         end: 108.5,
         notes: 'Late goal missed over. Respected stop-loss, no tilt.',
@@ -1306,7 +1680,8 @@ async function generateWorkbook() {
         dayNum: 2,
         date: '2026-11-04',
         time: '16:45',
-        market: 'Sic Bo (Single Die Value)',
+        game: 'Sic Bo',
+        market: 'Single Die Value Progression',
         stake: 14.0,
         end: 118.0,
         notes: 'Rebounded with base 1-unit bets.',
@@ -1315,7 +1690,8 @@ async function generateWorkbook() {
         dayNum: 3,
         date: '2026-11-05',
         time: '09:30',
-        market: 'Kickoff (1st Half Asian Handicap)',
+        game: 'The Kickoff',
+        market: '1st Half Asian Handicap',
         stake: 12.0,
         end: 125.0,
         notes: 'Bankroll at $125 (+25% sprint ROI). On track.',
@@ -1324,9 +1700,9 @@ async function generateWorkbook() {
     isTemplate: false,
   });
 
-  // 3. Sprint 2 ($250 Bankroll Active - Mode B: Dollar Profit Target)
+  // 3. Sprint 2 ($250 Bankroll Active - Demonstrates Single-Game Dedicated: 100% Sic Bo)
   buildSprintSheet(wb, 'Sprint 2 - $250', {
-    title: 'BET-R PLAY-R // SPRINT 2 ($250 CHALLENGE - MODE B: DOLLAR PROFIT DRIVEN)',
+    title: 'BET-R PLAY-R // SPRINT 2 ($250 CHALLENGE - SINGLE-GAME DEDICATED: SIC BO)',
     startingBankroll: 250.0,
     targetMode: 'Dollar Profit Target',
     horizonType: 'By Sessions',
@@ -1341,16 +1717,18 @@ async function generateWorkbook() {
         dayNum: 1,
         date: '2026-11-01',
         time: '12:00',
-        market: 'Premier League Match Odds',
+        game: 'Sic Bo',
+        market: 'Big/Small Flat 1-Unit Strategy',
         stake: 25.0,
         end: 262.5,
-        notes: 'Clean opening win on home favorite.',
+        notes: 'Clean opening session on Big pattern.',
       },
       {
         dayNum: 2,
         date: '2026-11-02',
         time: '15:30',
-        market: 'Sic Bo (Even/Odd Progression)',
+        game: 'Sic Bo',
+        market: 'Even/Odd Progression',
         stake: 20.0,
         end: 270.0,
         notes: 'Hit session target +$7.50, locked in.',
@@ -1393,7 +1771,7 @@ async function generateWorkbook() {
     console.warn('Note: Could not run libreoffice headless conversion. .xlsx file is fully compatible with Calc.');
   }
 
-  console.log('Enhanced spreadsheet generation completed successfully!');
+  console.log('Enhanced v3.0 spreadsheet generation completed successfully!');
 }
 
 if (require.main === module) {
