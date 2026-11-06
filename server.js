@@ -2,7 +2,7 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const { randomUUID } = require('node:crypto');
+const { randomUUID, createHash } = require('node:crypto');
 const { validate } = require('./js/data');
 const { decodeImages, createOCR } = require('./ocr');
 const PORT = 47615;
@@ -30,14 +30,20 @@ function createServer({ dataDir = path.join(__dirname, 'data'), maxBodyBytes = 1
   let recognizing = false;
   const file = path.join(dataDir, 'betrplayr.json');
   const backups = path.join(dataDir, 'backups');
-  const reply = (res, status, body = '', type = 'text/plain; charset=utf-8') => {
-    res.writeHead(status, { ...HEADERS, 'Content-Type': type }); res.end(body);
+  const readData = () => fs.existsSync(file) ? JSON.stringify(validate(JSON.parse(fs.readFileSync(file, 'utf8')))) : 'null';
+  const tag = body => '"' + createHash('sha256').update(body).digest('hex') + '"';
+  const reply = (res, status, body = '', type = 'text/plain; charset=utf-8', headers = {}) => {
+    res.writeHead(status, { ...HEADERS, 'Content-Type': type, ...headers }); res.end(body);
   };
-  function persist(res, url, text) {
+  function persist(req, res, url, text) {
     let body;
     try { body = JSON.stringify(validate(JSON.parse(text))); }
     catch { return reply(res, 400, 'Invalid Bet-R Play-R backup'); }
     try {
+      if (url === '/data') {
+        if (!req.headers['if-match']) return reply(res, 428, 'Read data before saving');
+        if (req.headers['if-match'] !== tag(readData())) return reply(res, 412, 'Data changed in another window');
+      }
       fs.mkdirSync(backups, { recursive: true });
       if (url === '/snapshot') write(path.join(backups, `pre-import-${Date.now()}-${randomUUID()}.json`), body);
       else {
@@ -45,7 +51,7 @@ function createServer({ dataDir = path.join(__dirname, 'data'), maxBodyBytes = 1
         write(path.join(backups, `${day}.json`), body);
         write(file, body);
       }
-      reply(res, 200, 'ok');
+      reply(res, 200, 'ok', 'text/plain; charset=utf-8', url === '/data' ? { ETag: tag(body) } : {});
     } catch { reply(res, 500, 'Unable to save data'); }
   }
   function receive(req, res) {
@@ -61,7 +67,7 @@ function createServer({ dataDir = path.join(__dirname, 'data'), maxBodyBytes = 1
     req.on('end', async () => {
       if (res.writableEnded) return;
       const text = Buffer.concat(chunks).toString('utf8');
-      if (req.url !== '/ocr') return persist(res, req.url, text);
+      if (req.url !== '/ocr') return persist(req, res, req.url, text);
       let images;
       try { images = decodeImages(text); } catch { return reply(res, 400, 'Invalid OCR images'); }
       if (recognizing) return reply(res, 429, 'OCR busy; retry shortly');
@@ -87,8 +93,8 @@ function createServer({ dataDir = path.join(__dirname, 'data'), maxBodyBytes = 1
     if (req.method === 'GET' && req.url === '/ping') return reply(res, 200, 'Bet-R Play-R');
     if (req.method === 'GET' && req.url === '/data') {
       try {
-        const body = fs.existsSync(file) ? JSON.stringify(validate(JSON.parse(fs.readFileSync(file, 'utf8')))) : 'null';
-        return reply(res, 200, body, 'application/json');
+        const body = readData();
+        return reply(res, 200, body, 'application/json', { ETag: tag(body) });
       } catch { return reply(res, 500, 'Unable to read data'); }
     }
     if (req.method === 'POST' && ['/data', '/snapshot', '/ocr'].includes(req.url)) return receive(req, res);

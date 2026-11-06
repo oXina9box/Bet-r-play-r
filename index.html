@@ -110,7 +110,7 @@
         <div id="pending" class="pending"></div>
         <div id="pad"></div>
         <div class="entry-actions">
-          <button id="voiceBtn" class="act voice-btn" title="Toggle Voice Microphone (Shortcut: V)"><span class="mic-icon">🎙️</span> Voice <span class="kbd">V</span></button>
+          <button id="voiceBtn" class="act voice-btn" title="Enable voice entry in Options, then hold Space to speak"><span class="mic-icon">🎙️</span> Hold Space</button>
           <button id="noBet" class="act nobet-btn" title="Toggle No Bet: records this roll without risking money (shortcut: X)">No Bet <span class="kbd">X</span></button>
           <button id="undo" class="act">Undo <span class="kbd">⌫</span></button>
           <button id="clear" class="act">Clear <span class="kbd">Esc</span></button>
@@ -181,6 +181,8 @@
         <div class="row"><label>Delay after factor</label><div id="waitBetSeg" class="seg"></div></div>
         <div class="row"><label>Recovery mode</label><div id="recSeg" class="seg"></div></div>
         <label class="audio-setting"><input id="audioFeedback" type="checkbox" /> Spoken roll and bet advice</label>
+        <label class="audio-setting"><input id="voiceEntry" type="checkbox" /> Voice entry — hold Space to speak; release to enter</label>
+        <div id="voiceEntryHelp" class="muted small"></div>
         <div id="recNotes" class="rec-notes"></div>
         <div class="muted small" id="cfgNote"></div>
       </div>

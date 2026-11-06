@@ -14,17 +14,21 @@ async function main() {
   } });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   const origin = `http://127.0.0.1:${server.address().port}`;
+  let revision;
   function request(url, { method = 'GET', body, headers = {} } = {}) {
     return new Promise((resolve, reject) => {
       const req = http.request(origin + url, { method, headers }, res => {
         const chunks = [];
         res.on('data', c => chunks.push(c));
-        res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks).toString() }));
+        res.on('end', () => {
+          if (url === '/data' && res.statusCode === 200) revision = res.headers.etag;
+          resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks).toString() });
+        });
       });
       req.on('error', reject); req.end(body);
     });
   }
-  const post = body => request('/data', { method: 'POST', body, headers: { Origin: origin, 'Content-Type': 'application/json' } });
+  const post = (body, expected = revision) => request('/data', { method: 'POST', body, headers: { Origin: origin, 'Content-Type': 'application/json', 'If-Match': expected } });
   try {
     assert.equal((await request('/ping')).body, 'Bet-R Play-R');
     const page = await request('/');
@@ -50,7 +54,12 @@ async function main() {
     assert.equal((await post('{"sites":[],"books":{}}')).status, 400);
     assert.equal(fs.existsSync(path.join(dir, 'betrplayr.json')), false);
     const data = createDefault(); data.savedAt = 123;
+    const staleRevision = revision;
+    assert.equal((await request('/data', { method: 'POST', body: JSON.stringify(data), headers: { Origin: origin, 'Content-Type': 'application/json' } })).status, 428);
     assert.equal((await post(JSON.stringify(data))).status, 200);
+    const stale = { ...data, savedAt: 456 };
+    assert.equal((await post(JSON.stringify(stale), staleRevision)).status, 412, 'stale window cannot overwrite another window');
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'betrplayr.json'))), data);
     assert.deepEqual(JSON.parse((await request('/data')).body), data);
     assert.equal((await post('{"sites":[],"books":{}}')).status, 400);
     assert.deepEqual(JSON.parse((await request('/data')).body), data);

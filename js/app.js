@@ -18,6 +18,14 @@
   let ready = false, canWriteFile = false, cacheOK = true, revision = 0;
   let fileQueue = Promise.resolve();
   let fileOK = null; // null = unknown, true = saving to file, false = browser only
+  let fileRevision = null, conflict = false, reconnectTimer;
+  try { fileRevision = localStorage.getItem(KEY + '.fileRevision'); } catch {}
+  function fileConflict() {
+    conflict = true; canWriteFile = false; fileOK = false;
+    clearTimeout(pushTimer);
+    renderSaveStatus();
+    toast('File history changed. Export this window’s backup before reloading; automatic file saving is paused.');
+  }
   function load() {
     try {
       const d = JSON.parse(localStorage.getItem(KEY));
@@ -26,7 +34,11 @@
     return createDefault();
   }
   function cache(value) {
-    try { localStorage.setItem(KEY, JSON.stringify(value)); cacheOK = true; return true; }
+    try {
+      localStorage.setItem(KEY, JSON.stringify(value));
+      if (fileRevision) localStorage.setItem(KEY + '.fileRevision', fileRevision);
+      cacheOK = true; return true;
+    }
     catch (e) { cacheOK = false; toast('Browser storage unavailable. Export a backup to keep these changes.'); return false; }
   }
   function save() {
@@ -45,8 +57,18 @@
       const body = JSON.stringify(data), writing = revision;
       // ponytail: serialize disk writes so a slow older save cannot replace a newer one.
       fileQueue = fileQueue.then(async () => {
+        if (conflict) return;
         let ok;
-        try { ok = (await fetch(API + '/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })).ok; } catch (e) { ok = false; }
+        try {
+          const response = await fetch(API + '/data', { method: 'POST', headers: { 'Content-Type': 'application/json', 'If-Match': fileRevision }, body, signal: AbortSignal.timeout(5000) });
+          if (response.status === 412 || response.status === 428) { fileConflict(); return; }
+          ok = response.ok;
+          if (ok) {
+            fileRevision = response.headers?.get('ETag') || fileRevision;
+            // Cache the current edits with the revision they now descend from.
+            cache(data);
+          }
+        } catch (e) { ok = false; }
         if (writing === revision) {
           fileOK = ok; renderSaveStatus();
           if (!ok) pushTimer = setTimeout(() => { if (writing === revision) pushFile(); }, 2000);
@@ -62,20 +84,30 @@
       if (!response.ok) throw new Error('File load failed');
       const value = await response.json();
       const d = value === null ? null : validate(value);
+      const remoteRevision = response.headers?.get('ETag') || null;
+      // Offline edits and a newer cache must not silently replace unrelated disk history.
+      const localChanges = revision > 0 || (d && (data.savedAt || 0) > (d.savedAt || 0));
+      if (d && localChanges && fileRevision !== remoteRevision) { fileConflict(); return; }
+      fileRevision = remoteRevision;
       canWriteFile = true;
       fileOK = true;
-      if (d && (d.savedAt || 0) >= (data.savedAt || 0)) {
+      if (d && !localChanges && (d.savedAt || 0) >= (data.savedAt || 0)) {
         data = d;
         cache(data);
+        if (ready) { pending = game().emptyPending(); renderPad(); render(); }
       } else pushFile();
-    } catch (e) { canWriteFile = false; fileOK = false; }
+    } catch (e) {
+      canWriteFile = false; fileOK = false;
+      clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(() => { syncFromFile().finally(renderSaveStatus); }, 2000);
+    }
   }
   function renderSaveStatus() {
     const el = $('saveStatus');
     if (!el) return;
     el.className = 'save-status ' + (fileOK ? 'ok' : fileOK === false ? 'warn' : '');
-    el.textContent = fileOK ? '● Saved to file' : fileOK === null ? '● Loading / saving…' : cacheOK ? '● Browser only' : '● Not saved';
-    el.title = fileOK ? 'Data saved to data/betrplayr.json with daily backups in data/backups/' : cacheOK ? 'Current data is kept in browser storage. Open with the launcher for file saving.' : 'Browser storage failed. Export a backup to keep changes.';
+    el.textContent = conflict ? '● File conflict — export before reloading' : fileOK ? '● Saved to file' : fileOK === null ? '● Loading / saving…' : cacheOK ? '● Browser only' : '● Not saved';
+    el.title = conflict ? 'Another window changed the file. Export this window’s history to preserve its unsaved changes before reconciling the backups.' : fileOK ? 'Data saved to data/betrplayr.json with daily backups in data/backups/' : cacheOK ? 'Current data is kept in browser storage. File connection will be retried automatically.' : 'Browser storage failed. Export a backup to keep changes.';
   }
 
   function book() {
@@ -95,6 +127,9 @@
   let spokenSignature = '';
   let view; // last computed
   let screenReader = null;
+  let voiceHeld = false, voiceBinding = null;
+  function cancelVoice() { voiceHeld = false; voiceBinding = null; window.Voice?.cancel?.(); }
+
   let historyReadStatus = null;
   const manualClaims = new Set();
   const currentBinding = () => ({ site: data.cur.site, game: data.cur.game, session: curSession().id });
@@ -177,10 +212,12 @@
     data = { ...data, books: { ...data.books, [key]: { ...b, entries: [...b.entries, entry] } } };
     manualClaims.delete(bindingKey(bound));
     save();
+    return true;
   }
 
   function press(key) {
     if (!ready) return;
+    cancelVoice();
     if (data.cur.game === 'sicbo' && curSession().endedAt !== undefined) return toast('Session ended. Start a new session to continue.');
     const res = game().input(pending, key);
     if (!res) return;
@@ -196,6 +233,7 @@
 
   function undo() {
     if (!ready) return;
+    cancelVoice();
     if (data.cur.game === 'sicbo' && curSession().endedAt !== undefined) return;
     const p = game().undoInput(pending);
     if (p) { pending = p; if (!pending.dice?.length) manualClaims.delete(bindingKey(currentBinding())); return render(); }
@@ -204,10 +242,11 @@
     if (last && last.s === curSession().id) { b.entries.pop(); save(); render(); }
   }
 
-  function clearPending() { pending = game().emptyPending(); manualClaims.delete(bindingKey(currentBinding())); render(); }
+  function clearPending() { cancelVoice(); pending = game().emptyPending(); manualClaims.delete(bindingKey(currentBinding())); render(); }
 
   function newSession() {
     if (!ready) return;
+    cancelVoice();
     if (screenReader?.canSwitch?.() === false) return toast('A verified hand is waiting. Finish or clear manual input, then resume recording.');
     if (!book().entries.some((e) => e.s === curSession().id) && curSession().endedAt === undefined && !curSession().missedRoll) return toast('Current session is already empty');
     screenReader?.stop('New session selected; click Start to record');
@@ -221,6 +260,7 @@
 
   function switchTo(site, gameId) {
     if (!ready) return;
+    cancelVoice();
     if (screenReader?.canSwitch?.() === false) { $('site').value = data.cur.site; return toast('A verified hand is waiting. Finish or clear manual input, then resume recording.'); }
     screenReader?.stop('Casino/game changed; click Start to record');
     game().emptyPending(); // Cancel an active card timer before leaving its game.
@@ -458,6 +498,10 @@
     if (document.activeElement !== $('unit')) $('unit').value = b.cfg.unit;
     if (document.activeElement !== $('payout')) $('payout').value = b.cfg.payout;
     $('audioFeedback').checked = data.audioFeedback === true;
+    $('voiceEntry').checked = data.voiceEntry === true;
+    $('voiceEntryHelp').textContent = data.cur.game === 'sicbo' ? 'Say three numbers, one through six, in order.'
+      : data.cur.game === 'kickoff' ? 'Say two numbers, one through six: Red first, then Blue.'
+        : 'Say rank and suit for each card: Player A, B, A, B, A, B. Example: ace spades, king hearts.';
     seg($('waitSeg'), [[0, '0 (none)'], [1, '1 roll'], [2, '2 rolls'], [3, '3 rolls']], b.cfg.waitBust || 0, (v) => setCfg('waitBust', Number(v)));
     seg($('waitWinSeg'), [[0, data.cur.game === 'sicbo' ? '0 (standard)' : '0'], [1, data.cur.game === 'sicbo' ? '1' : '1 (standard)'], [2, '2'], [3, '3'], [4, '4']], b.cfg.waitWin || 0, (v) => setCfg('waitWin', Number(v)));
     seg($('waitBetSeg'), [[0, '0 (none)'], [1, '1'], [2, '2'], [3, '3']], b.cfg.waitBet || 0, (v) => setCfg('waitBet', Number(v)));
@@ -714,6 +758,7 @@
   }
 
   async function replaceData(next, backupKey) {
+    cancelVoice();
     if (screenReader?.canSwitch?.() === false) throw new Error('A verified hand is waiting. Finish or clear manual input, then resume recording.');
     screenReader?.stop('Data changed; click Start to record');
     const replacement = validate({ ...next, savedAt: Date.now() });
@@ -742,6 +787,16 @@
 
   // ---------- wiring ----------
   function wire() {
+  $('voiceEntry').onchange = (e) => {
+    cancelVoice();
+    if (e.target.checked && !window.Voice?.isSupported()) {
+      e.target.checked = false;
+      return toast('Microphone speech recognition is not supported in this browser.');
+    }
+    data = validate({ ...data, voiceEntry: !!e.target.checked });
+    save(); render();
+    toast(data.voiceEntry ? 'Hold Space, speak the cards or dice, then release.' : 'Voice entry off');
+  };
   $('audioFeedback').onchange = (e) => {
     data = validate({ ...data, audioFeedback: !!e.target.checked });
     if (!data.audioFeedback) window.speechSynthesis?.cancel();
@@ -755,6 +810,7 @@
     readingStatus: status => { historyReadStatus = status; renderRollRecovery(); },
     record: (observation, bound, evidence = {}) => {
       if (!ready || !bound || bound.site !== data.cur.site || bound.game !== data.cur.game || bound.session !== curSession().id) return false;
+      if (voiceBinding && bindingKey(voiceBinding) === bindingKey(bound)) return false;
       if (bound.game === 'sicbo') {
         if (curSession().endedAt !== undefined) return false;
         if (manualClaims.has(bindingKey(bound)) || pending.dice?.length) return false;
@@ -855,80 +911,53 @@
     finally { ready = true; }
   };
 
-  function updateVoiceUI(isListening) {
+  function updateVoiceUI(listening) {
     const btn = $('voiceBtn');
-    if (!btn) return;
-    if (isListening) {
-      btn.classList.add('listening');
-      btn.innerHTML = '<span class="mic-icon">🔴</span> Listening <span class="kbd">V</span>';
-      showVoiceTranscript('Listening for cards or voice commands...', true);
-    } else {
-      btn.classList.remove('listening');
-      btn.innerHTML = '<span class="mic-icon">🎙️</span> Voice <span class="kbd">V</span>';
-      hideVoiceTranscript();
+    if (btn) {
+      btn.classList.toggle('listening', listening);
+      btn.textContent = listening ? 'Listening — release Space' : 'Hold Space';
     }
   }
-
-  function showVoiceTranscript(msg, isInterim = false) {
+  function showVoiceTranscript(msg) {
     const el = $('voiceTranscript');
-    if (!el) return;
-    el.hidden = false;
-    el.innerHTML = `<span class="pill">${isInterim ? 'Live' : 'Heard'}</span> <span>${msg}</span>`;
+    if (el) { el.hidden = false; el.textContent = msg; }
   }
-
-  function hideVoiceTranscript() {
-    const el = $('voiceTranscript');
-    if (!el) return;
-    el.hidden = true;
-  }
-
-  function toggleVoice() {
-    if (!window.Voice) return toast('Voice module not loaded');
-    if (!window.Voice.isSupported()) return toast('Microphone speech recognition not supported in this browser');
-    window.Voice.toggle();
-  }
-
-  if (window.Voice && window.Voice.isSupported()) {
-    window.Voice.init({
-      onStateChange: ({ listening }) => {
-        updateVoiceUI(listening);
-      },
-      onInterim: ({ transcript }) => {
-        showVoiceTranscript(transcript, true);
-      },
-      onResult: ({ transcript }) => {
-        showVoiceTranscript(transcript, false);
-        const parsed = window.Voice.parseSpeech(transcript, data.cur.game);
-
-        // Process commands
-        for (const cmd of parsed.commands) {
-          if (cmd === 'undo') undo();
-          else if (cmd === 'clear') clearPending();
-          else if (cmd === 'newSession') newSession();
-          else if (cmd === 'wa' || cmd === 'wb' || cmd === 'wt') press(cmd);
-        }
-
-        // Teen Patti cards
-        if (data.cur.game === 'teenpatti' && parsed.cards.length > 0) {
-          for (const card of parsed.cards) {
-            press(card);
-          }
-          toast(`🎤 Heard: ${parsed.cards.join(', ')}`);
-        }
-
-        // Sic Bo / Kickoff dice
-        if ((data.cur.game === 'sicbo' || data.cur.game === 'kickoff') && parsed.dice.length > 0) {
-          for (const d of parsed.dice) {
-            press(d);
-          }
-          toast(`🎤 Heard: ${parsed.dice.join(', ')}`);
-        }
-      },
-      onError: (msg) => {
-        toast(msg);
+  function toggleVoice() { toast('Enable Voice entry in Options, then hold Space to speak and release to enter.'); }
+  if (window.Voice?.isSupported()) window.Voice.init({
+    onStateChange: ({ listening }) => updateVoiceUI(listening),
+    onInterim: ({ transcript }) => showVoiceTranscript(transcript),
+    onError: message => { voiceHeld = false; voiceBinding = null; toast(message); },
+    onResult: ({ transcript }) => {
+      const bound = voiceBinding; voiceBinding = null;
+      if (!ready || !data.voiceEntry || !bound || bindingKey(bound) !== bindingKey(currentBinding())) return;
+      const parsed = window.Voice.parseEntry(transcript, data.cur.game);
+      showVoiceTranscript(transcript);
+      if (parsed.error) return toast(parsed.error + ' Nothing recorded.');
+      const keys = parsed.keys, g = game();
+      if ((g.id === 'sicbo' || g.id === 'kickoff') && keys.length + pending.dice.length !== (g.id === 'sicbo' ? 3 : 2)) {
+        return toast('Incorrect number of dice. Nothing recorded.');
       }
-    });
-  }
+      // Validate the entire utterance before changing pending input or recording.
+      let next = JSON.parse(JSON.stringify(pending)), raw = null;
+      for (let i = 0; i < keys.length; i++) {
+        const result = g.input(next, keys[i]);
+        if (!result || result.error || (result.commit && i !== keys.length - 1)) return toast((result?.error || 'Too many cards or dice.') + ' Nothing recorded.');
+        next = result.pending;
+        if (result.commit) raw = result.commit;
+      }
+      if (raw && !commit(raw)) return;
+      pending = next;
+      if (g.id === 'sicbo') manualClaims.delete(bindingKey(bound));
+      render();
+      toast(raw ? 'Voice entry recorded.' : 'Cards entered. Hold Space for the next card.');
+    },
+  });
+  document.addEventListener('keyup', e => {
+    if (e.key !== ' ' || !voiceHeld) return;
+    e.preventDefault(); voiceHeld = false; window.Voice.stop();
+  });
+  window.addEventListener?.('blur', cancelVoice);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) cancelVoice(); });
 
   if (window.Games?.teenpatti?.registerAutoCommit) {
     window.Games.teenpatti.registerAutoCommit(() => {
@@ -945,6 +974,14 @@
   document.addEventListener('keydown', (e) => {
     if (!ready || $('optionsMenu')?.matches?.(':popover-open') || $('screenAreaDialog')?.open) return;
     if (e.target.matches?.('input, select, textarea') || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === ' ' && data.voiceEntry) {
+      e.preventDefault();
+      if (e.repeat || voiceHeld || voiceBinding) return;
+      voiceBinding = currentBinding(); voiceHeld = true;
+      window.speechSynthesis?.cancel();
+      if (!window.Voice?.start()) { voiceHeld = false; voiceBinding = null; }
+      return;
+    }
     if (e.key === 'Backspace') { e.preventDefault(); undo(); }
     else if (e.key === 'Escape') clearPending();
     else if (['Enter', ' ', 'Tab'].includes(e.key) && data.cur.game === 'teenpatti' && pending.active) {

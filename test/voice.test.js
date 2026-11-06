@@ -116,3 +116,49 @@ assert.strictEqual(dupEnd.error, 'A♠ already dealt');
 assert.deepStrictEqual(dupEnd.pending, { cards: ['As'], active: null });
 
 console.log('All Voice and Fast Keypad tests passed!');
+
+// Hold-to-talk uses final results once, after release; canceled sessions stay canceled.
+assert.deepEqual(Voice.parseEntry('one, six, two', 'sicbo'), { keys: [1, 6, 2] });
+assert.deepEqual(Voice.parseEntry('red six blue two', 'kickoff'), { keys: [6, 2] });
+assert.deepEqual(Voice.parseEntry('ace spades king hearts five diamonds jack clubs ten spades two hearts', 'teenpatti').keys,
+  ['As', 'Kh', '5d', 'Jc', '10s', '2h']);
+assert.ok(Voice.parseEntry('one seven two', 'sicbo').error);
+assert.ok(Voice.parseEntry('ace spades king', 'teenpatti').error);
+assert.ok(Voice.parseEntry('undo', 'sicbo').error, 'entry mode must not mistake speech for commands');
+const instances = [], heard = [], errors = [];
+class Recognition {
+  constructor() { instances.push(this); this.starts = 0; }
+  start() { this.starts++; this.onstart?.(); }
+  stop() { this.stopped = true; }
+  abort() { this.aborted = true; }
+}
+global.window = { SpeechRecognition: Recognition };
+const controller = new Voice.VoiceController();
+controller.init({ onResult: result => heard.push(result.transcript), onError: error => errors.push(error) });
+function result(recognition, words, final = true) {
+  const entry = [{ transcript: words }]; entry.isFinal = final;
+  recognition.onresult({ resultIndex: 0, results: [entry] });
+}
+controller.start();
+const first = instances.at(-1);
+result(first, 'one six', false);
+result(first, 'one six two');
+assert.deepEqual(heard, [], 'final speech while held does not enter data');
+controller.stop();
+assert.equal(first.stopped, true);
+assert.deepEqual(heard, [], 'release waits for recognition to finalize');
+first.onend();
+assert.deepEqual(heard, ['one six two']);
+assert.equal(first.starts, 1, 'release does not restart microphone');
+controller.start(); const paused = instances.at(-1);
+result(paused, 'ace'); paused.onend();
+assert.equal(paused.starts, 2, 'silence while held can restart recognition');
+result(paused, 'spades'); controller.stop(); paused.onend();
+assert.equal(heard.at(-1), 'ace spades', 'rank and suit can span recognition segments');
+controller.start(); const canceled = instances.at(-1); controller.cancel();
+result(canceled, 'six six six'); canceled.onend();
+assert.equal(heard.length, 2, 'late results after cancellation are ignored');
+controller.start(); const denied = instances.at(-1); denied.onerror({ error: 'not-allowed' });
+assert.equal(controller.busy, false); assert.match(errors.at(-1), /not permitted/);
+delete global.window;
+console.log('Hold-to-talk voice controller tests passed');

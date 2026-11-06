@@ -1,7 +1,7 @@
-/* Voice Input & Natural Language Card Parser for Bet-R Play-R
- * Allows hands-free card/dice entry via microphone using the Web Speech API.
- * Supports spoken cards ("ace of spades", "king hearts", "5 diamonds", "01"),
- * multi-card runs, quick outcomes ("player 1 won", "tie"), and voice commands ("undo", "clear").
+/* Hold-to-talk card/dice entry using the Web Speech API.
+ * Final recognition segments are collected while Space is held and delivered
+ * together after release. parseSpeech remains available for legacy callers;
+ * the app uses strict parseEntry so unknown words cannot silently alter a hand.
  */
 (function (root) {
   const WORD_RANKS = {
@@ -111,122 +111,99 @@
     return { cards, dice, commands };
   }
 
+  // Strict entry parser: never silently drop an unrecognized value from a hand.
+  function parseEntry(text, game) {
+    const tokens = String(text || '').toLowerCase()
+      .replace(/\bplayer\s+[ab12]\b|\bbanker\b|\bplayer\b|\bred\b|\bblue\b/g, ' ')
+      .replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+    const keys = [];
+    for (let i = 0; i < tokens.length;) {
+      if (game === 'sicbo' || game === 'kickoff') {
+        const n = DICE_WORDS[tokens[i++]];
+        if (!n) return { error: 'Say each die as a number from one to six.' };
+        keys.push(n);
+      } else {
+        const rank = WORD_RANKS[tokens[i]];
+        i++;
+        if (tokens[i] === 'of') i++;
+        const suit = WORD_SUITS[tokens[i++]];
+        if (!rank || !suit) return { error: 'Say each card rank followed by its suit.' };
+        keys.push(rank + suit);
+      }
+    }
+    return keys.length ? { keys } : { error: 'No cards or dice heard. Hold Space and try again.' };
+  }
+
   class VoiceController {
-    constructor() {
-      this.recognition = null;
-      this.shouldBeListening = false;
-      this.isListening = false;
-      this.onResultCb = null;
-      this.onInterimCb = null;
-      this.onStateChangeCb = null;
-      this.onErrorCb = null;
-    }
-
-    isSupported() {
-      return typeof window !== 'undefined' &&
-        !!(window.SpeechRecognition || window.webkitSpeechRecognition);
-    }
-
-    init({ onResult, onInterim, onStateChange, onError } = {}) {
-      if (!this.isSupported()) return false;
-      this.onResultCb = onResult;
-      this.onInterimCb = onInterim;
-      this.onStateChangeCb = onStateChange;
-      this.onErrorCb = onError;
-
+    constructor() { this.recognition = null; this.isListening = false; this.shouldBeListening = false; this.busy = false; this.generation = 0; }
+    isSupported() { return typeof window !== 'undefined' && !!(window.SpeechRecognition || window.webkitSpeechRecognition); }
+    init(callbacks = {}) { this.callbacks = callbacks; return this.isSupported(); }
+    start() {
+      if (!this.isSupported() || this.busy) return false;
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      this.recognition = new SR();
-      this.recognition.continuous = true;
-      this.recognition.interimResults = true;
-      this.recognition.lang = 'en-US';
-
-      this.recognition.onstart = () => {
-        this.isListening = true;
-        if (this.onStateChangeCb) this.onStateChangeCb({ listening: true });
+      const recognition = this.recognition = new SR(), generation = ++this.generation;
+      const current = () => generation === this.generation;
+      let results = new Map(), completed = [];
+      this.busy = true; this.shouldBeListening = true;
+      recognition.continuous = true; recognition.interimResults = true; recognition.lang = 'en-US';
+      recognition.onstart = () => { if (current()) { this.isListening = true; this.callbacks?.onStateChange?.({ listening: true }); } };
+      recognition.onresult = event => {
+        if (!current()) return;
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i];
+          results.set(i, { text: result[0]?.transcript.trim() || '', final: result.isFinal });
+        }
+        this.callbacks?.onInterim?.({ transcript: [...completed, ...[...results.values()].map(r => r.text)].join(' ') });
       };
-
-      this.recognition.onend = () => {
+      recognition.onerror = event => {
+        if (!current() || event.error === 'no-speech') return;
+        this.cancel();
+        this.callbacks?.onError?.(event.error === 'not-allowed' ? 'Microphone access not permitted.' : 'Voice error: ' + event.error);
+      };
+      recognition.onend = () => {
+        if (!current()) return;
+        completed.push(...[...results.values()].filter(r => r.final).map(r => r.text)); results.clear();
         this.isListening = false;
         if (this.shouldBeListening) {
-          // Continuous restart on silence/pause
-          try {
-            this.recognition.start();
-          } catch (e) {
-            setTimeout(() => {
-              if (this.shouldBeListening) {
-                try { this.recognition.start(); } catch (err) {}
-              }
-            }, 250);
-          }
-        } else {
-          if (this.onStateChangeCb) this.onStateChangeCb({ listening: false });
-        }
-      };
-
-      this.recognition.onerror = (e) => {
-        if (e.error === 'no-speech') return; // Expected during pauses, ignore
-        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-          this.shouldBeListening = false;
-          this.isListening = false;
-          if (this.onErrorCb) this.onErrorCb('Microphone access not permitted.');
-          if (this.onStateChangeCb) this.onStateChangeCb({ listening: false });
+          try { recognition.start(); } catch (error) { this.cancel(); this.callbacks?.onError?.(error.message); }
           return;
         }
-        if (this.onErrorCb) this.onErrorCb('Voice error: ' + e.error);
+        this.busy = false;
+        clearTimeout(this.stopTimer);
+        ++this.generation;
+        this.callbacks?.onStateChange?.({ listening: false });
+        if (completed.length) this.callbacks?.onResult?.({ transcript: completed.join(' ') });
+        else this.callbacks?.onError?.('No speech recognized. Hold Space and try again.');
       };
-
-      this.recognition.onresult = (event) => {
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const res = event.results[i];
-          const transcript = res[0] ? res[0].transcript.trim() : '';
-          if (!transcript) continue;
-          if (res.isFinal) {
-            if (this.onResultCb) this.onResultCb({ transcript });
-          } else {
-            if (this.onInterimCb) this.onInterimCb({ transcript });
-          }
-        }
-      };
-
-      return true;
+      try { recognition.start(); return true; }
+      catch (error) { this.cancel(); this.callbacks?.onError?.(error.message); return false; }
     }
-
-    start() {
-      if (!this.recognition && !this.init()) return false;
-      this.shouldBeListening = true;
-      try {
-        this.recognition.start();
-        return true;
-      } catch (err) {
-        if (err.name !== 'InvalidStateError') {
-          if (this.onErrorCb) this.onErrorCb(err.message);
-        }
-        return true;
-      }
-    }
-
     stop() {
       this.shouldBeListening = false;
-      if (this.recognition) {
-        try { this.recognition.stop(); } catch (e) {}
+      if (this.busy) {
+        this.stopTimer = setTimeout(() => {
+          this.cancel();
+          this.callbacks?.onError?.('Speech recognition did not finish. Nothing recorded; please try again.');
+        }, 5000);
+        try { this.recognition.stop(); } catch (error) { this.cancel(); this.callbacks?.onError?.(error.message); }
       }
-      this.isListening = false;
-      if (this.onStateChangeCb) this.onStateChangeCb({ listening: false });
     }
-
-    toggle() {
-      if (this.isListening || this.shouldBeListening) {
-        this.stop();
-        return false;
-      }
-      return this.start();
+    cancel() {
+      clearTimeout(this.stopTimer);
+      ++this.generation; this.shouldBeListening = false; this.isListening = false; this.busy = false;
+      try { this.recognition?.abort(); } catch {}
+      this.callbacks?.onStateChange?.({ listening: false });
     }
+    toggle() { if (this.shouldBeListening) { this.stop(); return false; } return this.start(); }
   }
 
   const voice = new VoiceController();
   const VoiceModule = {
     controller: voice,
     parseSpeech,
+    parseEntry,
+    VoiceController,
+    cancel: () => voice.cancel(),
     toggle: () => voice.toggle(),
     start: () => voice.start(),
     stop: () => voice.stop(),

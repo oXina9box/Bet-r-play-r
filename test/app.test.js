@@ -45,6 +45,7 @@ function boot({ cache = null, get = async () => ({ ok: true, json: async () => f
   return {
     element, context, stored, requests, clickKey, pick,
     key(key, options = {}) { const event = { key, target: {}, preventDefault() { this.prevented = true; }, ...options }; documentListeners.keydown?.(event); return event; },
+    keyup(key) { const event = { key, preventDefault() {} }; documentListeners.keyup?.(event); },
     async runTimers(delay) { for (const [id, timer] of [...timers]) if (timer.delay === delay) { timers.delete(id); timer.fn(); } await tick(); },
     timerCount: (delay) => [...timers.values()].filter((timer) => timer.delay === delay).length,
     async startTimers() { for (const [id, timer] of [...timers]) if (timer.delay === 250) { timers.delete(id); timer.fn(); } await tick(); },
@@ -54,6 +55,49 @@ function boot({ cache = null, get = async () => ({ ok: true, json: async () => f
 }
 
 (async () => {
+  for (const [game, transcript, raw] of [
+    ['sicbo', 'one six two', [1, 6, 2]],
+    ['kickoff', 'six two', [6, 2]],
+    ['teenpatti', 'ace spades five diamonds king hearts queen clubs ten spades two hearts', { c: ['As', '5d', 'Kh', 'Qc', '10s', '2h'], order: 'alternating' }],
+  ]) {
+    let hooks, starts = 0, stops = 0;
+    const voiceApp = boot({ cache: { ...fixture(), cur: { site: 'shuff', game } }, protocol: 'file:', beforeApp(context) {
+      context.Voice = {
+        isSupported: () => true, init: callbacks => { hooks = callbacks; },
+        start: () => { starts++; return true; }, cancel() {},
+        stop: () => { stops++; hooks.onResult({ transcript }); },
+        parseEntry: require('../js/voice').parseEntry,
+      };
+    } });
+    await tick();
+    voiceApp.key(' '); assert.equal(starts, 0, 'voice is opt-in');
+    voiceApp.element('voiceEntry').onchange({ target: { checked: true } });
+    assert.equal(JSON.parse(voiceApp.stored.get('betrplayr.v1')).voiceEntry, true);
+    voiceApp.key(' ', { target: { matches: () => true } });
+    assert.equal(starts, 0, 'Space in a form field does not capture speech');
+    voiceApp.key(' '); voiceApp.key(' ', { repeat: true });
+    assert.equal(starts, 1, 'holding Space starts one recognition session');
+    assert.equal(JSON.parse(voiceApp.stored.get('betrplayr.v1')).books[`shuff:${game}`].entries.length, 0, 'holding does not record');
+    voiceApp.keyup(' ');
+    const recorded = JSON.parse(voiceApp.stored.get('betrplayr.v1')).books[`shuff:${game}`].entries;
+    assert.equal(stops, 1); assert.equal(recorded.length, 1);
+    assert.deepEqual(recorded[0].raw, raw, `${game} voice uses manual entry data format`);
+    assert.equal(recorded[0].cfg.n, 5);
+    assert.match(voiceApp.element('sessionInfo').textContent, /1 (roll|hand)/);
+    voiceApp.key(' '); voiceApp.pick('games', game === 'sicbo' ? 'kickoff' : 'sicbo');
+    hooks.onResult({ transcript });
+    assert.equal(JSON.parse(voiceApp.stored.get('betrplayr.v1')).books[`shuff:${game}`].entries.length, 1, 'game switching cancels late recognition');
+  }
+  let invalidHooks;
+  const invalidVoice = boot({ protocol: 'file:', beforeApp(context) {
+    context.Voice = { isSupported: () => true, init: hooks => { invalidHooks = hooks; }, start: () => true, cancel() {},
+      stop: () => invalidHooks.onResult({ transcript: 'one two three four' }), parseEntry: require('../js/voice').parseEntry };
+  } });
+  await tick(); invalidVoice.element('voiceEntry').onchange({ target: { checked: true } });
+  invalidVoice.key(' '); invalidVoice.keyup(' ');
+  assert.equal(JSON.parse(invalidVoice.stored.get('betrplayr.v1')).books['shuff:sicbo'].entries.length, 0, 'extra dice reject the entire utterance');
+  assert.match(invalidVoice.element('toast').textContent, /Incorrect number/);
+
   const keyboard = boot(); await tick();
   assert.equal(keyboard.key('6').prevented, true, 'recorder number shortcuts suppress browser quick-find');
   let release;
@@ -95,6 +139,63 @@ function boot({ cache = null, get = async () => ({ ok: true, json: async () => f
   failed.clickKey('1'); failed.clickKey('2'); failed.clickKey('3'); await failed.flush();
   assert.equal(failed.requests.filter((r) => r.options?.method === 'POST').length, 0, 'failed GET disables file writes');
   assert.match(failed.element('saveStatus').textContent, /Browser only/);
+  const headers = revision => ({ get: name => name === 'ETag' ? revision : null });
+  let online = false;
+  const reconnect = boot({
+    get: async () => { if (!online) throw new Error('offline'); return { ok: true, headers: headers('"empty"'), json: async () => null }; },
+    post: async () => ({ ok: true, headers: headers('"saved"') }),
+  });
+  await tick();
+  reconnect.clickKey('1'); reconnect.clickKey('2'); reconnect.clickKey('3');
+  online = true;
+  await reconnect.runTimers(2000); await reconnect.flush();
+  const recoveredPost = reconnect.requests.find(r => r.options?.method === 'POST');
+  assert.equal(recoveredPost.options.headers['If-Match'], '"empty"');
+  assert.deepEqual(JSON.parse(recoveredPost.options.body).books['shuff:sicbo'].entries[0].raw, [1, 2, 3]);
+  assert.match(reconnect.element('saveStatus').textContent, /Saved to file/, 'startup failure reconnects and saves offline edits');
+
+  let remoteOnline = false;
+  const remote = fixture(100);
+  remote.sites[0].name = 'Restored file';
+  const reconnectRead = boot({ get: async () => {
+    if (!remoteOnline) throw new Error('offline');
+    return { ok: true, headers: headers('"remote"'), json: async () => remote };
+  } });
+  await tick(); remoteOnline = true;
+  await reconnectRead.runTimers(2000);
+  assert.match(reconnectRead.element('site').innerHTML, /Restored file/, 'reconnection redraws adopted file state');
+
+  let conflictOnline = false;
+  const offlineConflict = boot({ get: async () => {
+    if (!conflictOnline) throw new Error('offline');
+    return { ok: true, headers: headers('"remote"'), json: async () => remote };
+  } });
+  await tick(); offlineConflict.clickKey('1'); offlineConflict.clickKey('2'); offlineConflict.clickKey('3');
+  conflictOnline = true; await offlineConflict.runTimers(2000); await offlineConflict.flush();
+  assert.match(offlineConflict.element('saveStatus').textContent, /File conflict/);
+  assert.equal(offlineConflict.requests.filter(r => r.options?.method === 'POST').length, 0, 'offline edits cannot overwrite unknown remote history');
+  assert.equal(JSON.parse(offlineConflict.stored.get('betrplayr.v1')).books['shuff:sicbo'].entries.length, 1, 'conflicting offline history remains exportable');
+
+  let disk = fixture(100), diskRevision = '"one"';
+  const sharedGet = async () => ({ ok: true, headers: headers(diskRevision), json: async () => JSON.parse(JSON.stringify(disk)) });
+  const sharedPost = async (url, options) => {
+    if (options.headers['If-Match'] !== diskRevision) return { ok: false, status: 412 };
+    disk = JSON.parse(options.body); diskRevision = '"two"';
+    return { ok: true, headers: headers(diskRevision) };
+  };
+  const windowA = boot({ get: sharedGet, post: sharedPost }), windowB = boot({ get: sharedGet, post: sharedPost });
+  await tick();
+  windowA.clickKey('1'); windowA.clickKey('2'); windowA.clickKey('3'); await windowA.flush();
+  windowB.clickKey('4'); windowB.clickKey('5'); windowB.clickKey('6'); await windowB.flush();
+  assert.deepEqual(disk.books['shuff:sicbo'].entries.map(e => e.raw), [[1, 2, 3]], 'stale window leaves saved history intact');
+  assert.match(windowB.element('saveStatus').textContent, /File conflict/);
+  assert.deepEqual(JSON.parse(windowB.stored.get('betrplayr.v1')).books['shuff:sicbo'].entries[0].raw, [4, 5, 6], 'stale window keeps its unsaved roll');
+  windowB.clickKey('1'); windowB.clickKey('1'); windowB.clickKey('1');
+  await windowB.runTimers(2000); await windowB.flush();
+  assert.equal(windowB.requests.filter(r => r.options?.method === 'POST').length, 1, 'conflicts do not retry destructive writes');
+
+  const staleCache = boot({ cache: fixture(Date.now() + 10000), get: sharedGet }); await tick(); await staleCache.flush();
+  assert.match(staleCache.element('saveStatus').textContent, /File conflict/, 'reload cannot authorize a stale cached history using a fresh revision');
   for (const get of [async () => ({ ok: false }), async () => ({ ok: true, json: async () => ({ sites: [] }) })]) {
     const rejected = boot({ get }); await tick();
     rejected.clickKey('1'); rejected.clickKey('2'); rejected.clickKey('3'); await rejected.flush();

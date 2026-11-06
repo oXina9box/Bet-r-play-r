@@ -10,7 +10,7 @@
   const id = x => typeof x === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(x) && !RESERVED.includes(x);
 
   function createDefault() {
-    return { v: 1, sites: [{ id: 'shuff', name: 'Shuff' }], cur: { site: 'shuff', game: 'sicbo' }, books: {}, audioFeedback: false, savedAt: 0 };
+    return { v: 1, sites: [{ id: 'shuff', name: 'Shuff' }], cur: { site: 'shuff', game: 'sicbo' }, books: {}, audioFeedback: false, voiceEntry: false, savedAt: 0 };
   }
 
   function safeKeys(value, seen = new Set(), depth = 0) {
@@ -122,13 +122,14 @@
     check(siteIds.size === sites.length && object(value.cur) && siteIds.has(value.cur.site) && GAMES.includes(value.cur.game));
     check(object(value.books) && (value.savedAt === undefined || stamp(value.savedAt)));
     check(value.audioFeedback === undefined || typeof value.audioFeedback === 'boolean');
+    check(value.voiceEntry === undefined || typeof value.voiceEntry === 'boolean');
     const books = Object.fromEntries(Object.entries(value.books).map(([key, b]) => {
       const [site, game, extra] = key.split(':');
       check(siteIds.has(site) && GAMES.includes(game) && extra === undefined);
       return [key, book(b, game)];
     }));
     return { v: 1, sites, cur: { site: value.cur.site, game: value.cur.game }, books,
-      audioFeedback: value.audioFeedback === true, savedAt: value.savedAt === undefined ? 0 : value.savedAt };
+      audioFeedback: value.audioFeedback === true, voiceEntry: value.voiceEntry === true, savedAt: value.savedAt === undefined ? 0 : value.savedAt };
   }
 
   if (typeof module !== 'undefined' && module.exports) module.exports = { validate, createDefault };
