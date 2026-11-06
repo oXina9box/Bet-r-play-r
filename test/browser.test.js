@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const stage = process.argv.find(arg => ['--ui', '--watch', '--split', '--sicbo', '--teenpatti', '--kickoff'].includes(arg))?.slice(2);
+const stage = process.argv.find(arg => ['--ui', '--sicbo-ui', '--sicbo-reader', '--sicbo-history', '--sicbo-recovery', '--watch', '--split', '--sicbo', '--teenpatti', '--teenpatti-auto', '--kickoff'].includes(arg))?.slice(2);
 
 function playwright() {
   for (const name of [process.env.PLAYWRIGHT_PATH, 'playwright', 'playwright-core'].filter(Boolean)) {
@@ -61,8 +61,12 @@ async function checkOptionsUI(page) {
   await page.locator('#pad [data-key="1"]').click();
   const pending = await page.locator('#pending').innerHTML();
   await openOptions(page);
-  for (const id of ['newSession', 'export', 'resetAll', 'maxPlay', 'unit', 'payout', 'groupSeg', 'progSeg', 'waitSeg', 'recSeg', 'insightSeg', 'insightContent']) {
+  for (const id of ['newSession', 'export', 'resetAll', 'maxPlay', 'unit', 'payout', 'groupSeg', 'progSeg', 'waitSeg', 'waitWinSeg', 'waitBetSeg', 'audioFeedback', 'recSeg']) {
     assert.equal(await page.locator(`#optionsMenu #${id}`).isVisible(), true, `${id} remains accessible in Options`);
+  }
+  for (const id of ['insightSeg', 'insightContent']) {
+    assert.equal(await page.locator(`#optionsMenu #${id}`).count(), 0, `${id} is outside Options`);
+    assert.equal(await page.locator(`.strategy-sections #${id}`).count(), 1, `${id} is on the main page`);
   }
   assert.equal(await page.locator('#optionsMenu label:has(#import)').isVisible(), true);
   assert.equal(await page.locator('#optionsMenu #groupSeg button').count(), 4);
@@ -74,9 +78,11 @@ async function checkOptionsUI(page) {
   await page.locator('#optionsClose').click();
   assert.equal(await page.locator('#optionsMenu').isVisible(), false);
   assert.equal(await page.locator('#pending').innerHTML(), pending);
+  await page.locator('#recorderMenu').evaluate(el => { el.open = false; });
   await page.locator('#clear').click();
   for (const width of [760, 600, 390]) {
     await page.setViewportSize({ width, height: 900 });
+    await openRecorder(page);
     for (const selector of ['#optionsToggle', '#screenStart', '#pad', '#voiceBtn', '#noBet', '#undo', '#clear']) {
       assert.equal(await page.locator(selector).isVisible(), true, `${selector} accessible at ${width}px`);
     }
@@ -102,7 +108,9 @@ async function checkOptionsUI(page) {
     assert.ok(menu.left >= 0 && menu.right <= width && menu.content <= menu.width,
       `Options overflows ${width}px viewport: ${JSON.stringify(menu)}`);
     await page.keyboard.press('Escape');
+    await page.locator('#recorderMenu').evaluate(el => { el.open = false; });
   }
+  await page.locator('#recorderMenu').evaluate(el => { el.open = false; });
   await page.setViewportSize({ width: 1280, height: 720 });
 }
 
@@ -205,7 +213,11 @@ async function checkReloadedResult(page, game) {
     } });
   }, fs.readFileSync(path.join(__dirname, `fixtures/${game}-screen.png`)).toString('base64'));
   await page.locator('#screenStart').click();
-  await page.waitForFunction(() => document.querySelector('#screenStatus').textContent.includes('already recorded'));
+  if (game === 'teenpatti') {
+    await page.waitForFunction(() => !document.querySelector('#screenTeenConfirm').disabled);
+    await page.locator('#screenTeenConfirm').click();
+    await page.waitForFunction(() => document.querySelector('#screenTeenState').textContent.includes('Waiting for the next round phase'));
+  } else await page.waitForFunction(() => document.querySelector('#screenStatus').textContent.includes('already recorded'));
   await page.locator('#screenStop').click();
 }
 
@@ -223,7 +235,7 @@ async function main() {
     assert.deepEqual(missing, [], 'Running app scripts missing; restart the app server after updates');
     const browser = await playwright().chromium.launch({ headless: true, args: ['--no-sandbox'] });
     try {
-      const page = await browser.newPage({ viewport: { width: 760, height: 900 } });
+      const page = await browser.newPage({ viewport: { width: 650, height: 900 } });
       const errors = [];
       page.on('pageerror', err => errors.push(err.message));
       // Smoke-check the running app without permitting any changes to real history.
@@ -233,6 +245,7 @@ async function main() {
       await openRecorder(page);
       assert.match(await page.locator('#saveStatus').textContent(), /Saved to file/);
       assert.equal(await page.locator('#screenStop').isDisabled(), true);
+      await page.locator('#recorderToggle').click();
       if (!await page.locator('#games [data-v="sicbo"]').evaluate(button => button.classList.contains('on'))) await page.locator('#games [data-v="sicbo"]').click();
       await page.locator('#pad [data-key="1"]').click();
       assert.equal(await page.locator('#pending .slot.filled').count(), 1);
@@ -243,6 +256,7 @@ async function main() {
       await page.keyboard.press('2');
       assert.equal(await page.locator('#pending .slot.filled').count(), 2, 'keyboard numbers work');
       await page.locator('#clear').click();
+      await openRecorder(page);
       await page.evaluate(() => {
         Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', { configurable: true, value: async () => {
           window.captureRequested = true;
@@ -256,6 +270,7 @@ async function main() {
       await waitFor(async () => /Screenshot:|already recorded/.test(await page.locator('#screenStatus').textContent()), 'running app screenshot OCR failed');
       assert.match(await page.locator('#screenStatus').textContent(), /BIG\s*16|already recorded/);
       await page.locator('#screenDetails').evaluate(el => { el.open = false; });
+      await page.locator('#recorderMenu').evaluate(el => { el.open = false; });
       await page.screenshot({ path: '/tmp/betr-running-app.png' });
       assert.deepEqual(errors, [], 'running app initializes without JavaScript errors');
       console.log('Running app startup, number entry, Start, screenshot OCR and Options passed (read-only)');
@@ -302,6 +317,14 @@ async function main() {
     await page.waitForFunction(() => document.querySelector('#site option') && !document.querySelector('main').inert);
     await page.waitForFunction(() => document.querySelector('#sessionInfo').textContent.includes('0 rolls'));
     await checkOptionsUI(page);
+    if (!stage || ['ui', 'sicbo-ui', 'sicbo'].includes(stage)) {
+      await require('./sicbo-ui')(page, file, waitFor, openOptions, fixture());
+    }
+    if (stage === 'sicbo-ui') {
+      assert.deepEqual(errors, [], 'Sic Bo UI has no JavaScript errors');
+      console.log('All Sic Bo UI browser tests passed');
+      return;
+    }
     await page.locator('#scopeSeg [data-v="all"]').click();
     assert.match(await page.locator('#insightContent').textContent(), /1 bust/);
     assert.doesNotMatch(await page.locator('#insightContent').textContent(), /Resetting on bust is optimal/);
@@ -404,41 +427,50 @@ async function main() {
     await capture.goto(origin);
     await capture.waitForFunction(() => !document.querySelector('#screenStart').disabled);
     await openRecorder(capture);
+    if (stage === 'teenpatti-auto') {
+      await require('./teenpatti-auto-browser')(capture, file, waitFor);
+      assert.deepEqual(errors, []);
+      console.log('All browser tests passed');
+      return;
+    }
+    if (stage === 'sicbo-history') {
+      await require('./history-segmentation-browser')(capture);
+      await require('./sicbo-history-browser')(capture, file, reads, waitFor);
+      assert.deepEqual(errors, []);
+      console.log('Sic Bo history-only browser checks passed');
+      return;
+    }
+    if (stage === 'sicbo-recovery') {
+      await require('./sicbo-history-browser')(capture, file, reads, waitFor);
+      assert.deepEqual(errors, []);
+      console.log('Sic Bo missed-roll recovery browser checks passed');
+      return;
+    }
+    if (stage === 'sicbo-reader') {
+      await require('./sicbo-history-browser')(capture, file, reads, waitFor);
+      assert.deepEqual(errors, []);
+      console.log('Sic Bo reader browser checks passed');
+      return;
+    }
     if (stage === 'watch') {
-      await require('./watch-area')(capture, file, reads, waitFor);
+      await require('./sicbo-history-browser')(capture, file, reads, waitFor);
       assert.deepEqual(errors, []);
       await capture.close();
       console.log('All watch-area browser tests passed');
       return;
     }
     if (stage === 'split') {
-      for (const game of ['sicbo', 'teenpatti', 'kickoff']) await checkSplitOCR(capture, game, reads);
+      for (const game of ['teenpatti', 'kickoff']) await checkSplitOCR(capture, game, reads);
       assert.deepEqual(errors, []);
       console.log('All split-screen OCR checks passed');
       return;
     }
-    const screenshotStartedAt = Date.now();
     await capture.locator('#screenImage').setInputFiles(path.join(__dirname, 'fixtures/sicbo-screen.png'));
-    await waitFor(async () => {
-      const text = await capture.locator('#screenStatus').textContent();
-      if (await capture.locator('#screenSave').isEnabled()) return true;
-      if (!text.startsWith('Stopped')) throw new Error(`Screenshot read failed: ${text}`);
-      return false;
-    }, 'screenshot OCR did not finish');
-    assert.match(await capture.locator('#screenStatus').textContent(), /BIG\s*16/);
-    await capture.locator('#screenSave').click();
-    await waitFor(() => JSON.parse(fs.readFileSync(file)).books['shuff:sicbo']?.entries.length === 1, 'screen round was not saved');
-    const screenEntry = JSON.parse(fs.readFileSync(file)).books['shuff:sicbo'].entries[0];
-    assert.deepEqual(screenEntry.raw.slice().sort(), [4, 6, 6]);
-    assert.match(screenEntry.screen.round, /^\d{13}$/);
-    assert.ok(Number(screenEntry.screen.round) >= screenshotStartedAt && Number(screenEntry.screen.round) <= Date.now());
-    assert.ok(screenEntry.screen.capturedAt >= screenshotStartedAt && screenEntry.screen.capturedAt <= Date.now());
-    assert.equal(screenEntry.wager.status, 'unknown');
-    await capture.locator('#screenImage').setInputFiles(path.join(__dirname, 'fixtures/sicbo-screen.png'));
-    await capture.waitForFunction(() => document.querySelector('#screenStatus').textContent.startsWith('Screenshot:') && !document.querySelector('#screenSave').disabled);
-    assert.equal(JSON.parse(fs.readFileSync(file)).books['shuff:sicbo'].entries.length, 1, 'a repeated screenshot needs another explicit Record action');
+    await capture.waitForFunction(() => document.querySelector('#screenStatus').textContent.includes('Select history and all three roll boxes'));
+    assert.equal(await capture.locator('#screenSave').isDisabled(), true, 'a stale still cannot bypass the live three-source gate');
+    assert.equal(JSON.parse(fs.readFileSync(file)).books['shuff:sicbo'].entries.length, 0);
     await capture.reload();
-    await capture.waitForFunction(() => document.querySelector('#sessionInfo').textContent.includes('1 roll'));
+    await capture.waitForFunction(() => document.querySelector('#sessionInfo').textContent.includes('0 rolls'));
     await openRecorder(capture);
     for (const width of [1024, 960, 760, 600, 390]) {
       await capture.setViewportSize({ width, height: 900 });
@@ -452,11 +484,11 @@ async function main() {
     }
     await capture.setViewportSize({ width: 960, height: 900 });
     if (!stage || stage === 'sicbo') {
-      await require('./sicbo-live')(capture, file, reads, waitFor, checkReloadedResult);
-      await checkSplitOCR(capture, 'sicbo', reads);
+      await require('./sicbo-history-browser')(capture, file, reads, waitFor);
     }
     if (!stage || stage === 'teenpatti') {
     await capture.locator('#games [data-v="teenpatti"]').click();
+    await capture.locator('#screenTeenSource').selectOption('cards');
     await capture.locator('#screenImage').setInputFiles(path.join(__dirname, 'fixtures/teenpatti-screen.png'));
     await waitFor(async () => {
       const text = await capture.locator('#screenStatus').textContent();
@@ -469,6 +501,7 @@ async function main() {
     assert.deepEqual(JSON.parse(fs.readFileSync(file)).books['shuff:teenpatti'].entries[0].raw.c, ['8s', '4c', '3c', '9c', '10c', 'Ah']);
     await require('./teenpatti-live')(capture, file, reads, waitFor, checkReloadedResult);
     await checkSplitOCR(capture, 'teenpatti', reads);
+    await require('./teenpatti-auto-browser')(capture, file, waitFor);
     for (const width of [1024, 960, 760, 600, 390]) {
       await capture.setViewportSize({ width, height: 900 });
       const layout = await capture.evaluate(() => ({
@@ -484,6 +517,8 @@ async function main() {
     if (!stage || stage === 'kickoff') {
     await capture.setViewportSize({ width: 960, height: 900 });
     await capture.locator('#games [data-v="kickoff"]').click();
+    await openRecorder(capture);
+    await capture.locator('#screenDetails').evaluate(el => { el.open = true; });
     await capture.locator('#screenImage').setInputFiles(path.join(__dirname, 'fixtures/kickoff-screen.png'));
     await waitFor(async () => {
       const text = await capture.locator('#screenStatus').textContent();
@@ -523,7 +558,6 @@ async function main() {
       if (width === 760) await capture.screenshot({ path: '/tmp/betr-kickoff-compact.png' });
     }
     }
-    if (!stage) await require('./watch-area')(capture, file, reads, waitFor);
     await capture.close();
     assert.deepEqual(errors, []);
     console.log('All browser tests passed');

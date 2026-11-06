@@ -18,11 +18,10 @@
   }
 
   // Sides we'd bet over the whole set, given pattern + factor side.
-  function betPlan(pattern, factor) {
+  function betPlan(pattern, factor, offset = 0) {
     const plan = [];
     for (let k = 1; k < pattern.length; k++) {
-      const repeatSide = pattern[k] === pattern[0] ? factor : opp(factor);
-      plan.push(opp(repeatSide));
+      plan.push(continuationSide(pattern, factor, offset + k - 1));
     }
     return plan;
   }
@@ -112,7 +111,7 @@
     }
     const mult = baseMult * recMult;
     return {
-      side: set.plan[step] || continuationSide(set.pattern, set.factor, step),
+      side: set.plan[step] || continuationSide(set.pattern, set.factor, step + (set.patternOffset || 0)),
       step,
       of: set.plan.length,
       mult,
@@ -130,10 +129,10 @@
     return opp(repeatSide);
   }
 
-  function continueSet(set, ladderLevel) {
-    const extra = Array.from({ length: 4 }, (_, i) => continuationSide(set.pattern, set.factor, set.plan.length + i));
+  function continueSet(set, ladderLevel, bustIndex, recoveryState) {
+    const extra = Array.from({ length: 4 }, (_, i) => continuationSide(set.pattern, set.factor, set.plan.length + i + (set.patternOffset || 0)));
     return { ...set, plan: [...set.plan, ...extra], step: set.plan.length, playedMults: [...set.playedMults],
-      ladderLevel, delayLeft: 0, continuing: true };
+      ladderLevel, delayLeft: 0, continuing: true, bustIndex, recoveryState: recoveryState ? { ...recoveryState } : null };
   }
 
   /**
@@ -168,16 +167,19 @@
 
       if (!set && continuation) {
         const expected = betFor(continuation, continuation.step);
-        const confirmed = e.wager?.status === 'observed' && e.wager.bets.some(b => b.market === expected.side && b.amount > 0);
-        if (confirmed) { set = continuation; continuation = null; cooldown = 0; }
-        else if (cooldown === 0) continuation = null;
+        const confirmed = !e.nb && e.wager?.status === 'observed' && e.wager.bets.some(b => b.market === expected.side && b.amount > 0);
+        if (confirmed) {
+          rows[continuation.bustIndex] = { ...rows[continuation.bustIndex], continued: true };
+          set = continuation; recoveryState = continuation.recoveryState; continuation = null; cooldown = 0;
+        }
+        else continuation = null; // Declining the next wager returns to the normal cooldown/new-run flow.
       }
 
       if (set) {
         if (set.delayLeft > 0) {
-          const firstBet = betFor(set, set.step);
+          const expectedBetSide = continuationSide(set.pattern, set.factor, set.delayElapsed);
           r.setNo = set.no;
-          if (!push && !e.lossAll && side === firstBet.side) {
+          if (!push && side === expectedBetSide) {
             r.role = 'factor-break';
             r.setEnd = 'delay-break';
             r.setNo = set.no;
@@ -193,6 +195,7 @@
           r.role = 'factor-wait';
           r.delayLeft = set.delayLeft;
           set.delayLeft--;
+          set.delayElapsed++;
           seq.push(side);
           continue;
         }
@@ -232,7 +235,7 @@
             r.factor = set.factor;
             r.plan = set.plan.slice();
             r.setCfg = Object.assign({}, set.cfg);
-            continuation = continueSet(set, ladderLevel);
+            continuation = continueSet(set, ladderLevel, rows.length - 1, recoveryState);
             cooldown = (set.cfg && set.cfg.waitBust != null) ? set.cfg.waitBust : (curCfg.waitBust || 0);
             cooldownReason = 'bust';
 
@@ -300,7 +303,7 @@
           no: ++setNo,
           pattern,
           factor: side,
-          plan: betPlan(pattern, side),
+          plan: betPlan(pattern, side, setCfg.waitBet || 0),
           cfg: setCfg,
           step: 0,
           playedMults: [],
@@ -308,6 +311,8 @@
           recMult,
           recovery: recInfo,
           delayLeft: setCfg.waitBet || 0,
+          delayElapsed: 0,
+          patternOffset: setCfg.waitBet || 0,
         };
         r.role = 'factor';
         r.setNo = set.no;
@@ -397,9 +402,15 @@
       run += r.pnl;
       s.peak = Math.max(s.peak, run);
       s.maxDD = Math.max(s.maxDD, s.peak - run);
-      if (r.setEnd) {
+      if ((r.setEnd === 'won' || r.setEnd === 'bust') && !r.continued) {
         s.sets++;
-        if (r.setEnd === 'won') { s.won++; s.byStep[r.setStep]++; s.bustStreak = 0; if (r.noBet || r.result === 'push') s.wonFree++; }
+        if (r.setEnd === 'won') {
+          s.won++;
+          while (s.byStep.length <= r.setStep) s.byStep.push(0);
+          s.byStep[r.setStep]++;
+          s.bustStreak = 0;
+          if (r.noBet || r.result === 'push') s.wonFree++;
+        }
         else { s.bust++; s.bustStreak++; s.maxBustStreak = Math.max(s.maxBustStreak, s.bustStreak); }
       }
     }
@@ -415,7 +426,7 @@
     const busts = [];
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
-      if (r.setEnd !== 'bust' || !r.rawPattern) continue;
+      if (r.setEnd !== 'bust' || r.continued || !r.rawPattern) continue;
       const pat = r.rawPattern;
       const n = pat.length;
       const cfg = r.setCfg || r.cfg || {};
@@ -432,9 +443,8 @@
         if (!sameSession(r, sub)) break;
         const push = sub.side == null;
         const side = push ? previousSide : sub.side;
-        const step = n - 1 + extraSteps.length;
-        const repeatSide = pat[(step + 1) % n] === pat[0] ? r.factor : opp(r.factor);
-        const betSide = opp(repeatSide);
+        const step = (r.bet?.step ?? n - 2) + 1 + extraSteps.length;
+        const betSide = continuationSide(pat, r.factor, step + (cfg.waitBet || 0));
         const win = side === betSide && !sub.lossAll;
         const mult = progression.mult(progression.ladder ? level : step) * recMult;
         const amount = mult * unit;

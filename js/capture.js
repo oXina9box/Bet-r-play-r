@@ -37,6 +37,27 @@
     return { candidate, stable: now - candidate.at >= 1500 ? { ...retained, [round]: { wager, at: now } } : retained };
   }
 
+  function createTeenPhaseClock({ now = Date.now() } = {}) {
+    let round = null, phaseAt = null, generated = now, leftPhase = false, gap = false;
+    return {
+      read(phase, result, at = Date.now()) {
+        if (phase === true && result === true) { if (round) gap = true; round = null; phaseAt = null; leftPhase = false; return null; }
+        if (round) {
+          if (phase === true && leftPhase) { round = null; phaseAt = at; leftPhase = false; gap = true; return null; }
+          if (phase !== true && result !== true) leftPhase = true;
+          return round;
+        }
+        if (phase === true && result === false) {
+          if (phaseAt === null || at < phaseAt) phaseAt = at;
+          else if (at - phaseAt >= 150) { generated = Math.max(at, generated + 1); round = String(generated); }
+        } else phaseAt = null;
+        return round;
+      },
+      recorded() { round = null; phaseAt = null; leftPhase = false; },
+      gap() { return gap; },
+    };
+  }
+
   function createTracker() {
     let candidate = null;
     return {
@@ -50,7 +71,9 @@
         }
         if (entries.some(e => e.screen?.round === o.round)) { candidate = null; return { status: 'duplicate', message: `Round ${o.round} already recorded` }; }
         const cards = o.raw?.c;
-        if (game.id === 'teenpatti' && (Array.isArray(o.raw) || o.raw?.w !== undefined || o.raw?.order !== undefined ||
+        const winnerOnly = game.id === 'teenpatti' && o.source === 'winner';
+        if (winnerOnly && (!o.raw || Object.keys(o.raw).length !== 1 || !['A', 'B', 'T'].includes(o.raw.w))) return review('Winner unclear; nothing recorded');
+        if (game.id === 'teenpatti' && !winnerOnly && (Array.isArray(o.raw) || o.raw?.w !== undefined || o.raw?.order !== undefined ||
           !Array.isArray(cards) || cards.length !== 6 || new Set(cards).size !== 6 ||
           !cards.every(c => typeof c === 'string' && /^(?:[2-9]|10|J|Q|K|A)[hdsc]$/.test(c)))) {
           return review('Screen hand requires six valid, unique cards grouped by player');
@@ -68,12 +91,12 @@
           (game.id === 'sicbo' && o.result.total === undefined && !outcome.triple)) {
           return review('Result banner and hand/roll disagree');
         }
-        const identity = JSON.stringify([o.round, o.raw, o.result, o.wager]);
+        const identity = JSON.stringify([o.round, o.raw, o.result, ...(winnerOnly ? [] : [o.wager])]);
         if (!candidate || candidate.identity !== identity) {
           candidate = { identity, since: now };
           return { status: 'pending', message: `Checking round ${o.round} again` };
         }
-        if (now - candidate.since < 1500) return { status: 'pending', message: 'Waiting for a second stable read' };
+        if (now - candidate.since < (winnerOnly ? 150 : 1500)) return { status: 'pending', message: 'Waiting for a second stable read' };
         return { status: 'ready', entry: {
           raw: o.raw,
           screen: { round: o.round, capturedAt: now, confidence: o.confidence, result: o.resultText },
@@ -82,7 +105,7 @@
       },
     };
   }
-  const api = { createTracker, trackWagers, createRoundClock };
+  const api = { createTracker, trackWagers, createRoundClock, createTeenPhaseClock };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.ScreenCapture = api;
 })(this);

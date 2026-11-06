@@ -13,8 +13,31 @@ const source = fixture();
 const clean = validate(source);
 assert.equal(clean.books['shuff:sicbo'].cfg.fibDrop, 2);
 assert.equal(clean.books['shuff:sicbo'].entries[0].cfg.recovery, 0);
-assert.equal(clean.books['shuff:sicbo'].cfg.waitWin, 1, 'older active settings get the standard one-game win wait');
+assert.equal(clean.books['shuff:sicbo'].cfg.waitWin, 0, 'missing Sic Bo win wait uses the standard zero-game wait');
 assert.equal(clean.books['shuff:sicbo'].cfg.waitBet, 0);
+for (const game of ['teenpatti', 'kickoff']) {
+  assert.equal(validate(fixture(game, game === 'kickoff' ? [6, 2] : { w: 'A' })).books[`shuff:${game}`].cfg.waitWin, 1,
+    `${game} keeps its standard one-game win wait`);
+}
+for (let waitWin = 0; waitWin <= 4; waitWin++) {
+  const saved = fixture();
+  saved.books['shuff:sicbo'].cfg.waitWin = waitWin;
+  saved.books['shuff:sicbo'].entries[0].cfg.waitWin = waitWin;
+  const retained = validate(saved).books['shuff:sicbo'];
+  assert.equal(retained.cfg.waitWin, waitWin, `saved Sic Bo preference ${waitWin} survives validation`);
+  assert.equal(retained.entries[0].cfg.waitWin, waitWin, `historical entry preference ${waitWin} survives validation`);
+}
+const recovery = fixture();
+recovery.books['shuff:sicbo'].sessions[0] = {
+  id: 's1', start: 100,
+  missedRoll: { id: '1881576828', detectedAt: 120, promptAt: 150, deadline: 15150 },
+};
+recovery.books['shuff:sicbo'].sessions.push({ id: 's2', start: 100, endedAt: 200, endReason: 'missed-roll' });
+const recovered = validate(recovery);
+assert.deepEqual(recovered.books['shuff:sicbo'].sessions[0], recovery.books['shuff:sicbo'].sessions[0]);
+assert.deepEqual(recovered.books['shuff:sicbo'].sessions[1], recovery.books['shuff:sicbo'].sessions[1]);
+assert.deepEqual(validate(recovered), recovered, 'recovery fields survive export/import validation');
+assert.deepEqual(validate(source).books['shuff:sicbo'].sessions[0], { id: 's1', start: 1 }, 'older sessions remain supported');
 clean.books['shuff:sicbo'].entries[0].raw[0] = 6;
 assert.equal(source.books['shuff:sicbo'].entries[0].raw[0], 1);
 for (const prog of ['double', 'plusone', 'fib', 'fib_ladder']) {
@@ -48,6 +71,30 @@ for (const edit of [
   d => { d.sites.push({ id: 'shuff', name: 'Duplicate' }); },
   d => { d.books['missing:sicbo'] = d.books['shuff:sicbo']; },
 ]) { const d = fixture(); edit(d); assert.throws(() => validate(d)); }
+for (const session of [
+  { id: 's1', start: 100, endedAt: 99, endReason: 'missed-roll' },
+  { id: 's1', start: 100, endedAt: 200 },
+  { id: 's1', start: 100, endReason: 'manual' },
+  { id: 's1', start: 100, endedAt: 200, endReason: 'other' },
+  { id: 's1', start: 100, endedAt: 200, endReason: 'missed-roll', missedRoll: { id: '1881576828', detectedAt: 120, promptAt: 150, deadline: 15150 } },
+]) {
+  const d = fixture(); d.books['shuff:sicbo'].sessions[0] = session;
+  assert.throws(() => validate(d));
+}
+for (const missedRoll of [
+  { id: 'bad', detectedAt: 120, promptAt: 150, deadline: 15150 },
+  { id: '1881576828', detectedAt: 120, promptAt: 150, deadline: 15149 },
+  { id: '1881576828', detectedAt: 120, promptAt: 3121, deadline: 18121 },
+  { id: '1881576828', detectedAt: 120, promptAt: 150, deadline: 15150.5 },
+  { id: '1881576828', detectedAt: 150, promptAt: 120, deadline: 15120 },
+  { id: '1881576828', detectedAt: Number.MAX_SAFE_INTEGER + 1, promptAt: Number.MAX_SAFE_INTEGER + 1, deadline: Number.MAX_SAFE_INTEGER + 1 },
+]) {
+  const d = fixture(); d.books['shuff:sicbo'].sessions[0].missedRoll = missedRoll;
+  assert.throws(() => validate(d));
+}
+const nonSicbo = fixture('kickoff', [6, 2]);
+nonSicbo.books['shuff:kickoff'].sessions[0].missedRoll = { id: '1881576828', detectedAt: 120, promptAt: 150, deadline: 15150 };
+assert.throws(() => validate(nonSicbo));
 const observed = fixture();
 const entry = observed.books['shuff:sicbo'].entries[0];
 entry.screen = { round: '1881576828', capturedAt: 2, confidence: 94, result: 'SMALL 6' };

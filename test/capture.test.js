@@ -94,3 +94,13 @@ assert.equal(wagerState.stable[round].wager.bets[0].amount, 0);
 wagerState = trackWagers(wagerState, undefined, { status: 'unknown' }, 130000);
 assert.equal(wagerState.stable[round], undefined, 'old wager evidence expires');
 console.log('All capture tests passed');
+
+const winnerTracker = createTracker();
+const winner = { ...hand, source: 'winner', raw: { w: 'B' }, result: { side: 'B' } };
+assert.equal(winnerTracker.read(winner, { game: teenpatti, entries: [], now: 0 }).status, 'pending');
+assert.equal(winnerTracker.read(winner, { game: teenpatti, entries: [], now: 200 }).status, 'ready');
+for (const raw of [{ w: 'X' }, { w: 'B', c: hand.raw.c }, { w: 'b' }]) {
+  assert.equal(winnerTracker.read({ ...winner, raw }, { game: teenpatti, entries: [], now: 400 }).status, 'review');
+}
+assert.equal(winnerTracker.read({ ...winner, source: 'cards' }, { game: teenpatti, entries: [], now: 500 }).status, 'review');
+assert.equal(winnerTracker.read({ ...winner, result: { side: 'A' } }, { game: teenpatti, entries: [], now: 600 }).status, 'review');

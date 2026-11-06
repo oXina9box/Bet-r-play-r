@@ -32,6 +32,14 @@
     return match && match[1] === ids[0] ? match[1] : null;
   }
 
+  function parseSicBoHistory(text) {
+    if (typeof text !== 'string') return null;
+    const match = /^\s*([1-9]|1[0-8])\s+([1-6])\s+([1-6])\s+([1-6])\s*$/.exec(text);
+    if (!match) return null;
+    const total = Number(match[1]), dice = match.slice(2).map(Number);
+    return total >= 3 && dice.reduce((sum, die) => sum + die, 0) === total ? { total, dice } : null;
+  }
+
   function parseMoney(text) {
     const match = /^(GC|SC|\$)\s*((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?)$/.exec(normalized(text));
     if (!match) return null;
@@ -44,6 +52,19 @@
     return image && Number.isInteger(image.width) && Number.isInteger(image.height) &&
       image.width >= 6 && image.height >= 6 && image.width <= 2048 && image.height <= 2048 &&
       image.data && image.data.length === image.width * image.height * 4;
+  }
+
+  function teenBadge(image) {
+    if (!validImage(image)) return false;
+    let gold = 0, white = 0;
+    for (let i = 0; i < image.data.length; i += 4) {
+      const [r, g, b, a] = image.data.slice(i, i + 4);
+      if (a < 128) continue;
+      if (r > 100 && g > 85 && r > g * 1.12 && g > b * 1.25) gold++;
+      if (Math.min(r, g, b) > 200 && Math.max(r, g, b) - Math.min(r, g, b) < 45) white++;
+    }
+    const pixels = image.width * image.height;
+    return gold / pixels >= .08 && white / pixels >= .015;
   }
 
   function components(image, predicate) {
@@ -195,20 +216,71 @@
     return reading ? { ...reading, box } : null;
   }
 
-  // Isolate red physical die faces in a Sic Bo bowl, excluding UI/history.
-  // ponytail: color segmentation is layout-specific; no guess for black dice.
-  function readDice(image, count = 3) {
-    if (!validImage(image) || !Number.isInteger(count) || count < 1 || count > 3) return null;
+  // Input must be the isolated physical bowl, never a history/board crop.
+  // Color identifies candidates only; actual pip geometry determines each value.
+  function inspectSicBoDice(image, count = 3) {
+    const unknown = reason => ({ dice: null, confidence: 0, boxes: [], faces: [], reason });
+    if (!validImage(image) || !Number.isInteger(count) || count < 1 || count > 3) return unknown('Invalid physical dice image');
     const area = image.width * image.height, size = Math.min(image.width, image.height);
-    const faces = components(image, (r, g, b) => r > 50 && g < 80 && b < 80 && r > g * 1.65 && r > b * 1.5)
-      .filter((c) => c.area > area * 0.0005 && c.area < area * 0.09 && c.maxX - c.minX >= 8 && c.maxY - c.minY >= 8 && c.maxX - c.minX < size * 0.35 && c.maxY - c.minY < size * 0.35);
-    const readings = faces.map((face) => {
+    const bodies = components(image, (r, g, b) => r > 50 && g < 80 && b < 80 && r > g * 1.65 && r > b * 1.5)
+      .filter(c => c.area > area * 0.0005 && c.area < area * 0.12 && c.maxX - c.minX >= 8 && c.maxY - c.minY >= 8 &&
+        c.maxX - c.minX < size * 0.4 && c.maxY - c.minY < size * 0.4 &&
+        c.area / ((c.maxX - c.minX + 1) * (c.maxY - c.minY + 1)) > 0.25);
+    const faces = bodies.map(face => {
       const x = Math.max(0, face.minX - 3), y = Math.max(0, face.minY - 3);
       const box = { x, y, width: Math.min(image.width - 1, face.maxX + 3) - x + 1, height: Math.min(image.height - 1, face.maxY + 3) - y + 1 };
-      return { box, reading: readDie(cropImage(image, box)) };
-    }).filter((item) => item.reading);
-    if (readings.length !== count) return null;
-    return { dice: readings.map((item) => item.reading.value), confidence: Math.min(...readings.map((item) => item.reading.confidence)), boxes: readings.map((item) => item.box) };
+      const crop = cropImage(image, box);
+      // The overlaid timer has a brown center and white numerals; its neon ring
+      // is UI evidence, not a red physical die face.
+      if (components(crop, (r, g, b) => g >= 170 && g > r * 1.3 && g > b * 1.6).reduce((sum, part) => sum + part.area, 0) > box.width * box.height * .03) return null;
+      const readings = [175, 195].map(threshold => readDieAt(crop, threshold)).filter(Boolean);
+      if (!readings.length && !components(crop, (r, g, b) => Math.min(r, g, b) >= 175 && Math.max(r, g, b) - Math.min(r, g, b) < 80)
+        .some(p => {
+          const w = p.maxX - p.minX + 1, h = p.maxY - p.minY + 1, fill = p.area / (w * h);
+          return p.area >= 3 && p.area <= box.width * box.height * .06 && w / h <= 2.4 && h / w <= 2.4 && fill >= .45 && fill <= .95 &&
+            p.minX > 0 && p.minY > 0 && p.maxX < box.width - 1 && p.maxY < box.height - 1;
+        })) return null;
+      const clipped = face.minX === 0 || face.minY === 0 || face.maxX === image.width - 1 || face.maxY === image.height - 1;
+      const agreed = new Set(readings.map(reading => reading.value)).size === 1;
+      const reading = !clipped && agreed ? readings.reduce((best, next) => next.confidence < best.confidence ? next : best) : null;
+      return { box, value: reading?.value ?? null, confidence: reading?.confidence ?? 0,
+        reason: clipped ? 'Physical die clipped by region' : !agreed ? 'Pip readings disagree or are unclear' : 'Physical pips agree' };
+    }).filter(Boolean);
+    const boxes = faces.map(face => face.box), clear = faces.length === count && faces.every(face => face.value !== null);
+    return { faces, boxes, dice: clear ? faces.map(face => face.value) : null,
+      confidence: clear ? Math.min(...faces.map(face => face.confidence)) : 0,
+      reason: clear ? 'Three independent physical faces read' : faces.length !== count ? `Need ${count} physical dice; found ${faces.length}` : 'Physical dice unclear or clipped' };
+  }
+
+  function readDice(image, count = 3) {
+    const read = inspectSicBoDice(image, count);
+    return read.dice ? { dice: read.dice, confidence: read.confidence, boxes: read.boxes } : null;
+  }
+
+  function countdownCircle(image, component) {
+    const points = component.pixels.map(index => [index % image.width - component.x, Math.floor(index / image.width) - component.y]);
+    let xx = 0, xy = 0, yy = 0, xz = 0, yz = 0;
+    for (const [x, y] of points) { const z = x * x + y * y; xx += x * x; xy += x * y; yy += y * y; xz += x * z; yz += y * z; }
+    const determinant = xx * yy - xy * xy;
+    if (determinant <= 0) return null;
+    const cx = (xz * yy - yz * xy) / determinant / 2, cy = (yz * xx - xz * xy) / determinant / 2;
+    const radii = points.map(([x, y]) => Math.hypot(x - cx, y - cy));
+    const radius = radii.reduce((sum, value) => sum + value / radii.length, 0);
+    const error = Math.sqrt(radii.reduce((sum, value) => sum + (value - radius) ** 2 / radii.length, 0)) / radius;
+    const sectors = new Set(points.map(([x, y]) => Math.floor((Math.atan2(y - cy, x - cx) + Math.PI) / Math.PI * 16)));
+    if (radius < 8 || radius > Math.min(image.width, image.height) * 0.4 || error > 0.075 || sectors.size < 13 || component.area / (Math.PI * radius * radius) > 0.5) return null;
+    const center = { x: component.x + cx, y: component.y + cy }, half = radius * 0.58;
+    if (center.x - radius < 0 || center.y - radius < 0 || center.x + radius >= image.width || center.y + radius >= image.height) return null;
+    const x = Math.floor(center.x - half), y = Math.floor(center.y - half);
+    return { center, radius, box: { x, y, width: Math.ceil(half * 2), height: Math.ceil(half * 2) } };
+  }
+
+  // Only locates an actual circular green countdown. Caller must OCR its center.
+  function sicboCountdown(image) {
+    if (!validImage(image)) return null;
+    const rings = components(image, (r, g, b) => g >= 170 && g > r * 1.3 && g > b * 1.6)
+      .filter(part => part.area >= 35).map(part => countdownCircle(image, part)).filter(Boolean);
+    return rings.length === 1 ? rings[0] : null;
   }
 
   function glyphMask(image, component, resolution = 24) {
@@ -274,7 +346,7 @@
     return { suit: scores[0].suit, confidence: Math.round(scores[0].score * 100) };
   }
 
-  const ScreenVision = { parseResult, parseRound, parseMoney, readDie, readDieRegion, readDice, readSuit };
+  const ScreenVision = { parseResult, parseRound, parseSicBoHistory, parseMoney, teenBadge, readDie, readDieRegion, readDice, inspectSicBoDice, sicboCountdown, readSuit };
   if (typeof module !== 'undefined' && module.exports) module.exports = ScreenVision;
   else root.ScreenVision = ScreenVision;
 })(typeof window !== 'undefined' ? window : this);

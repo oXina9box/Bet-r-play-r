@@ -47,7 +47,10 @@
       fileQueue = fileQueue.then(async () => {
         let ok;
         try { ok = (await fetch(API + '/data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })).ok; } catch (e) { ok = false; }
-        if (writing === revision) { fileOK = ok; renderSaveStatus(); }
+        if (writing === revision) {
+          fileOK = ok; renderSaveStatus();
+          if (!ok) pushTimer = setTimeout(() => { if (writing === revision) pushFile(); }, 2000);
+        }
       });
       return fileQueue;
     }, 250);
@@ -77,7 +80,7 @@
 
   function book() {
     const k = data.cur.site + ':' + data.cur.game;
-    if (!data.books[k]) data.books[k] = { cfg: Object.assign({}, DEFAULT_CFG), sessions: [{ id: uid(), start: Date.now() }], entries: [] };
+    if (!data.books[k]) data.books[k] = { cfg: { ...DEFAULT_CFG, waitWin: data.cur.game === 'sicbo' ? 0 : DEFAULT_CFG.waitWin }, sessions: [{ id: uid(), start: Date.now() }], entries: [] };
     return data.books[k];
   }
   const game = () => GAMES[data.cur.game];
@@ -92,6 +95,45 @@
   let spokenSignature = '';
   let view; // last computed
   let screenReader = null;
+  let historyReadStatus = null;
+  const manualClaims = new Set();
+  const currentBinding = () => ({ site: data.cur.site, game: data.cur.game, session: curSession().id });
+  const bindingKey = b => `${b.site}:${b.game}:${b.session}`;
+  function renderRollRecovery() {
+    const ended = data.cur.game === 'sicbo' && curSession().endedAt !== undefined;
+    const retrying = data.cur.game === 'sicbo' && ['reading', 'gap'].includes(historyReadStatus?.status);
+    const node = $('rollRecovery');
+    const state = ended ? 'ended' : retrying ? 'reading' : 'idle';
+    node.hidden = !ended && !retrying;
+    node.dataset && (node.dataset.state = state);
+    document.body?.setAttribute?.('data-recovery', state);
+    if (ended) $('rollRecoveryMessage').textContent = 'Session ended. History saved as-is. Start a new session to continue.';
+    else if (retrying) $('rollRecoveryMessage').textContent = historyReadStatus.status === 'gap'
+      ? 'Unresolved roll moved outside the visible history. Later rolls are held.'
+      : 'Reading history — retrying unresolved results in order.';
+    $('rollRecoveryCountdown').textContent = '';
+  }
+  function detectMissedRoll(round, bound) {
+    // History remains available for retries. No manual prompt or session deadline.
+    return ready && bound?.game === 'sicbo' && bound.site === data.cur.site &&
+      bound.session === curSession().id && curSession().endedAt === undefined;
+  }
+  function restoreRollRecoveries() {
+    manualClaims.clear();
+    let changed = false;
+    const books = Object.fromEntries(Object.entries(data.books).map(([key, b]) => {
+      if (!key.endsWith(':sicbo')) return [key, b];
+      const sessions = b.sessions.map(session => {
+        if (!session.missedRoll) return session;
+        changed = true;
+        const { missedRoll, ...kept } = session;
+        return kept;
+      });
+      return [key, { ...b, sessions }];
+    }));
+    if (changed) { data = { ...data, books }; save(); }
+    renderRollRecovery();
+  }
 
   function compute() {
     const b = book(), g = game();
@@ -122,21 +164,31 @@
 
   function commit(raw) {
     if (!ready) return;
+    const bound = currentBinding();
+    if (data.cur.game === 'sicbo' && curSession().endedAt !== undefined) return;
+    if (screenReader?.manual?.() === false) return toast('History recovery pending. Let it finish before entering a roll manually.');
     const b = book();
     const entry = { t: Date.now(), s: curSession().id, raw, cfg: Object.assign({}, b.cfg) };
     if (noBetArmed) {
       entry.nb = true;
       noBetArmed = false;
     }
-    b.entries.push(entry);
+    const key = `${data.cur.site}:${data.cur.game}`;
+    data = { ...data, books: { ...data.books, [key]: { ...b, entries: [...b.entries, entry] } } };
+    manualClaims.delete(bindingKey(bound));
     save();
   }
 
   function press(key) {
     if (!ready) return;
+    if (data.cur.game === 'sicbo' && curSession().endedAt !== undefined) return toast('Session ended. Start a new session to continue.');
     const res = game().input(pending, key);
     if (!res) return;
     pending = res.pending;
+    if (data.cur.game === 'sicbo') {
+      if (pending.dice?.length) manualClaims.add(bindingKey(currentBinding()));
+      else manualClaims.delete(bindingKey(currentBinding()));
+    }
     if (res.error) toast(res.error);
     if (res.commit) commit(res.commit);
     render();
@@ -144,32 +196,37 @@
 
   function undo() {
     if (!ready) return;
+    if (data.cur.game === 'sicbo' && curSession().endedAt !== undefined) return;
     const p = game().undoInput(pending);
-    if (p) { pending = p; return render(); }
+    if (p) { pending = p; if (!pending.dice?.length) manualClaims.delete(bindingKey(currentBinding())); return render(); }
     const b = book();
     const last = b.entries[b.entries.length - 1];
     if (last && last.s === curSession().id) { b.entries.pop(); save(); render(); }
   }
 
-  function clearPending() { pending = game().emptyPending(); render(); }
+  function clearPending() { pending = game().emptyPending(); manualClaims.delete(bindingKey(currentBinding())); render(); }
 
   function newSession() {
     if (!ready) return;
-    const b = book();
-    if (!b.entries.some((e) => e.s === curSession().id)) return toast('Current session is already empty');
+    if (screenReader?.canSwitch?.() === false) return toast('A verified hand is waiting. Finish or clear manual input, then resume recording.');
+    if (!book().entries.some((e) => e.s === curSession().id) && curSession().endedAt === undefined && !curSession().missedRoll) return toast('Current session is already empty');
     screenReader?.stop('New session selected; click Start to record');
-    b.sessions.push({ id: uid(), start: Date.now() });
+    const b = book(), key = `${data.cur.site}:${data.cur.game}`;
+    data = { ...data, books: { ...data.books, [key]: { ...b, sessions: [...b.sessions, { id: uid(), start: Date.now() }] } } };
     pending = game().emptyPending();
+    noBetArmed = false;
     save(); render();
     toast('New session started');
   }
 
   function switchTo(site, gameId) {
     if (!ready) return;
+    if (screenReader?.canSwitch?.() === false) { $('site').value = data.cur.site; return toast('A verified hand is waiting. Finish or clear manual input, then resume recording.'); }
     screenReader?.stop('Casino/game changed; click Start to record');
     game().emptyPending(); // Cancel an active card timer before leaving its game.
     data.cur = { site, game: gameId };
     pending = game().emptyPending();
+    noBetArmed = false;
     save();
     renderPad();
     render();
@@ -198,14 +255,16 @@
     renderSettings();
     renderStats();
     renderInsights();
+    renderRollRecovery();
   }
 
   function renderHeader() {
+    document.body?.setAttribute?.('data-game', data.cur.game);
     $('site').innerHTML = data.sites.map((s) => `<option value="${escapeHTML(s.id)}" ${s.id === data.cur.site ? 'selected' : ''}>${escapeHTML(s.name)}</option>`).join('');
     seg($('games'), Object.values(GAMES).map((g) => [g.id, g.name]), data.cur.game, (id) => switchTo(data.cur.site, id));
     const b = book();
     const n = view.rows.length;
-    $('sessionInfo').textContent = `Session #${b.sessions.length} · ${n} ${game().entryName.toLowerCase()}${n === 1 ? '' : 's'}`;
+    $('sessionInfo').textContent = `Session #${b.sessions.length} · ${n} ${game().entryName.toLowerCase()}${n === 1 ? '' : 's'}${curSession().endedAt !== undefined ? ' · ENDED' : ''}`;
   }
 
   function sideTag(side, cls = '') {
@@ -213,6 +272,11 @@
   }
 
   function renderNext() {
+    if (data.cur.game === 'sicbo' && curSession().endedAt !== undefined) {
+      $('next').className = 'next wait';
+      $('next').innerHTML = '<div class="phase">SESSION ENDED</div><div class="bet-side wait">Missed roll</div><div class="pattern">History saved as-is. Start a new session to continue.</div><button id="resumeSession">Start new session</button>';
+      $('resumeSession')?.addEventListener('click', newSession); return;
+    }
     const nx = view.next, g = game();
     const last = view.rows[view.rows.length - 1];
     let lastLine = '';
@@ -293,14 +357,14 @@
     if (!last || data.audioFeedback !== true || !window.speechSynthesis || !window.SpeechSynthesisUtterance) return;
     const raw = Array.isArray(last.raw) ? last.raw.join(', ') : last.raw?.c ? last.raw.c.join(', ') : last.raw?.w || '';
     const outcome = last.side ? g.sides[last.side].label : 'tie';
-    const result = last.setEnd === 'bust' ? 'Bust.' : last.setEnd === 'won' ? 'Set won.' : last.result === 'loss' ? 'Bet lost.' : last.result === 'win' ? 'Bet won.' : '';
-    const advice = next.phase === 'bet' ? `Bet ${g.sides[next.side].label}, ${fmt(next.amount)}.`
+    const result = last.nb || last.noBet ? 'Bet skipped. No money risked.' : last.setEnd === 'bust' ? 'Bust.' : last.setEnd === 'won' ? 'Set won.' : last.result === 'loss' ? 'Bet lost.' : last.result === 'win' ? 'Bet won.' : '';
+    const advice = noBetArmed ? 'Skip the next roll. No bet.' : next.phase === 'bet' ? `Bet ${g.sides[next.side].label}, ${fmt(next.amount)}.`
       : next.phase === 'continue' ? `Optional continue after bust: bet ${g.sides[next.side].label}, ${fmt(next.amount)}. I will resume this run if that wager is visible.`
         : next.phase === 'factor-delay' ? `Waiting ${next.left} rolls for the pattern.`
           : next.phase === 'cooldown' ? `Waiting ${next.left} rolls after ${next.reason}.`
             : next.phase === 'factor' ? 'No bet. Next roll sets the factor.'
               : `No bet. Collecting ${next.have} of ${next.need} rolls.`;
-    const signature = [last.t, next.phase, next.side, next.amount, next.left, result].join(':');
+    const signature = [data.cur.site, g.id, last.s, last.t, next.phase, next.side, next.amount, next.left, result, noBetArmed].join(':');
     if (signature === spokenSignature) return;
     spokenSignature = signature;
     const detail = last.o.total ? `total ${last.o.total}.` : last.o.red ? `red ${last.o.red}, blue ${last.o.blue}.` : '';
@@ -318,6 +382,7 @@
     const end = r.setEnd === 'bust' ? ' bust' : r.setEnd === 'won' ? ' won' : '';
     const as = r.push && r.effSide ? ` as ${g.sides[r.effSide].label}` : '';
     if (r.push && r.effSide) c.sub = '→' + g.sides[r.effSide].short;
+    if (g.id === 'teenpatti' && r.screen && r.raw?.w) c.sub = 'winner only';
     const nbText = r.noBet ? ' [NO BET] ' : '';
     const recText = r.recovery ? ` [Recovery ${r.recovery.currentSet}/${r.recovery.totalSets}] ` : '';
     const tip = `${nbText}${recText}` + (r.push ? `Tie, played${as || ' as nothing (no prior winner)'} · ` : '') + (r.role === 'factor' ? `Factor · fading ${r.pattern}` : r.role === 'factor-wait' ? `Delayed bet wait (${r.delayLeft} remaining)` : r.role === 'factor-break' ? 'Pattern broke during delay; sequence reset' : r.role === 'cooldown' ? `Cooldown after ${r.cooldownReason || 'bust'} (${r.cooldownLeft} remaining)` : r.bet ? `Bet ${g.sides[r.bet.side].label} ${fmt(r.bet.amount)} → ${r.result}` : '') + ' · double-click to toggle No Bet';
@@ -394,7 +459,7 @@
     if (document.activeElement !== $('payout')) $('payout').value = b.cfg.payout;
     $('audioFeedback').checked = data.audioFeedback === true;
     seg($('waitSeg'), [[0, '0 (none)'], [1, '1 roll'], [2, '2 rolls'], [3, '3 rolls']], b.cfg.waitBust || 0, (v) => setCfg('waitBust', Number(v)));
-    seg($('waitWinSeg'), [[0, '0'], [1, '1 (standard)'], [2, '2'], [3, '3'], [4, '4']], b.cfg.waitWin || 0, (v) => setCfg('waitWin', Number(v)));
+    seg($('waitWinSeg'), [[0, data.cur.game === 'sicbo' ? '0 (standard)' : '0'], [1, data.cur.game === 'sicbo' ? '1' : '1 (standard)'], [2, '2'], [3, '3'], [4, '4']], b.cfg.waitWin || 0, (v) => setCfg('waitWin', Number(v)));
     seg($('waitBetSeg'), [[0, '0 (none)'], [1, '1'], [2, '2'], [3, '3']], b.cfg.waitBet || 0, (v) => setCfg('waitBet', Number(v)));
     seg($('recSeg'), [
       [0, 'Off (Flat)'],
@@ -649,6 +714,7 @@
   }
 
   async function replaceData(next, backupKey) {
+    if (screenReader?.canSwitch?.() === false) throw new Error('A verified hand is waiting. Finish or clear manual input, then resume recording.');
     screenReader?.stop('Data changed; click Start to record');
     const replacement = validate({ ...next, savedAt: Date.now() });
     const prev = JSON.stringify(data);
@@ -664,6 +730,7 @@
       } catch (e) { snapshotOK = false; }
     }
     data = replacement;
+    restoreRollRecoveries();
     cacheOK = true;
     revision++;
     noBetArmed = false;
@@ -677,19 +744,28 @@
   function wire() {
   $('audioFeedback').onchange = (e) => {
     data = validate({ ...data, audioFeedback: !!e.target.checked });
+    if (!data.audioFeedback) window.speechSynthesis?.cancel();
     spokenSignature = '';
     save(); render();
     toast(data.audioFeedback ? 'Spoken feedback on' : 'Spoken feedback off');
   };
   if (window.ScreenReader) screenReader = window.ScreenReader.init({
-    getContext: () => ({ site: data.cur.site, game: game(), session: curSession().id, entries: book().entries }),
-    record: (observation, bound) => {
+    getContext: () => ({ site: data.cur.site, game: game(), session: curSession().id, entries: book().entries, ended: curSession().endedAt !== undefined }),
+    rollDetected: detectMissedRoll,
+    readingStatus: status => { historyReadStatus = status; renderRollRecovery(); },
+    record: (observation, bound, evidence = {}) => {
       if (!ready || !bound || bound.site !== data.cur.site || bound.game !== data.cur.game || bound.session !== curSession().id) return false;
+      if (bound.game === 'sicbo') {
+        if (curSession().endedAt !== undefined) return false;
+        if (manualClaims.has(bindingKey(bound)) || pending.dice?.length) return false;
+      }
+      if (bound.game === 'teenpatti' && (pending.cards?.length || pending.active)) return false;
       const key = `${data.cur.site}:${data.cur.game}`, b = book();
       if (b.entries.some(e => e.screen?.round === observation.screen.round)) return false;
       const entry = { t: Date.now(), s: curSession().id, cfg: { ...b.cfg }, ...observation, ...(noBetArmed ? { nb: true } : {}) };
       try { data = validate({ ...data, books: { ...data.books, [key]: { ...b, entries: [...b.entries, entry] } } }); }
       catch { toast('Screen reading invalid; nothing recorded'); return false; }
+      manualClaims.delete(bindingKey(bound));
       pending = game().emptyPending(); noBetArmed = false; save(); render(); return true;
     },
   });
@@ -739,6 +815,7 @@
     const name = siteInput.value.trim();
     siteInput.hidden = true;
     if (!name) return;
+    if (screenReader?.canSwitch?.() === false) return toast('A verified hand is waiting. Finish or clear manual input, then resume recording.');
     const id = (name.toLowerCase().replace(/[^a-z0-9]+/g, '-') || uid()).slice(0, 128);
     if (!data.sites.some((s) => s.id === id)) {
       try { data = validate({ ...data, sites: [...data.sites, { id, name }] }); }
@@ -892,5 +969,6 @@
     renderPad(); render(); renderSaveStatus();
     document.querySelectorAll('button, input, select').forEach((el) => { el.disabled = false; });
     wire();
+    restoreRollRecoveries();
   });
 })();

@@ -157,4 +157,11 @@ assert.equal(Vision.readDie(picture([[-21, -12], [21, -12], [-21, 12], [21, 12]]
 assert.equal(Vision.parseResult(null, null), null);
 assert.equal(Vision.parseRound(null), null);
 assert.equal(Vision.parseMoney(null), null);
+const badge = { width: 20, height: 20, data: new Uint8ClampedArray(20 * 20 * 4) };
+for (let i = 0; i < 400; i++) badge.data.set(i < 40 ? [255, 255, 255, 255] : [190, 150, 40, 255], i * 4);
+assert.equal(Vision.teenBadge(badge), true, 'white letters and gold background');
+const label = { ...badge, data: new Uint8ClampedArray(badge.data) };
+for (let i = 40; i < 400; i++) label.data.set([25, 80, 150, 255], i * 4);
+assert.equal(Vision.teenBadge(label), false, 'white player label on blue is not a result badge');
+assert.equal(Vision.teenBadge(null), false);
 console.log('Vision parser, pip and suit checks passed.');

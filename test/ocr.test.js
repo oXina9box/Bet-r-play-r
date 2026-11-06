@@ -10,8 +10,15 @@ const { createOCR, decodeImages } = require('../ocr');
     const [result] = await ocr.recognize(images);
     assert.equal(result.text, 'BIG 16', 'real screenshot banner passes local OCR');
     assert.ok(result.confidence >= 80);
+    const [restricted, unrestricted] = await Promise.all([
+      ocr.recognize(images.map(image => ({ ...image, mode: 'rank' }))),
+      ocr.recognize(images),
+    ]);
+    assert.match(restricted[0].text, /^[2345678910JQKA\s]*$/, 'concurrent requests keep their own OCR whitelist');
+    assert.equal(unrestricted[0].text, 'BIG 16', 'text request cannot inherit another request\'s rank settings');
     await ocr.close();
-    assert.equal((await ocr.recognize(images))[0].text, 'BIG 16', 'worker can restart');
+    const restarted = await Promise.all([ocr.recognize(images), ocr.recognize(images)]);
+    assert.deepEqual(restarted.map(batch => batch[0].text), ['BIG 16', 'BIG 16'], 'concurrent requests share one restarted worker safely');
   } finally { await ocr.close(); }
   for (const body of ['{}', 'null', '{', '{"images":[]}']) assert.throws(() => decodeImages(body));
   console.log('All local OCR tests passed');

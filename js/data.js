@@ -59,7 +59,21 @@
     check(object(value) && Array.isArray(value.sessions) && value.sessions.length > 0 && Array.isArray(value.entries));
     const sessions = value.sessions.map(s => {
       check(object(s) && id(s.id) && stamp(s.start));
-      return { id: s.id, start: s.start };
+      const ended = s.endedAt !== undefined || s.endReason !== undefined;
+      check(!ended || (stamp(s.endedAt) && s.endedAt >= s.start && s.endReason === 'missed-roll'));
+      check(s.endedAt === undefined || s.endReason !== undefined);
+      let missedRoll;
+      if (s.missedRoll !== undefined) {
+        const m = s.missedRoll;
+        check(game === 'sicbo' && s.endedAt === undefined && object(m) && typeof m.id === 'string' && /^\d{8,14}$/.test(m.id));
+        check([m.detectedAt, m.promptAt, m.deadline].every(Number.isSafeInteger));
+        check(m.detectedAt >= 0 && m.detectedAt <= m.promptAt && m.promptAt - m.detectedAt <= 3000);
+        check(m.deadline === m.promptAt + 15000);
+        missedRoll = { id: m.id, detectedAt: m.detectedAt, promptAt: m.promptAt, deadline: m.deadline };
+      }
+      return { id: s.id, start: s.start,
+        ...(s.endedAt === undefined ? {} : { endedAt: s.endedAt, endReason: s.endReason }),
+        ...(missedRoll === undefined ? {} : { missedRoll }) };
     });
     const sessionIds = new Set(sessions.map(s => s.id));
     check(sessionIds.size === sessions.length);
@@ -74,7 +88,7 @@
       const wager = e.wager === undefined ? {} : { wager: wagerEntry(e.wager) };
       return { t: e.t, s: e.s, raw: rawEntry(e.raw, game), cfg: config(e.cfg), ...(e.nb === undefined ? {} : { nb: e.nb }), ...screen, ...wager };
     });
-    return { cfg: config(value.cfg, 1), sessions, entries };
+    return { cfg: config(value.cfg, game === 'sicbo' ? 0 : 1), sessions, entries };
   }
 
   function screenEntry(s) {

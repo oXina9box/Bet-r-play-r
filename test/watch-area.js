@@ -23,14 +23,21 @@ module.exports = async function checkWatchArea(page, file, reads, waitFor) {
     const bitmap = await createImageBitmap(new Blob([Uint8Array.from(atob(base64), c => c.charCodeAt(0))], { type: 'image/png' }));
     const source = document.createElement('canvas'); source.width = 2560; source.height = 1440;
     const ctx = source.getContext('2d'), x = 160, y = 180, width = 1920, height = 1080;
+    window.watchSource = source;
     window.showWatchScene = settled => {
       ctx.fillStyle = '#151515'; ctx.fillRect(0, 0, source.width, source.height);
       ctx.drawImage(bitmap, x, y, width, height);
       if (!settled) { ctx.fillStyle = '#ad6d35'; ctx.fillRect(x + width * .44, y + height * .367, width * .12, height * .05); }
       // The casino footer is unreadable; round identity must come from the PC.
       ctx.fillStyle = '#151515'; ctx.fillRect(x, y + height * .95, width, height * .05);
+      window.watchTrack?.requestFrame();
     };
     window.showWatchScene(false);
+    const fetch = window.fetch.bind(window);
+    window.fetch = (url, options) => {
+      if (url === '/ocr') window.watchLastOCR = JSON.parse(options.body).images;
+      return fetch(url, options);
+    };
     window.watchShareRequests = 0;
     Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', { configurable: true, value: async () => {
       window.watchShareRequests++;
@@ -45,6 +52,7 @@ module.exports = async function checkWatchArea(page, file, reads, waitFor) {
   const area = () => page.evaluate(key => JSON.parse(localStorage.getItem(key) || '{}').table, key);
   const shared = () => page.evaluate(() => ({ requests: window.watchShareRequests, state: window.watchTrack.readyState }));
   async function openEditor() {
+    if (!await page.locator('#recorderMenu').evaluate(menu => menu.open)) await page.locator('#recorderToggle').click();
     await page.locator('#screenSelectArea').click();
     await page.waitForFunction(() => document.querySelector('#screenAreaDialog').open);
     assert.equal(await page.locator('#screenAreaHint').isVisible(), true);
@@ -88,8 +96,22 @@ module.exports = async function checkWatchArea(page, file, reads, waitFor) {
   const selected = await area(), expected = [.0625, .125, .75, .75];
   assert.ok(selected && selected.every((value, i) => Math.abs(value - expected[i]) < .005), `watch region normalized to full frame: ${JSON.stringify(selected)}`);
   assert.deepEqual(await shared(), { requests: 1, state: 'live' }, 'valid selection resumes the same sharing track');
+  await page.locator('#recorderToggle').click();
+  assert.equal(await page.locator('#recorderMenu').evaluate(menu => menu.open), false, 'recorder controls can close while recording');
   try { await waitFor(() => entries().length === 1, 'selected watch area did not resume automatic recording'); }
-  catch (error) { throw new Error(`${error.message}: ${await page.locator('#screenStatus').textContent()}; ${JSON.stringify(reads.slice(-2))}`); }
+  catch (error) {
+    const image = await page.evaluate(() => window.watchSource?.toDataURL());
+    if (image) fs.writeFileSync('/tmp/betr-watch-source.png', Buffer.from(image.split(',')[1], 'base64'));
+    const crop = await page.evaluate(() => {
+      const c = document.createElement('canvas'); c.width = 700; c.height = 220;
+      c.getContext('2d').drawImage(window.watchSource, 160 + 1920 * .44, 180 + 1080 * .367, 1920 * .12, 1080 * .05, 0, 0, c.width, c.height);
+      return c.toDataURL();
+    });
+    fs.writeFileSync('/tmp/betr-watch-crop.png', Buffer.from(crop.split(',')[1], 'base64'));
+    const requested = await page.evaluate(() => window.watchLastOCR || []);
+    for (const item of requested) fs.writeFileSync(`/tmp/betr-watch-request-${item.id}.png`, Buffer.from(item.png.split(',')[1], 'base64'));
+    throw new Error(`${error.message}: ${await page.locator('#screenStatus').textContent()}; ${JSON.stringify(reads.slice(-2))}`);
+  }
   assert.deepEqual(entries()[0].raw.slice().sort(), [4, 6, 6]);
   assert.match(entries()[0].screen.round, /^\d{13}$/);
   assert.ok(Number(entries()[0].screen.round) >= startedAt && Number(entries()[0].screen.round) <= Date.now(), 'covered casino footer cannot block the PC-timed roll');
@@ -114,10 +136,21 @@ module.exports = async function checkWatchArea(page, file, reads, waitFor) {
   assert.deepEqual(await area(), selected, 'Escape preserves the saved watch area');
   assert.deepEqual(await shared(), { requests: 1, state: 'live' });
   assert.equal(entries().length, 1, 'drawing, cancelling and repeated frames cannot duplicate a round');
+  await page.locator('#recorderToggle').click();
+  await page.evaluate(() => window.showWatchScene(false));
+  await page.waitForFunction(() => document.querySelector('#screenStatus').textContent.includes('Waiting for a completed result banner'));
+  const absentReads = reads.filter(batch => batch.some(item => item.id === 'result')).length;
+  await waitFor(() => reads.filter(batch => batch.some(item => item.id === 'result')).length >= absentReads + 2,
+    'next round needs repeated confirmed absence of the previous result banner');
+  await page.evaluate(() => window.showWatchScene(true));
+  await waitFor(() => entries().length === 2, 'a second equal roll must record after the next result phase');
+  assert.deepEqual(entries()[1].raw.slice().sort(), [4, 6, 6]);
+  assert.notEqual(entries()[0].screen.round, entries()[1].screen.round, 'separate rounds receive separate PC timestamps');
+  await page.locator('#recorderToggle').click();
   await page.locator('#screenStop').click();
   assert.equal((await shared()).state, 'ended');
   await page.reload();
-  await page.waitForFunction(() => document.querySelector('#sessionInfo').textContent.includes('1 roll'));
+  await page.waitForFunction(() => document.querySelector('#sessionInfo').textContent.includes('2 rolls'));
   await page.locator('#recorderToggle').click();
   assert.deepEqual(await area(), selected, 'watch area survives reload');
   console.log('Direct watch-area sharing, reverse drawing, pause/resume, cancellation and persistence passed');

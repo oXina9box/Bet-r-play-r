@@ -6,7 +6,7 @@ function decodeImages(body) {
   const ids = new Set();
   return images.map(image => {
     if (!image || !/^[a-zA-Z0-9_-]{1,30}$/.test(image.id) || ids.has(image.id) ||
-      !['text', 'digits', 'rank'].includes(image.mode) || typeof image.png !== 'string' ||
+      !['text', 'digits', 'digit', 'rank'].includes(image.mode) || typeof image.png !== 'string' ||
       !/^data:image\/png;base64,[A-Za-z0-9+/]+=*$/.test(image.png)) throw new Error('Invalid image');
     ids.add(image.id);
     const png = Buffer.from(image.png.slice(22), 'base64');
@@ -21,6 +21,14 @@ function decodeImages(body) {
 function createOCR() {
   let worker = null;
   let loading = null;
+  let pending = Promise.resolve();
+  // Parameters belong to a batch. Keep loading, parameters, images and shutdown
+  // together so overlapping browser requests cannot change each other's reads.
+  function enqueue(operation) {
+    const result = pending.then(operation);
+    pending = result.catch(() => {});
+    return result;
+  }
   async function close() {
     if (loading) await loading.catch(() => {});
     const old = worker; worker = null;
@@ -36,13 +44,13 @@ function createOCR() {
     }
     const results = [];
     for (const image of images) {
-      await worker.setParameters({ tessedit_pageseg_mode: image.mode === 'rank' ? '8' : '7',
-        tessedit_char_whitelist: image.mode === 'rank' ? '2345678910JQKA' : '' });
+      await worker.setParameters({ tessedit_pageseg_mode: image.mode === 'rank' ? '8' : image.mode === 'digit' ? '10' : '7',
+        tessedit_char_whitelist: image.mode === 'rank' ? '2345678910JQKA' : image.mode === 'digits' || image.mode === 'digit' ? '0123456789' : '' });
       const { data } = await worker.recognize(image.png);
       results.push({ id: image.id, text: data.text.trim(), confidence: data.confidence });
     }
     return results;
   }
-  return { recognize, close };
+  return { recognize: images => enqueue(() => recognize(images)), close: () => enqueue(close) };
 }
 module.exports = { decodeImages, createOCR };

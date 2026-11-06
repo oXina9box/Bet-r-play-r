@@ -18,6 +18,11 @@ module.exports = async function checkTeenPattiLive(page, file, reads, waitFor, c
       ctx.drawImage(bitmap, 0, 0);
       if (phase === 'betting') { ctx.fillStyle = '#1d529c'; ctx.fillRect(c.width * .44, c.height * .32, c.width * .13, c.height * .065); }
       if (phase === 'covered') { ctx.fillStyle = '#1d529c'; ctx.fillRect(c.width * .275, c.height * .54, c.width * .075, c.height * .13); }
+      if (phase === 'betting') {
+        ctx.fillStyle = '#111'; ctx.fillRect(c.width * .02, c.height * .2, c.width * .3, c.height * .07);
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 46px Arial';
+        ctx.fillText('BETTING OPEN', c.width * .02 + 12, c.height * .2 + 60);
+      }
       for (const [y, amount] of [[.68, 50], [.76, 10]]) {
         ctx.fillStyle = '#151515'; ctx.fillRect(c.width * .02, c.height * y, c.width * .13, c.height * .06);
         ctx.fillStyle = 'white'; ctx.font = 'bold 46px Arial';
@@ -25,7 +30,8 @@ module.exports = async function checkTeenPattiLive(page, file, reads, waitFor, c
       }
     }
     scene('betting');
-    localStorage.setItem('betrplayr.screen.shuff.teenpatti', JSON.stringify({ betB: [.02, .68, .13, .06], betB_PLUS: [.02, .76, .13, .06] }));
+    localStorage.setItem('betrplayr.screen.shuff.teenpatti', JSON.stringify({ table: [0, 0, 1, 1], result: [.44, .32, .13, .065], phase: [.02, .2, .3, .07], betB: [.02, .68, .13, .06], betB_PLUS: [.02, .76, .13, .06] }));
+    localStorage.setItem('betrplayr.screen.shuff.teenpatti.teen', JSON.stringify({ source: 'cards', phaseText: 'BETTING OPEN', width: c.width, height: c.height, result: true, phase: true }));
     Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', { configurable: true, value: async () => {
       const stream = c.captureStream(2);
       setTimeout(() => { ctx.fillStyle = '#151515'; ctx.fillRect(0, 0, 1, 1); }, 100);
@@ -35,8 +41,12 @@ module.exports = async function checkTeenPattiLive(page, file, reads, waitFor, c
   }, fs.readFileSync(path.join(__dirname, 'fixtures/teenpatti-screen.png')).toString('base64'));
   const startedAt = Date.now();
   await page.locator('#screenStart').click();
-  await waitFor(() => reads.filter(batch => batch.some(r => r.id === 'betB')).length >= 2, 'Teen Patti stakes not read twice');
-  await page.waitForFunction(() => document.querySelector('#screenStatus').textContent.includes('Waiting for a completed result banner'));
+  await page.waitForFunction(() => !document.querySelector('#screenTeenConfirm').disabled);
+  await page.locator('#screenTeenConfirm').click();
+  try { await waitFor(() => reads.filter(batch => batch.some(r => r.id === 'betB')).length >= 2, 'Teen Patti stakes not read twice'); }
+  catch (error) { throw new Error(`${error.message}: ${await page.locator('#screenStatus').textContent()}; ${JSON.stringify(reads.slice(-3))}`); }
+  await page.waitForFunction(() => document.querySelector('#screenTeenState').textContent.includes('Waiting for the winner'));
+  await page.waitForTimeout(1700);
   const entries = () => JSON.parse(fs.readFileSync(file)).books['shuff:teenpatti'].entries;
   assert.equal(entries().length, 0, 'six stale physical cards and panel cards cannot record without a result');
   await page.evaluate(() => window.showTestHand('covered'));
@@ -52,11 +62,13 @@ module.exports = async function checkTeenPattiLive(page, file, reads, waitFor, c
   assert.ok(saved.screen.capturedAt >= startedAt && saved.screen.capturedAt <= Date.now());
   assert.match(saved.screen.result, /^PLAYER\s*B$/);
   assert.deepEqual(saved.wager, { status: 'observed', currency: 'GC', bets: [{ market: 'B', amount: 50 }, { market: 'B_PLUS', amount: 10 }] });
-  await page.waitForFunction(() => document.querySelector('#screenStatus').textContent.includes('already recorded'));
+  await page.waitForFunction(() => document.querySelector('#screenTeenState').textContent.includes('Waiting for the next round phase'));
   assert.equal(entries().length, 1);
   await page.locator('#screenStop').click();
   await page.locator('#screenStart').click();
-  await page.waitForFunction(() => document.querySelector('#screenStatus').textContent.includes('already recorded'));
+  await page.waitForFunction(() => !document.querySelector('#screenTeenConfirm').disabled);
+  await page.locator('#screenTeenConfirm').click();
+  await page.waitForFunction(() => document.querySelector('#screenTeenState').textContent.includes('Waiting for the next round phase'));
   await page.locator('#screenStop').click();
   assert.equal(entries().length, 1, 'restart cannot duplicate a completed hand');
   await page.reload();

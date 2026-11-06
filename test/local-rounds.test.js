@@ -83,3 +83,21 @@ assert.throws(() => interruptedClock.read(true, Infinity), RangeError);
 assert.match(createRoundClock().read(true), /^\d{13}$/, 'default clock uses local PC milliseconds');
 
 console.log('Local PC round clock, phase transitions and restart deduplication passed.');
+
+const phases = require('../js/capture').createTeenPhaseClock({ now: pc });
+assert.equal(phases.read(false, true, pc), null, 'startup result is baseline');
+assert.equal(phases.read(true, false, pc + 100), null);
+assert.equal(phases.read(true, false, pc + 300), String(pc + 300));
+assert.equal(phases.read(false, true, pc + 400), String(pc + 300));
+phases.recorded();
+assert.equal(phases.read(null, null, pc + 2000), null);
+assert.equal(phases.read(null, null, pc + 10000), null, 'unknown cannot create a round');
+assert.equal(phases.read(true, true, pc + 10200), null, 'overlap is ambiguous');
+assert.equal(phases.read(true, false, pc + 10400), null);
+assert.equal(phases.read(true, false, pc + 10600), String(pc + 10600));
+phases.read(null, null, pc + 12000);
+assert.equal(phases.read(true, false, pc + 14000), null, 'returning phase after unknown frames cannot reuse the armed round');
+assert.equal(phases.gap(), true, 'the skipped or ambiguous outcome is reported');
+assert.equal(phases.read(true, false, pc + 14200), String(pc + 14200));
+assert.equal(phases.read(true, true, pc + 14400), null);
+assert.equal(phases.read(false, true, pc + 14600), null, 'overlap cancels the armed round');
