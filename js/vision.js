@@ -56,15 +56,16 @@
 
   function teenBadge(image) {
     if (!validImage(image)) return false;
-    let gold = 0, white = 0;
+    let gold = 0, purple = 0, white = 0;
     for (let i = 0; i < image.data.length; i += 4) {
       const [r, g, b, a] = image.data.slice(i, i + 4);
       if (a < 128) continue;
       if (r > 100 && g > 85 && r > g * 1.12 && g > b * 1.25) gold++;
+      if (r > 100 && b > 100 && r > g * 1.35 && b > g * 1.35) purple++;
       if (Math.min(r, g, b) > 200 && Math.max(r, g, b) - Math.min(r, g, b) < 45) white++;
     }
     const pixels = image.width * image.height;
-    return gold / pixels >= .08 && white / pixels >= .015;
+    return Math.max(gold, purple) / pixels >= .08 && white / pixels >= .015;
   }
 
   function components(image, predicate) {

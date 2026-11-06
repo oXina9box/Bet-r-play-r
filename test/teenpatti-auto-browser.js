@@ -1,5 +1,5 @@
-// Generated display-stream transitions use real local OCR; the archived casino image
-// independently checks the existing PLAYER B layout. Neither is a live casino test.
+// Generated display-stream transitions use real local OCR; archived casino images
+// check gold PLAYER B and purple PLAYER A results. These are not live casino tests.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -25,6 +25,23 @@ module.exports = async function checkTeenPattiAuto(page, file, waitFor) {
   }, fs.readFileSync(path.join(__dirname, 'fixtures/teenpatti-screen.png')).toString('base64'));
   assert.deepEqual(actual.read.observation?.raw, { w: 'B' }, JSON.stringify(actual));
   assert.ok(actual.read.observation.confidence >= 80);
+  const hand = await page.evaluate(async base64 => {
+    const bitmap = await createImageBitmap(new Blob([Uint8Array.from(atob(base64), c => c.charCodeAt(0))], { type: 'image/png' }));
+    const source = document.createElement('canvas'); source.width = bitmap.width; source.height = bitmap.height;
+    source.getContext('2d').drawImage(bitmap, 0, 0); bitmap.close();
+    const read = await ScreenReader.readFrame(source, 'teenpatti', { source: 'cards' });
+    const game = Games.teenpatti, tracker = ScreenCapture.createTracker();
+    const options = { game, entries: [], now: 0 };
+    tracker.read(read.observation, options);
+    const decision = tracker.read(read.observation, { ...options, now: 1500 });
+    const mismatch = tracker.read({ ...read.observation, result: { side: 'B' } }, { ...options, now: 3000 });
+    return { read, outcome: read.observation && game.outcome(read.observation.raw), decision, mismatch };
+  }, fs.readFileSync(path.join(__dirname, 'fixtures/teenpatti-player-a.png')).toString('base64'));
+  assert.deepEqual(hand.read.observation?.raw, { c: ['Qs', 'As', 'Kc', '7s', '2d', 'Js'] }, JSON.stringify(hand));
+  assert.ok(hand.read.observation.confidence >= 80);
+  assert.deepEqual(hand.outcome, { side: 'A', lossAll: false, ha: 4, hb: 1 }, 'A-K-Q straight beats J-high');
+  assert.equal(hand.decision.status, 'ready', JSON.stringify(hand));
+  assert.equal(hand.mismatch.status, 'review', 'conflicting banner cannot record a calculated hand');
   await page.evaluate(() => {
     const source = document.createElement('canvas'); source.width = 2048; source.height = 1153;
     const ctx = source.getContext('2d');
@@ -178,7 +195,9 @@ module.exports = async function checkTeenPattiAuto(page, file, waitFor) {
     await page.locator('#games [data-v="kickoff"]').click();
     assert.equal(await page.locator('body').getAttribute('data-game'), 'teenpatti', 'switching games cannot strand a verified pending hand');
     assert.equal(await page.locator('#pending').innerHTML(), pending);
+    if (await page.locator('#screenStart').isVisible()) await page.locator('#recorderToggle').click();
     await page.locator('#clear').click();
+    await page.locator('#recorderToggle').click();
     await waitFor(() => entries().length === before + winners.length + 1, 'verified hand did not retry after manual input cleared');
     const savedBeforeFailure = before + winners.length + 1;
 

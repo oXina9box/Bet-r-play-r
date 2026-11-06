@@ -534,7 +534,7 @@
       try { teenConfig = JSON.parse(localStorage.getItem(teenKey()) || '{}'); } catch { teenConfig = {}; }
       if (!teenConfig || typeof teenConfig !== 'object' || Array.isArray(teenConfig)) teenConfig = {};
       if (getContext().game.id === 'teenpatti') {
-        $('screenTeenSource').value = teenConfig.source === 'cards' ? 'cards' : 'winner';
+        $('screenTeenSource').value = teenConfig.source === 'winner' ? 'winner' : 'cards';
         $('screenTeenPhaseText').value = typeof teenConfig.phaseText === 'string' ? teenConfig.phaseText : '';
       }
       if (sicbo()) {
@@ -725,10 +725,17 @@
           if (!record(teenPending.entry, teenPending.bound)) { status.textContent = 'Verified hand waiting; finish manual entry before recording'; $('screenTeenState').textContent = status.textContent; return; }
           teenPending = null; teenClock = null; status.textContent = 'Recorded verified hand'; $('screenTeenState').textContent = status.textContent;
         }
-        const result = await readFrame(frame, context.game.id, teen ? { ...overrides, source: teenConfig.source === 'cards' ? 'cards' : 'winner', phaseText: phrase } : overrides);
+        const result = await readFrame(frame, context.game.id, teen ? { ...overrides, source: teenConfig.source === 'winner' ? 'winner' : 'cards', phaseText: phrase } : overrides);
         if (token !== generation) return;
         if (teen && (!video || video.videoWidth !== frame.width || video.videoHeight !== frame.height)) { stop('Capture size changed. Recalibrate the reading areas.'); return; }
         area = result.area; paint();
+        if (context.game.id === 'teenpatti') {
+          const observation = result.observation;
+          const side = observation && context.game.outcome(observation.raw).side;
+          $('screenTeenWinner').textContent = observation
+            ? `Winner: ${side ? `Player ${side}` : 'Tie'} · ${observation.raw.c ? 'six cards' : 'banner'}`
+            : 'Winner: waiting';
+        }
         const now = Date.now();
         if (teen) {
           const phaseReading = result.phaseReading;
@@ -736,7 +743,6 @@
           if (!teenClock) teenClock = root.ScreenCapture.createTeenPhaseClock({ now });
           const readRound = teenClock.read(result.phase === true, result.hasResult === true, now);
           wagerState = root.ScreenCapture.trackWagers(wagerState, readRound, result.wager || result.observation?.wager, now);
-          $('screenTeenWinner').textContent = result.observation ? `Winner: ${result.observation.result.side || 'Tie'}` : 'Winner: waiting';
           if (result.phase && result.hasResult === true) { tracker.reset(); status.textContent = 'Phase and result overlap; waiting for a clear transition'; }
           else if (!readRound) status.textContent = result.phase ? 'Checking the next round phase' : 'Waiting for the next round phase';
           else {
