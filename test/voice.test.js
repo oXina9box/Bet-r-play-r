@@ -52,6 +52,11 @@ assert.deepStrictEqual(Voice.parseSpeech('player 1 won').commands, ['wa']);
 assert.deepStrictEqual(Voice.parseSpeech('p2 won').commands, ['wb']);
 assert.deepStrictEqual(Voice.parseSpeech('player 2 won').commands, ['wb']);
 assert.deepStrictEqual(Voice.parseSpeech('tie').commands, ['wt']);
+assert.deepStrictEqual(Voice.parseSpeech('red won', 'kickoff').commands, ['wa']);
+assert.deepStrictEqual(Voice.parseSpeech('blue won', 'kickoff').commands, ['wb']);
+assert.deepStrictEqual(Voice.parseSpeech('draw', 'kickoff').commands, ['wt']);
+const KO = require('../js/games/kickoff.js');
+assert.deepStrictEqual(KO.input(KO.emptyPending(), 'wa').commit, { w: 'A' });
 
 // Dice games
 assert.deepStrictEqual(Voice.parseSpeech('four five six', 'sicbo').dice, [4, 5, 6]);

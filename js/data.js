@@ -32,14 +32,18 @@
     const waitBet = c.waitBet === undefined ? 0 : c.waitBet;
     const recovery = c.recovery === undefined ? 0 : c.recovery;
     const fibDrop = c.fibDrop === undefined ? 2 : c.fibDrop;
+    const targetProfit = c.targetProfit === undefined ? 0 : Number(c.targetProfit) || 0;
     check(Number.isInteger(waitBust) && waitBust >= 0 && waitBust <= 3);
     check(Number.isInteger(waitWin) && waitWin >= 0 && waitWin <= 4);
     check(Number.isInteger(waitBet) && waitBet >= 0 && waitBet <= 3);
     check(Number.isInteger(recovery) && recovery >= 0 && recovery <= 4);
     check(Number.isInteger(fibDrop) && fibDrop >= 1 && fibDrop <= 10);
+    check(number(targetProfit) && targetProfit >= 0);
     // Maximum supported multiplier includes recovery; reject arithmetic overflow.
     check(Number.isFinite(c.unit * c.payout * 144 * 127));
-    return { n: c.n, prog: c.prog, unit: c.unit, payout: c.payout, waitBust, waitWin, waitBet, recovery, fibDrop };
+    const out = { n: c.n, prog: c.prog, unit: c.unit, payout: c.payout, waitBust, waitWin, waitBet, recovery, fibDrop };
+    if (c.targetProfit !== undefined || targetProfit > 0) out.targetProfit = targetProfit;
+    return out;
   }
 
   function rawEntry(raw, game) {

@@ -90,7 +90,8 @@ const nbe = (list) => list.map((x, i) => {
 r = E.run(nbe([11, 14, 9, 14, 6, 13, 12]), cfg);
 assert.strictEqual(r.rows[6].noBet, true);
 assert.strictEqual(r.rows[6].pnl, 0);
-assert.strictEqual(r.next.step, 1);
+assert.strictEqual(r.next.step, 0); // Frozen step: skipped bet 1 keeps next at bet 1 (1x)
+assert.strictEqual(r.next.mult, 1);
 const st = E.stats(r.rows);
 assert.strictEqual(st.skipped, 1);
 assert.strictEqual(st.wagered, 0);

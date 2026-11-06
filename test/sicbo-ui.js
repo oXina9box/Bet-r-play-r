@@ -53,7 +53,7 @@ module.exports = async function checkSicBoUI(page, file, waitFor, openOptions, o
   assert.match(await page.locator('#next').textContent(), /NO BET.*skipped/);
   assert.match(await page.locator('#skipBetOnce').textContent(), /^Skip this bet once$/,
     'skip automatically disarms after one result');
-  assert.ok(await page.evaluate(() => testSpeech.some(text => /Roll: 6, 2, 3/.test(text) && /BIG/.test(text) && /Bet SMALL, 2\.00/.test(text))),
+  assert.ok(await page.evaluate(() => testSpeech.some(text => /Roll: 6, 2, 3/.test(text) && /BIG/.test(text) && /Bet SMALL, 1\.00/.test(text))),
     'spoken feedback includes entered dice and next side/stake');
   assert.match(await page.evaluate(() => testSpeech.at(-1)), /skip|no bet/i, 'spoken result acknowledges skipped wager');
   for (const key of ['2', '4', '5']) await page.keyboard.press(key);

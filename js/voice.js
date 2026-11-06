@@ -70,7 +70,12 @@
         i += (t === 'p2' ? 2 : 3);
         continue;
       }
-      if (t === 'tie' || t === 'push') {
+      if ((t === 'red' || t === 'blue') && tokens[i + 1] === 'won') {
+        commands.push(t === 'red' ? 'wa' : 'wb');
+        i += 2;
+        continue;
+      }
+      if (t === 'tie' || t === 'push' || t === 'draw') {
         commands.push('wt');
         i++;
         continue;

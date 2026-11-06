@@ -125,6 +125,13 @@ function boot({ cache = null, get = async () => ({ ok: true, json: async () => f
   const escaped = boot({ cache: hostile, protocol: 'file:' }); await tick();
   assert.ok(!escaped.element('site').innerHTML.includes('<img'), 'site names rendered as text');
   assert.match(escaped.element('site').innerHTML, /&lt;img/);
+  for (const name of ['???', '---']) {
+    escaped.element('newSite').value = name;
+    escaped.element('newSite').onkeydown({ key: 'Enter' });
+  }
+  const siteIds = JSON.parse(escaped.stored.get('betrplayr.v1')).sites.map((s) => s.id);
+  assert.equal(siteIds.length, 3, 'punctuation-only site names each get a unique fallback ID');
+  assert.ok(siteIds.every((id) => !id.startsWith('-') && !id.endsWith('-')));
 
   const newer = boot({ cache: fixture(500), get: async () => ({ ok: true, json: async () => fixture(100) }) }); await tick(); await newer.flush();
   assert.equal(JSON.parse(newer.requests.find((r) => r.options?.method === 'POST').options.body).savedAt, 500, 'newer browser history wins');
@@ -231,6 +238,19 @@ function boot({ cache = null, get = async () => ({ ok: true, json: async () => f
   assert.ok(cards.element('voiceBtn'), 'voice button exists');
   cards.key('v');
   cards.element('voiceBtn').onclick();
+  const voiceEvents = {};
+  const voiceHostile = boot({ protocol: 'file:', beforeApp(context) {
+    context.Voice = {
+      isSupported: () => true,
+      init(opts) { Object.assign(voiceEvents, opts); return true; },
+      parseSpeech: () => ({ cards: [], dice: [], commands: [] }),
+      toggle: () => true,
+    };
+  } });
+  await tick();
+  voiceEvents.onInterim({ transcript: '<img src=x onerror=alert(1)>' });
+  assert.ok(!voiceHostile.element('voiceTranscript').innerHTML.includes('<img'), 'voice transcript escapes HTML');
+  assert.match(voiceHostile.element('voiceTranscript').innerHTML, /&lt;img/);
 
   const teenHooks = {};
   const teenSeed = { ...fixture(), cur: { site: 'shuff', game: 'teenpatti' }, books: { 'shuff:teenpatti': { cfg: { n: 5, prog: 'double', unit: 1, payout: 1 }, sessions: [{ id: 'teen', start: 1 }], entries: [] } } };

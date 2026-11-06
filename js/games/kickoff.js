@@ -28,7 +28,7 @@
     input(p, key) {
       key = String(key).toLowerCase();
       // Quick keys: wr (win red), wb (win blue), wt (win tie)
-      if (key === 'wr' || key === 'r') return { pending: this.emptyPending(), commit: { w: 'A' } };
+      if (key === 'wr' || key === 'wa' || key === 'r') return { pending: this.emptyPending(), commit: { w: 'A' } };
       if (key === 'wb' || key === 'b') return { pending: this.emptyPending(), commit: { w: 'B' } };
       if (key === 'wt' || key === 't') return { pending: this.emptyPending(), commit: { w: 'T' } };
 

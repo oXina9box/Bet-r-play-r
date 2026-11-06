@@ -3,7 +3,9 @@
   const { PROGRESSIONS, GROUP_SIZES, run, stats, analyzeBusts, simulateDelays, recoveryOptions } = window.Engine;
   const GAMES = window.Games;
   const KEY = 'betrplayr.v1';
-  const DEFAULT_CFG = { n: 5, prog: 'double', unit: 1, payout: 1, waitBust: 0, waitWin: 1, waitBet: 0, recovery: 0 };
+  const DEFAULT_CFG = { n: 5, prog: 'double', unit: 1, payout: 1, waitBust: 0, waitWin: 1, waitBet: 0, recovery: 0, targetProfit: 0 };
+  let manualBetAmount = null;
+  let dismissedTripleRoll = null;
   const $ = (id) => document.getElementById(id);
   const fmt = (x) => (Math.round(x * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const signed = (x) => (x > 0 ? '+' : x < 0 ? '−' : '') + fmt(Math.abs(x));
@@ -173,6 +175,10 @@
       entry.nb = true;
       noBetArmed = false;
     }
+    if (manualBetAmount != null) {
+      entry.manualAmount = manualBetAmount;
+      manualBetAmount = null;
+    }
     const key = `${data.cur.site}:${data.cur.game}`;
     data = { ...data, books: { ...data.books, [key]: { ...b, entries: [...b.entries, entry] } } };
     manualClaims.delete(bindingKey(bound));
@@ -301,6 +307,46 @@
       alertBanner = `<div class="special-alert ${prob.isHigh ? 'high' : ''}">${escapeHTML(prob.message)}<small>Past waiting does not increase the next outcome's probability.</small></div>`;
     }
 
+    const b = book();
+    let targetBadge = '';
+    if (b.cfg.targetProfit > 0) {
+      const s = stats(view.rows);
+      const targetDol = b.cfg.targetProfit;
+      const targetU = targetDol / b.cfg.unit;
+      const diffDol = targetDol - s.net;
+      const diffU = targetU - s.units;
+      const reached = s.net >= targetDol;
+      const signDol = diffDol > 0 ? `-$${fmt(diffDol).replace('$', '')}` : `+$${fmt(Math.abs(diffDol)).replace('$', '')}`;
+      const signU = diffU > 0 ? `-${diffU.toFixed(1)}u` : `+${Math.abs(diffU).toFixed(1)}u`;
+      targetBadge = `
+        <div class="target-badge ${reached ? 'achieved' : 'needed'}">
+          <span class="target-title">🎯 Target: ${fmt(targetDol)} (${targetU.toFixed(1)}u)</span>
+          <span class="target-progress">${reached ? 'Goal Achieved!' : 'Needed:'} <b>${fmt(Math.max(0, diffDol))}</b> (${Math.max(0, diffU).toFixed(1)}u)</span>
+          <span class="target-diff">[<b>${signDol}</b> / <b>${signU}</b>]</span>
+        </div>
+      `;
+    }
+
+    let tripleOverlay = '';
+    const tripleRisk = (data.cur.game === 'sicbo' && (nx.phase === 'bet' || nx.phase === 'continue'))
+      ? Engine.detectTripleRisk('sicbo', view.rows, nx.step)
+      : null;
+    if (tripleRisk && tripleRisk.due && dismissedTripleRoll !== view.rows.length) {
+      tripleOverlay = `
+        <div id="tripleAlertOverlay" class="triple-overlay ${tripleRisk.urgent ? 'urgent' : 'warning'}">
+          <div class="triple-overlay-card">
+            <div class="triple-overlay-badge">${tripleRisk.urgent ? '🚨 CRITICAL STEP 5 ALERT' : '⚠️ TRIPLE RISK DETECTED'}</div>
+            <div class="triple-overlay-title">${tripleRisk.urgent ? 'HIGH TRIPLE PROBABILITY ON STEP 5' : 'TRIPLE DUE SOON'}</div>
+            <div class="triple-overlay-body">${escapeHTML(tripleRisk.message)}</div>
+            <div class="triple-overlay-actions">
+              <button id="tripleOverlaySkip" class="triple-skip-btn ${tripleRisk.urgent ? 'urgent' : ''}">${noBetArmed ? '✓ Bet Skipped (Armed)' : (tripleRisk.urgent ? '🚨 STRONGLY URGED: SKIP THIS BET' : 'Skip This Bet (One-Time)')}</button>
+              <button id="tripleOverlayDismiss" class="triple-dismiss-btn">Dismiss</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
     let ladderBadge = '';
     if (nx.ladder) {
       const l = nx.ladder;
@@ -312,6 +358,19 @@
       `;
     }
 
+    const currentAmt = manualBetAmount != null ? manualBetAmount : nx.amount;
+    const currentMult = Math.round((currentAmt / b.cfg.unit) * 100) / 100;
+    const isManual = manualBetAmount != null && manualBetAmount !== nx.amount;
+    const betAmt = `
+      <div class="bet-amt interactive">
+        <button id="betMinus" class="bet-step-btn" title="Decrease bet by 1 unit (${fmt(b.cfg.unit)})">−</button>
+        <span class="bet-val">${fmt(currentAmt)}</span>
+        <span class="bet-mult">(${currentMult}x)</span>
+        <button id="betPlus" class="bet-step-btn" title="Increase bet by 1 unit (${fmt(b.cfg.unit)})">+</button>
+        ${isManual ? `<button id="betReset" class="bet-reset-btn" title="Reset to calculated stake">↺</button>` : ''}
+      </div>
+    `;
+
     let h;
     if (nx.phase === 'factor-delay') {
       h = `<div class="phase">FACTOR FOUND · WAITING</div>
@@ -322,13 +381,13 @@
       const plan = nx.plan.map((s, i) => `<div class="plan-step ${i < nx.step ? 'done' : i === nx.step ? 'now' : ''}">${sideTag(s)}<em>${nx.mults[i]}x</em></div>`).join('');
       h = `<div class="phase">BET ${nx.step + 1} of ${nx.of}</div>
            <div class="bet-side ${nx.side === 'A' ? 'a' : 'b'}">${g.sides[nx.side].label}</div>
-           <div class="bet-amt">${fmt(nx.amount)} <span>(${nx.mult}x)</span></div>
+           ${betAmt}
            <div class="plan">${plan}</div>
            <div class="pattern">Fading <b>${nx.pattern}</b> · factor ${sideTag(nx.factor)}</div>`;
     } else if (nx.phase === 'continue') {
       h = `<div class="phase">OPTIONAL CONTINUE AFTER BUST</div>
            <div class="bet-side ${nx.side === 'A' ? 'a' : 'b'}">${g.sides[nx.side].label}</div>
-           <div class="bet-amt">${fmt(nx.amount)} <span>(${nx.mult}x) · bet ${nx.step + 1}</span></div>
+           ${betAmt}
            <div class="pattern">Run resumes only when a matching visible wager is detected.</div>`;
     } else if (nx.phase === 'cooldown') {
       const unitWord = nx.left === 1 ? g.entryName.toLowerCase() : g.entryName.toLowerCase() + 's';
@@ -348,8 +407,36 @@
     }
     $('next').className = 'next ' + nx.phase + (nx.phase === 'bet' ? ' side-' + nx.side.toLowerCase() : '') + (nx.recovery ? ' recovery' : '');
     const skip = nx.phase === 'bet' ? `<button id="skipBetOnce" class="skip-bet ${noBetArmed ? 'armed' : ''}">${noBetArmed ? 'Cancel one-time skip' : 'Skip this bet once'}</button>` : '';
-    $('next').innerHTML = recBanner + alertBanner + h + ladderBadge + lastLine + skip;
+    $('next').innerHTML = tripleOverlay + targetBadge + recBanner + alertBanner + h + ladderBadge + lastLine + skip;
     $('skipBetOnce')?.addEventListener('click', toggleNoBet);
+    $('betMinus')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const cur = manualBetAmount != null ? manualBetAmount : nx.amount;
+      manualBetAmount = Math.max(0, Math.round((cur - b.cfg.unit) * 100) / 100);
+      render();
+    });
+    $('betPlus')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const cur = manualBetAmount != null ? manualBetAmount : nx.amount;
+      manualBetAmount = Math.round((cur + b.cfg.unit) * 100) / 100;
+      render();
+    });
+    $('betReset')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      manualBetAmount = null;
+      render();
+    });
+    $('tripleOverlaySkip')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!noBetArmed) toggleNoBet();
+      dismissedTripleRoll = view.rows.length;
+      render();
+    });
+    $('tripleOverlayDismiss')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dismissedTripleRoll = view.rows.length;
+      render();
+    });
     announceNext(last, nx, g);
   }
 
@@ -457,6 +544,23 @@
     seg($('progSeg'), Object.entries(PROGRESSIONS).map(([k, p]) => [k, seqLabel(k, b.cfg.n - 1)]), b.cfg.prog, (v) => setCfg('prog', v));
     if (document.activeElement !== $('unit')) $('unit').value = b.cfg.unit;
     if (document.activeElement !== $('payout')) $('payout').value = b.cfg.payout;
+    if ($('targetProfit') && document.activeElement !== $('targetProfit')) {
+      $('targetProfit').value = b.cfg.targetProfit || '';
+    }
+    if ($('targetHint')) {
+      if (b.cfg.targetProfit > 0) {
+        const s = stats(view.rows);
+        const tDol = b.cfg.targetProfit;
+        const tUnits = tDol / b.cfg.unit;
+        const diffDol = tDol - s.net;
+        const diffUnits = tUnits - s.units;
+        const signDol = diffDol > 0 ? `-$${fmt(diffDol).replace('$', '')}` : `+$${fmt(Math.abs(diffDol)).replace('$', '')}`;
+        const signUnits = diffUnits > 0 ? `-${diffUnits.toFixed(1)}u` : `+${Math.abs(diffUnits).toFixed(1)}u`;
+        $('targetHint').textContent = `Target: ${fmt(tDol)} (${tUnits.toFixed(1)}u) · Needed: ${fmt(Math.max(0, diffDol))} (${Math.max(0, diffUnits).toFixed(1)}u) [${signDol} / ${signUnits}]`;
+      } else {
+        $('targetHint').textContent = 'Set a profit goal to track progress.';
+      }
+    }
     $('audioFeedback').checked = data.audioFeedback === true;
     seg($('waitSeg'), [[0, '0 (none)'], [1, '1 roll'], [2, '2 rolls'], [3, '3 rolls']], b.cfg.waitBust || 0, (v) => setCfg('waitBust', Number(v)));
     seg($('waitWinSeg'), [[0, data.cur.game === 'sicbo' ? '0 (standard)' : '0'], [1, data.cur.game === 'sicbo' ? '1' : '1 (standard)'], [2, '2'], [3, '3'], [4, '4']], b.cfg.waitWin || 0, (v) => setCfg('waitWin', Number(v)));
@@ -816,7 +920,7 @@
     siteInput.hidden = true;
     if (!name) return;
     if (screenReader?.canSwitch?.() === false) return toast('A verified hand is waiting. Finish or clear manual input, then resume recording.');
-    const id = (name.toLowerCase().replace(/[^a-z0-9]+/g, '-') || uid()).slice(0, 128);
+    const id = (name.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 128).replace(/^-+|-+$/g, '') || uid());
     if (!data.sites.some((s) => s.id === id)) {
       try { data = validate({ ...data, sites: [...data.sites, { id, name }] }); }
       catch (err) { toast('Invalid site name (maximum 1000 characters)'); return; }
@@ -827,11 +931,19 @@
   siteInput.onblur = () => { siteInput.hidden = true; };
   $('unit').oninput = (e) => { const v = parseFloat(e.target.value); if (v > 0) setCfg('unit', v); };
   $('payout').oninput = (e) => { const v = parseFloat(e.target.value); if (v > 0) setCfg('payout', v); };
+  if ($('targetProfit')) {
+    $('targetProfit').oninput = (e) => {
+      const v = parseFloat(e.target.value);
+      setCfg('targetProfit', v > 0 ? v : 0);
+    };
+  }
   $('export').onclick = () => {
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }));
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }));
+    a.href = url;
     a.download = `bet-r-play-r-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
+    setTimeout(() => URL.revokeObjectURL?.(url), 1000);
     toast('Backup downloaded');
   };
   $('import').onchange = async (e) => {
@@ -873,7 +985,7 @@
     const el = $('voiceTranscript');
     if (!el) return;
     el.hidden = false;
-    el.innerHTML = `<span class="pill">${isInterim ? 'Live' : 'Heard'}</span> <span>${msg}</span>`;
+    el.innerHTML = `<span class="pill">${isInterim ? 'Live' : 'Heard'}</span> <span>${escapeHTML(msg)}</span>`;
   }
 
   function hideVoiceTranscript() {
