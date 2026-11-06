@@ -279,12 +279,12 @@ const kickoffRounds = [
 ];
 const koEntries = kickoffRounds.map(d => {
   const o = Kickoff.outcome(d);
-  return { raw: d, o, side: o.side, lossAll: false };
+  return { raw: d, o, side: o.side, lossAll: o.lossAll };
 });
 const koRes = E.run(koEntries, { n: 5, prog: 'double', unit: 1, payout: 1, waitBust: 0, recovery: 0 });
 const koStats = E.stats(koRes.rows);
-assert.strictEqual(koStats.sets, 9);
-assert.strictEqual(koStats.won, 8);
+assert.strictEqual(koStats.sets, 8);
+assert.strictEqual(koStats.won, 7);
 assert.strictEqual(koStats.bust, 1);
 assert.strictEqual(koStats.ties, 7);
 

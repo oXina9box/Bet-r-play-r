@@ -1,15 +1,15 @@
-/* Teen Patti: Player 1 vs Player 2, best hand wins.
+/* Teen Patti: Player A vs Player B, best hand wins.
  * Ranking: Trail > Pure Sequence > Sequence > Color > Pair > High Card.
  * Sequences: A-K-Q highest, K-Q-J second ... 2-3-4, A-2-3 lowest. Suits never break ties -> exact tie.
- * Side A = Player 1, B = Player 2, null = tie (push).
+ * Side A = Player A, B = Player B, null = tie (push).
  *
  * Alternating Dealing Order (matching real dealer):
- * Deal 1: Player 1 (Card 1)
- * Deal 2: Player 2 (Card 1)
- * Deal 3: Player 1 (Card 2)
- * Deal 4: Player 2 (Card 2)
- * Deal 5: Player 1 (Card 3)
- * Deal 6: Player 2 (Card 3)
+ * Deal 1: Player A (Card 1)
+ * Deal 2: Player B (Card 1)
+ * Deal 3: Player A (Card 2)
+ * Deal 4: Player B (Card 2)
+ * Deal 5: Player A (Card 3)
+ * Deal 6: Player B (Card 3)
  *
  * Fast Keypad Card Entry:
  * Step 1: Press Rank (2..9, 0/t/10, J, Q, K, A)
@@ -63,7 +63,7 @@
   const TeenPatti = {
     id: 'teenpatti',
     name: 'Teen Patti',
-    sides: { A: { label: 'PLAYER 1', short: '1' }, B: { label: 'PLAYER 2', short: '2' } },
+    sides: { A: { label: 'PLAYER A', short: 'A' }, B: { label: 'PLAYER B', short: 'B' } },
     entryName: 'Hand',
     rankHand,
     compare,
@@ -198,7 +198,7 @@
       p = p || { cards: [], active: null };
       const cards = p.cards || [];
       const currentDeal = cards.length; // 0..5
-      const isP1Turn = currentDeal % 2 === 0;
+      const isPATurn = currentDeal % 2 === 0;
 
       // Slot renderer for deal index (0..5)
       const slot = (dealIdx) => {
@@ -213,30 +213,30 @@
         return `<div class="slot card ${isActive ? 'active' : ''}"><span class="deal-num">#${dealIdx + 1}</span><small>${isActive ? 'deal' : ''}</small></div>`;
       };
 
-      // Player 1 has deals 0, 2, 4 (Deals #1, #3, #5)
-      // Player 2 has deals 1, 3, 5 (Deals #2, #4, #6)
-      const p1TurnBadge = currentDeal < 6 && isP1Turn ? '<span class="deal-turn">DEALING</span>' : '';
-      const p2TurnBadge = currentDeal < 6 && !isP1Turn ? '<span class="deal-turn">DEALING</span>' : '';
+      // Player A has deals 0, 2, 4 (Deals #1, #3, #5)
+      // Player B has deals 1, 3, 5 (Deals #2, #4, #6)
+      const pATurnBadge = currentDeal < 6 && isPATurn ? '<span class="deal-turn">DEALING</span>' : '';
+      const pBTurnBadge = currentDeal < 6 && !isPATurn ? '<span class="deal-turn">DEALING</span>' : '';
 
-      let p1Live = '';
+      let pALive = '';
       if (cards.length >= 5) {
-        const p1Cards = [cards[0], cards[2], cards[4]];
-        p1Live = `<span class="hand-type">${CATS[rankHand(p1Cards)[0]]}</span>`;
+        const pACards = [cards[0], cards[2], cards[4]];
+        pALive = `<span class="hand-type">${CATS[rankHand(pACards)[0]]}</span>`;
       }
 
-      let p2Live = '';
+      let pBLive = '';
       if (cards.length === 6) {
-        const p2Cards = [cards[1], cards[3], cards[5]];
-        p2Live = `<span class="hand-type">${CATS[rankHand(p2Cards)[0]]}</span>`;
+        const pBCards = [cards[1], cards[3], cards[5]];
+        pBLive = `<span class="hand-type">${CATS[rankHand(pBCards)[0]]}</span>`;
       }
 
       return `<div class="hands alternating">
-        <div class="hand ${isP1Turn && currentDeal < 6 ? 'dealing' : ''}">
-          <label>Player 1 · deals 1, 3, 5 ${p1TurnBadge} ${p1Live}</label>
+        <div class="hand ${isPATurn && currentDeal < 6 ? 'dealing' : ''}">
+          <label>Player A · deals 1, 3, 5 ${pATurnBadge} ${pALive}</label>
           <div class="slots">${[0, 2, 4].map(slot).join('')}</div>
         </div>
-        <div class="hand ${!isP1Turn && currentDeal < 6 ? 'dealing' : ''}">
-          <label>Player 2 · deals 2, 4, 6 ${p2TurnBadge} ${p2Live}</label>
+        <div class="hand ${!isPATurn && currentDeal < 6 ? 'dealing' : ''}">
+          <label>Player B · deals 2, 4, 6 ${pBTurnBadge} ${pBLive}</label>
           <div class="slots">${[1, 3, 5].map(slot).join('')}</div>
         </div>
       </div>`;
@@ -259,13 +259,13 @@
         <div class="ranks">${ranks}</div>
         <div class="suits">${suits}</div>
         <div class="quick"><span>Quick:</span>
-          <button class="key qa" data-key="wa">P1 won</button>
+          <button class="key qa" data-key="wa">Player A won</button>
           <button class="key qt" data-key="wt">Tie</button>
-          <button class="key qb" data-key="wb">P2 won</button></div></div>`;
+          <button class="key qb" data-key="wb">Player B won</button></div></div>`;
     },
 
     chip(raw, o) {
-      const main = o.side === 'A' ? '1' : o.side === 'B' ? '2' : 'T';
+      const main = o.side === 'A' ? 'A' : o.side === 'B' ? 'B' : 'T';
       if (raw.w) return { main, sub: 'quick', flag: '' };
       return { main, sub: CATS[o.side === 'B' ? o.hb : o.ha], flag: '' };
     },

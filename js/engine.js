@@ -157,14 +157,19 @@
       const r = Object.assign({}, e, { role: 'collect', bet: null, result: null, pnl: 0, setEnd: null });
       rows.push(r);
 
-      // Tie: plays as whoever won last (for pattern/flow), but money-wise it's a push.
+      // Tie: plays as whoever won last (for pattern/flow), but money-wise it's a push unless lossAll.
       let side = e.side;
-      const push = side == null;
-      if (push) {
+      const push = side == null && !e.lossAll;
+      if (side == null) {
         side = seq[seq.length - 1];
-        r.push = true;
-        r.effSide = side;
-        if (!side) { r.role = 'tie'; continue; } // no prior winner this session: ignore
+        if (push) {
+          r.push = true;
+          r.effSide = side;
+          if (!side) { r.role = 'tie'; continue; } // no prior winner this session: ignore
+        } else {
+          r.effSide = side;
+          if (!side) { r.role = 'tie'; continue; }
+        }
       }
 
       if (!set && continuation) {
@@ -211,7 +216,7 @@
         set.playedMults.push(bet.mult);
         r.setNo = set.no;
         if (set.recovery) r.recovery = Object.assign({}, set.recovery);
-        const win = side === bet.side && !e.lossAll;
+        const win = !push && !e.lossAll && side === bet.side;
         r.result = push ? 'push' : win ? 'win' : 'loss';
         r.pnl = push ? 0 : win ? bet.amount * (set.cfg.payout == null ? 1 : set.cfg.payout) : -bet.amount;
         if (e.nb) { r.noBet = true; r.pnl = 0; } // bet skipped: flow continues, no money
@@ -464,21 +469,22 @@
       for (let j = i + 1; j < rows.length && extraSteps.length < maxExtra; j++) {
         const sub = rows[j];
         if (!sameSession(r, sub)) break;
-        const push = sub.side == null;
-        const side = push ? previousSide : sub.side;
+        const push = sub.side == null && !sub.lossAll;
+        const side = sub.side == null ? previousSide : sub.side;
         const step = (r.bet?.step ?? n - 2) + 1 + extraSteps.length;
         const betSide = continuationSide(pat, r.factor, step + (cfg.waitBet || 0));
-        const win = side === betSide && !sub.lossAll;
+        const win = !push && !sub.lossAll && side === betSide;
+        const pushEnd = push && side === betSide;
         const mult = progression.mult(progression.ladder ? level : step) * recMult;
         const amount = mult * unit;
         const noBet = !!(sub.nb || sub.noBet);
         const pnl = push || noBet ? 0 : win ? amount * (cfg.payout == null ? 1 : cfg.payout) : -amount;
-        extraSteps.push({ step: step + 1, betSide, actualSide: sub.side, win, push, noBet, mult, amount, pnl });
+        extraSteps.push({ step: step + 1, betSide, actualSide: sub.side, win, push, pushEnd, noBet, mult, amount, pnl });
         previousSide = side;
-        if (win) break;
+        if (win || pushEnd) break;
         if (!push && progression.ladder) level = Math.min(FIB_SEQUENCE.length - 1, level + 1);
       }
-      const hit = extraSteps.find(s => s.win);
+      const hit = extraSteps.find(s => s.win || s.pushEnd);
       busts.push({
         setNo: r.setNo, rowIdx: i, pattern: r.pattern, factor: r.factor, n, prog, unit,
         extraSteps, hitOnBet: hit ? hit.step : null, resolved: !!hit,

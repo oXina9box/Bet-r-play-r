@@ -1,7 +1,7 @@
 /* The Kickoff: Two dice (Red vs Blue, 1 each). Highest die wins.
  * Red > Blue = RED wins (Side A)
  * Blue > Red = BLUE wins (Side B)
- * Red == Blue = TIE (null / push, pattern sequence continues)
+ * Red == Blue = DRAW / TIE (loss for both Red and Blue)
  */
 (function (root) {
   const Kickoff = {
@@ -14,13 +14,13 @@
       if (dice && dice.w) {
         const tie = dice.w === 'T';
         const side = tie ? null : dice.w;
-        return { side, lossAll: false, tie, red: null, blue: null };
+        return { side, lossAll: tie, tie, red: null, blue: null };
       }
       const red = dice[0];
       const blue = dice[1];
       const tie = red === blue;
       const side = red > blue ? 'A' : blue > red ? 'B' : null;
-      return { side, lossAll: false, tie, red, blue };
+      return { side, lossAll: tie, tie, red, blue };
     },
 
     emptyPending: () => ({ dice: [] }),
