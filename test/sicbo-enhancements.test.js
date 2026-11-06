@@ -101,6 +101,7 @@ assert.equal(runSkip1.rows[6].noBet, true);
 assert.equal(runSkip1.rows[6].pnl, 0);
 assert.equal(runSkip1.next.step, 0, 'Skipping bet 1 keeps step frozen at 0');
 assert.equal(runSkip1.next.mult, 1, 'Stake remains 1x after skipping bet 1');
+assert.equal(runSkip1.next.plan[runSkip1.next.step], runSkip1.next.side, 'Plan step 0 updates to match shifted rollIndex side after skip');
 
 // Now lose next roll for real: step advances to 1 (bet 2)
 // For rollIndex 1, plan[1] is 'A' (Big). So 9 (B, Small) is a loss.
@@ -120,6 +121,7 @@ assert.equal(runSkip3.rows[9].bet.step, 2);
 assert.equal(runSkip3.rows[9].bet.mult, 4);
 assert.equal(runSkip3.next.step, 2, 'Skipping bet 3 keeps next bet at step 2');
 assert.equal(runSkip3.next.mult, 4, 'Stake remains 4x after skipping bet 3');
+assert.equal(runSkip3.next.plan[runSkip3.next.step], runSkip3.next.side, 'Plan step 2 matches shifted rollIndex side after skip');
 
 // Option B Test: If a skipped roll matches the win side, set ends as won ($0 pnl)
 // Pattern fading A: bet side is B (Small, <= 10).

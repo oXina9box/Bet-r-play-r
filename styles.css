@@ -478,14 +478,28 @@ th { color: var(--muted); font-weight: 500; position: sticky; top: 0; background
   .entry-actions .act { flex-basis: 40%; }
 }
 
-/* Native Options keeps every control available without filling the live view. */
-.options-panel { position: fixed; inset: 12px 12px auto auto; margin: 0; width: min(680px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 12px; box-shadow: 0 12px 60px #0009; }
+/* Native Options keeps every control available without filling the live view or scrolling. */
+.options-panel { position: fixed; inset: 6px 6px auto auto; margin: 0; width: min(620px, calc(100vw - 12px)); max-height: calc(100dvh - 12px); overflow: auto; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; box-shadow: 0 12px 60px #0009; font-size: 11px; }
 .options-panel::backdrop { background: #0006; }
-.options-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.options-head h2 { margin: 0; font-size: 18px; }
-.options-content { display: grid; gap: 10px; min-width: 0; }
+.options-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.options-head h2 { margin: 0; font-size: 14px; }
+.options-head button { padding: 3px 8px; font-size: 11px; }
+.options-content { display: grid; gap: 6px; min-width: 0; }
+.options-panel .card { padding: 7px 9px; border-radius: 8px; }
+.options-panel .card h3 { font-size: 11px; margin: 0 0 4px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
 .options-panel .settings, .options-panel .insights { max-height: none; overflow: visible; }
-.data-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.options-panel .settings .row { gap: 5px; margin-bottom: 4px; }
+.options-panel .settings label { width: 88px; font-size: 11px; }
+.options-panel .settings input[type=number] { width: 68px; padding: 2px 6px; font-size: 11px; }
+.options-panel .settings .seg button { padding: 3px 6px; font-size: 11px; }
+.options-panel .audio-setting { margin: 3px 0; font-size: 11px; }
+.options-panel .rec-notes { margin: 4px 0 2px; padding: 5px 8px; font-size: 10px; }
+.options-panel .rec-notes-head { font-size: 10px; margin-bottom: 3px; }
+.options-panel .rec-notes-head span { font-size: 10px; }
+.options-panel .rec-table { font-size: 10px; margin-top: 2px; }
+.options-panel .rec-table th, .options-panel .rec-table td { padding: 2px 4px; }
+.data-actions { display: flex; gap: 5px; flex-wrap: wrap; }
+.data-actions .ghost, .data-actions .btn { padding: 3px 8px; font-size: 11px; }
 
 /* Compact desktop split: keep controls, history and totals in the right pane. */
 @media (max-width: 1100px) {
@@ -579,125 +593,160 @@ th { color: var(--muted); font-weight: 500; position: sticky; top: 0; background
 body[data-game="sicbo"] #screenSelectArea { display: none; }
 body[data-game="sicbo"] .reader-calibration { display: block; margin-top: 8px; }
 #screenSourceDetails { min-width: 0; }
-#screenSourceDetails > summary { cursor: pointer; font-weight: 600; }
+#screenSourceDetails > summary { cursor: pointer; font-weight: 600; font-size: 11px; }
 #screenSourceLabel { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 10px; }
-#screenSourcePreview { width: 100%; max-height: 140px; object-fit: contain; background: #090b0f; }
-.reader-calibration-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; margin-bottom: 5px; font-size: 11px; }
-#screenTimingStatus { flex: 1 1 100%; color: var(--muted); font-size: 10px; line-height: 1.25; }
+#screenSourcePreview { width: 100%; max-height: 76px; object-fit: contain; background: #090b0f; }
+.reader-calibration-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px; margin-bottom: 3px; font-size: 11px; }
+#screenTimingStatus { flex: 1 1 100%; color: var(--muted); font-size: 10px; line-height: 1.2; }
 .capture-indicator { color: var(--muted); font-size: 10px; }
 .capture-indicator::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 4px; border-radius: 50%; background: currentColor; }
 .capture-indicator[data-active="true"] { color: var(--win); }
 .reader-sources { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
-.reader-source { min-width: 0; padding: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
-.reader-source button { width: 100%; padding: 4px 2px; font-size: 11px; }
+.reader-source { min-width: 0; padding: 3px 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+.reader-source button { width: 100%; padding: 3px 2px; font-size: 10px; }
 .reader-source button[aria-pressed="true"] { border-color: var(--warn); color: var(--warn); }
-.screen-card .reader-source canvas { width: 100%; height: 64px; object-fit: contain; margin: 4px 0; background: #090b0f; }
-.reader-source output { display: block; min-height: 25px; font-size: 10px; line-height: 1.25; color: var(--muted); overflow-wrap: anywhere; }
+.screen-card .reader-source canvas { width: 100%; height: 42px; object-fit: contain; margin: 2px 0; background: #090b0f; }
+.reader-source output { display: block; min-height: 14px; font-size: 9px; line-height: 1.2; color: var(--muted); overflow-wrap: anywhere; }
 .reader-source output[data-status="agree"] { color: var(--win); }
 .reader-source output[data-status="disagree"] { color: var(--loss); }
 .reader-source output[data-status="stale"] { color: var(--warn); }
-.history-roll-calibration { margin-top: 6px; }
-.history-roll-calibration h3 { margin: 4px 0 2px; }
-.history-roll-calibration > p { margin: 2px 0 5px; }
-#screenHistoryCalibrationPreview { display: block; width: 100%; height: auto; margin: 4px 0; background: #090b0f; cursor: crosshair; touch-action: none; }
-.history-rolls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; }
-.history-roll { min-width: 0; padding: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
-.history-roll button { width: 100%; padding: 4px 2px; font-size: 11px; }
+.history-roll-calibration { margin-top: 4px; }
+.history-roll-calibration h3 { margin: 2px 0 1px; font-size: 11px; }
+.history-roll-calibration > p { margin: 1px 0 3px; font-size: 9px; line-height: 1.2; }
+#screenHistoryCalibrationPreview { display: block; width: 100%; max-height: 60px; object-fit: contain; height: auto; margin: 2px 0; background: #090b0f; cursor: crosshair; touch-action: none; }
+.history-rolls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.history-roll { min-width: 0; padding: 3px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }
+.history-roll button { width: 100%; padding: 3px 2px; font-size: 10px; }
 .history-roll button[aria-pressed="true"] { border-color: var(--warn); color: var(--warn); }
-.screen-card .history-roll canvas { display: block; width: 100%; height: 64px; object-fit: contain; margin: 4px 0; background: #090b0f; }
-.history-roll output { display: block; min-height: 25px; font-size: 10px; line-height: 1.25; color: var(--muted); overflow-wrap: anywhere; }
+.screen-card .history-roll canvas { display: block; width: 100%; height: 40px; object-fit: contain; margin: 2px 0; background: #090b0f; }
+.history-roll output { display: block; min-height: 14px; font-size: 9px; line-height: 1.2; color: var(--muted); overflow-wrap: anywhere; }
 .history-roll output[data-status="agree"] { color: var(--win); }
 .history-roll output[data-status="disagree"] { color: var(--loss); }
 .history-roll output[data-status="waiting"] { color: var(--muted); }
-.reader-history-hint { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin-top: 5px; font-size: 10px; line-height: 1.3; color: var(--muted); }
-.reader-history-hint > span { flex: 1 1 200px; }
+.reader-history-hint { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 6px; margin-top: 3px; font-size: 9px; line-height: 1.2; color: var(--muted); }
+.reader-history-hint > span { flex: 1 1 180px; }
 .reader-history-hint label { white-space: nowrap; }
-.reader-history-hint select { padding: 2px 4px; font-size: 10px; }
+.reader-history-hint select { padding: 1px 4px; font-size: 9px; }
+#screenPreview { max-height: 76px; object-fit: contain; }
+.recorder-panel { top: 68px; right: 6px; width: min(460px, calc(100vw - 12px)); max-height: calc(100dvh - 74px); }
+.recorder-panel .screen-card { padding: 7px 9px; font-size: 10px; }
+.recorder-panel .screen-card p.small { font-size: 9px; margin: 2px 0; line-height: 1.2; }
+.recorder-panel .screen-actions { gap: 5px; }
+.recorder-panel .screen-actions button, .recorder-panel .screen-actions .btn { padding: 3px 7px; font-size: 10px; }
+.recorder-panel .screen-card details { margin-top: 4px; }
+.recorder-panel .screen-card details > :not(summary) { margin-top: 4px; }
 
-/* Sic Bo's split-screen dashboard uses the viewport; only history tables scroll. */
+/* Split-screen zero-scroll dashboard across all games; only inner history strip / breakdown table scroll if long. */
 @media (min-width: 0px) {
-  body[data-game="sicbo"] { min-height: 100dvh; font-size: 11px; }
-  body[data-game="sicbo"] .topbar { gap: 4px 8px; padding: 5px 7px; }
-  body[data-game="sicbo"] .brand { font-size: 12px; }
-  body[data-game="sicbo"] .pickers { gap: 4px; }
-  body[data-game="sicbo"] .pickers select { max-width: 100px; padding: 4px 6px; font-size: 11px; }
-  body[data-game="sicbo"] .pickers .ghost { padding: 3px 7px; font-size: 11px; }
-  body[data-game="sicbo"] #games button { padding: 4px 6px; font-size: 11px; }
-  body[data-game="sicbo"] .session { gap: 5px; font-size: 10px; }
-  body[data-game="sicbo"] .save-status { font-size: 10px; }
-  body[data-game="sicbo"] .session .ghost { font-size: 10px; padding: 3px 7px; }
-  body[data-game="sicbo"] main { min-height: 0; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(136px, max-content) auto minmax(0, 1fr); gap: 6px; padding: 6px; }
-  body[data-game="sicbo"] .left, body[data-game="sicbo"] .right { display: contents; }
-  body[data-game="sicbo"] .advice-wrap { grid-column: 1; grid-row: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-  body[data-game="sicbo"] .strip-wrap { grid-column: 2; grid-row: 1; min-height: 0; }
-  body[data-game="sicbo"] .left > .entry { grid-column: 1 / -1; grid-row: 2; min-width: 0; }
-  body[data-game="sicbo"] .card, body[data-game="sicbo"] .entry, body[data-game="sicbo"] .strip-wrap { padding: 6px; border-radius: 8px; }
-  body[data-game="sicbo"] #next { flex: 1 0 auto; min-height: min-content; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-content: center; align-items: center; column-gap: 5px; row-gap: 3px; padding: 7px; border-radius: 8px; }
-  body[data-game="sicbo"] #rollRecovery { flex: 0 0 auto; gap: 5px; padding: 4px 6px; font-size: 10px; }
-  body[data-game="sicbo"] #next > :not(.bet-side):not(.bet-amt) { grid-column: 1 / -1; }
-  body[data-game="sicbo"] .phase { font-size: 9px; letter-spacing: .08em; }
-  body[data-game="sicbo"] .bet-side, body[data-game="sicbo"] .bet-side.wait { font-size: 24px; margin: 0; }
-  body[data-game="sicbo"] .bet-amt { font-size: 21px; line-height: 1.15; }
-  body[data-game="sicbo"] .bet-amt span { font-size: 10px; }
-  body[data-game="sicbo"] #next:not(.bet):not(.continue) .bet-amt { grid-column: 1 / -1; }
-  body[data-game="sicbo"] #next:not(.bet):not(.continue) .bet-side { grid-column: 1 / -1; }
-  body[data-game="sicbo"] .plan { margin: 2px 0; gap: 3px; }
-  body[data-game="sicbo"] .plan-step { padding: 2px 5px; gap: 1px; }
-  body[data-game="sicbo"] .plan-step em { font-size: 9px; }
-  body[data-game="sicbo"] .side { font-size: 10px; min-width: 17px; padding: 1px 4px; }
-  body[data-game="sicbo"] .pattern { font-size: 10px; margin-top: 0; }
-  body[data-game="sicbo"] .last { font-size: 11px; margin-top: 2px; }
-  body[data-game="sicbo"] .skip-bet { justify-self: center; font-size: 10px; padding: 3px 7px; margin-top: 1px; }
-  body[data-game="sicbo"] .ladder-badge, body[data-game="sicbo"] .special-alert { margin-top: 2px; padding: 4px 5px; font-size: 9px; gap: 4px; flex-wrap: wrap; }
-  body[data-game="sicbo"] .recovery-banner { margin: 0; padding: 2px 4px; font-size: 9px; }
-  body[data-game="sicbo"] .left > .entry { flex: 0 0 auto; }
-  body[data-game="sicbo"] .pending { min-height: 29px; margin: 0 0 4px; gap: 6px; }
-  body[data-game="sicbo"] .slots { gap: 4px; }
-  body[data-game="sicbo"] .slot { width: 28px; height: 28px; border-radius: 6px; }
-  body[data-game="sicbo"] .pending-sum { font-size: 12px; min-width: 0; }
-  body[data-game="sicbo"] .die { height: 31px; }
-  body[data-game="sicbo"] .pips { grid-template-columns: repeat(3, 5px); grid-template-rows: repeat(3, 5px); gap: 2px; }
-  body[data-game="sicbo"] .pad { gap: 4px; }
-  body[data-game="sicbo"] .entry-actions { gap: 4px; margin-top: 4px; flex-wrap: nowrap; }
-  body[data-game="sicbo"] .act { font-size: 10px; padding: 4px 2px; }
-  body[data-game="sicbo"] .act .kbd { display: none; }
-  body[data-game="sicbo"] .strip-wrap { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
-  body[data-game="sicbo"] .strip-head { flex: 0 0 auto; font-size: 10px; margin-bottom: 4px; }
-  body[data-game="sicbo"] h3 { font-size: 11px; margin: 0; }
-  body[data-game="sicbo"] .strip { flex: 1 1 0; min-height: 0; max-height: none; align-content: start; overflow: auto; gap: 6px; }
-  body[data-game="sicbo"] .history-title, body[data-game="sicbo"] .history-label { font-size: 9px; }
-  body[data-game="sicbo"] .history-pattern .chip, body[data-game="sicbo"] .history-played .chip { flex-basis: 32px; }
-  body[data-game="sicbo"] .chip { padding: 9px 3px 3px; }
-  body[data-game="sicbo"] .chip b { font-size: 13px; }
-  body[data-game="sicbo"] .chip small { font-size: 9px; }
-  body[data-game="sicbo"] .stats { display: flex; flex-direction: column; gap: 4px; }
-  body[data-game="sicbo"] .stats-head, body[data-game="sicbo"] .breakdown-head { flex: 0 0 auto; gap: 4px; flex-wrap: nowrap; }
-  body[data-game="sicbo"] .stats .seg { flex-wrap: nowrap; }
-  body[data-game="sicbo"] .stats .seg button { font-size: 9px; padding: 3px 4px; white-space: nowrap; }
-  body[data-game="sicbo"] .stat-grid { flex: 0 0 auto; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin-top: 0; }
-  body[data-game="sicbo"] .tile { padding: 4px; border-radius: 5px; }
-  body[data-game="sicbo"] .tile label { font-size: 8px; line-height: 1.2; letter-spacing: .02em; }
-  body[data-game="sicbo"] .tile b { font-size: 13px; line-height: 1.2; }
-  body[data-game="sicbo"] .tile b small { font-size: 9px; }
-  body[data-game="sicbo"] #observedWagers { flex: 0 0 auto; font-size: 9px; line-height: 1.25; }
-  body[data-game="sicbo"] #stepBars { flex: 0 0 auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px 5px; }
-  body[data-game="sicbo"] #stepBars h4 { grid-column: 1 / -1; }
-  body[data-game="sicbo"] #stepBars .hbar { grid-template-columns: 25px minmax(0, 1fr) 32px; gap: 2px; font-size: 8px; margin: 0; }
-  body[data-game="sicbo"] .stats h4 { font-size: 9px; margin: 3px 0; }
-  body[data-game="sicbo"] .hbar { grid-template-columns: 37px minmax(0, 1fr) 61px; gap: 4px; font-size: 9px; margin: 2px 0; }
-  body[data-game="sicbo"] .hbar .track { height: 7px; }
-  body[data-game="sicbo"] #extra { flex: 1 1 0; min-height: 62px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 2px 8px; }
+  body[data-game] { display: flex; flex-direction: column; height: 100dvh; min-height: 100dvh; max-height: 100dvh; overflow: hidden; font-size: 11px; }
+  body[data-game] .topbar { flex: 0 0 auto; gap: 3px 6px; padding: 4px 6px; }
+  body[data-game] .brand { font-size: 12px; white-space: nowrap; }
+  body[data-game] .pickers { gap: 4px; }
+  body[data-game] .pickers select { max-width: 90px; padding: 3px 5px; font-size: 11px; }
+  body[data-game] .pickers .ghost { padding: 2px 6px; font-size: 11px; }
+  body[data-game] #games button { padding: 3px 6px; font-size: 11px; }
+  body[data-game] .session { gap: 4px; font-size: 10px; margin-left: auto; }
+  body[data-game] .save-status { font-size: 10px; }
+  body[data-game] .session .ghost { font-size: 10px; padding: 2px 6px; }
+  body[data-game] main { flex: 0 0 auto; min-height: 0; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(124px, max-content) auto; gap: 5px; padding: 5px 6px; }
+  body[data-game] .left, body[data-game] .right { display: contents; }
+  body[data-game] .advice-wrap { grid-column: 1; grid-row: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  body[data-game] .strip-wrap { grid-column: 2; grid-row: 1; min-height: 0; }
+  body[data-game] .left > .entry { grid-column: 1 / -1; grid-row: 2; min-width: 0; }
+  body[data-game] .card, body[data-game] .entry, body[data-game] .strip-wrap { padding: 5px 6px; border-radius: 8px; }
+  body[data-game] #next { flex: 1 0 auto; min-height: min-content; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-content: center; align-items: center; column-gap: 4px; row-gap: 2px; padding: 5px 6px; border-radius: 8px; }
+  body[data-game] #rollRecovery { flex: 0 0 auto; gap: 4px; padding: 3px 5px; font-size: 10px; }
+  body[data-game] #next > :not(.bet-side):not(.bet-amt) { grid-column: 1 / -1; }
+  body[data-game] .phase { font-size: 9px; letter-spacing: .08em; }
+  body[data-game] .bet-side, body[data-game] .bet-side.wait { font-size: 22px; margin: 0; line-height: 1.05; }
+  body[data-game] .bet-amt { font-size: 19px; line-height: 1.1; gap: 4px; }
+  body[data-game] .bet-amt span { font-size: 10px; }
+  body[data-game] .bet-amt.skip-armed .bet-val, body[data-game] .bet-amt.skip-armed .bet-mult { color: var(--warn); text-decoration: line-through; opacity: .75; }
+  body[data-game] .bet-step-btn { width: 20px; height: 20px; font-size: 12px; }
+  body[data-game] .bet-reset-btn { font-size: 9px; padding: 1px 4px; }
+  body[data-game] .target-badge { gap: 5px; padding: 2px 6px; margin-bottom: 2px; font-size: 9px; flex-wrap: wrap; }
+  body[data-game] #next:not(.bet):not(.continue) .bet-amt { grid-column: 1 / -1; }
+  body[data-game] #next:not(.bet):not(.continue) .bet-side { grid-column: 1 / -1; }
+  body[data-game] .plan { margin: 1px 0; gap: 3px; flex-wrap: wrap; }
+  body[data-game] .plan-step { padding: 1px 4px; gap: 1px; }
+  body[data-game] .plan-step em { font-size: 8px; }
+  body[data-game] .side { font-size: 9px; min-width: 15px; padding: 0 3px; }
+  body[data-game] .pattern { font-size: 9px; margin-top: 0; line-height: 1.25; }
+  body[data-game] .last { font-size: 10px; margin-top: 1px; line-height: 1.2; }
+  body[data-game] .skip-bet { justify-self: center; font-size: 9px; padding: 2px 6px; margin-top: 1px; }
+  body[data-game] .ladder-badge, body[data-game] .special-alert { margin-top: 1px; padding: 2px 5px; font-size: 8px; gap: 4px; flex-wrap: wrap; }
+  body[data-game] .recovery-banner { margin: 0; padding: 1px 4px; font-size: 8px; }
+  body[data-game] .left > .entry { flex: 0 0 auto; }
+  body[data-game] .pending { min-height: 26px; margin: 0 0 3px; gap: 5px; }
+  body[data-game] .slots { gap: 4px; }
+  body[data-game] .slot { width: 26px; height: 26px; border-radius: 6px; font-size: 13px; }
+  body[data-game] .slot.card { width: 32px; height: 42px; font-size: 12px; }
+  body[data-game] .slot.card .active-rank { font-size: 16px; margin-top: 3px; }
+  body[data-game] .slot.card .suit-hints { font-size: 5px; bottom: 1px; }
+  body[data-game] .slot.card .deal-num { font-size: 7px; top: 1px; left: 2px; }
+  body[data-game] .hands.alternating { gap: 6px; }
+  body[data-game] .hand label { font-size: 9px; margin-bottom: 2px; }
+  body[data-game] .multitap-hint { font-size: 9px; padding: 2px 4px; margin-bottom: 2px; }
+  body[data-game] .card-pad .ranks { grid-template-columns: repeat(13, minmax(0, 1fr)); gap: 3px; }
+  body[data-game] .card-pad .ranks .key { padding: 4px 0; font-size: 12px; }
+  body[data-game] .card-pad .suits { gap: 4px; }
+  body[data-game] .card-pad .suits .key { padding: 2px 0; font-size: 16px; }
+  body[data-game] .quick { gap: 4px; }
+  body[data-game] .quick span { font-size: 10px; }
+  body[data-game] .quick .key { padding: 3px 0; font-size: 10px; }
+  body[data-game] .kickoff-slots { margin: 2px 0; gap: 6px; }
+  body[data-game] .kickoff-slots .slot { width: 30px; height: 30px; font-size: 10px; }
+  body[data-game] .pending-sum { font-size: 11px; min-width: 0; }
+  body[data-game] .die { height: 28px; }
+  body[data-game] .pips { grid-template-columns: repeat(3, 4px); grid-template-rows: repeat(3, 4px); gap: 2px; }
+  body[data-game] .pad { gap: 4px; }
+  body[data-game] .entry-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin-top: 3px; }
+  body[data-game] .act { font-size: 10px; padding: 3px 2px; min-width: 0; }
+  body[data-game] .act .kbd { display: none; }
+  body[data-game] .strip-wrap { flex: 1 1 0; display: flex; flex-direction: column; min-height: 0; }
+  body[data-game] .strip-head { flex: 0 0 auto; font-size: 10px; margin-bottom: 3px; }
+  body[data-game] h3 { font-size: 11px; margin: 0; }
+  body[data-game] .strip { flex: 1 1 0; min-height: 0; max-height: 148px; align-content: start; overflow: auto; gap: 4px; }
+  body[data-game] .history-title, body[data-game] .history-label { font-size: 8px; }
+  body[data-game] .history-pattern .chip, body[data-game] .history-played .chip { flex-basis: 30px; }
+  body[data-game] .chip { padding: 7px 2px 2px; }
+  body[data-game] .chip b { font-size: 12px; }
+  body[data-game] .chip small { font-size: 8px; }
+  body[data-game] .strategy-sections { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; gap: 4px; padding: 0 6px 5px; }
+  body[data-game] .stats { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; gap: 3px; overflow: hidden; }
+  body[data-game] .stats-head, body[data-game] .breakdown-head { flex: 0 0 auto; gap: 4px; flex-wrap: nowrap; }
+  body[data-game] .stats .seg { flex-wrap: nowrap; }
+  body[data-game] .stats .seg button { font-size: 9px; padding: 2px 4px; white-space: nowrap; }
+  body[data-game] .stat-grid { flex: 0 0 auto; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; margin-top: 0; }
+  body[data-game] .tile { padding: 3px 4px; border-radius: 5px; }
+  body[data-game] .tile label { font-size: 8px; line-height: 1.15; letter-spacing: .02em; }
+  body[data-game] .tile b { font-size: 12px; line-height: 1.15; }
+  body[data-game] .tile b small { font-size: 8px; }
+  body[data-game] #observedWagers { flex: 0 0 auto; font-size: 8px; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  body[data-game] #stepBars { flex: 0 0 auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px 4px; }
+  body[data-game] #stepBars h4 { grid-column: 1 / -1; }
+  body[data-game] #stepBars .hbar { grid-template-columns: 24px minmax(0, 1fr) 32px; gap: 2px; font-size: 8px; margin: 0; }
+  body[data-game] .stats h4 { font-size: 8px; margin: 1px 0; }
+  body[data-game] .hbar { grid-template-columns: 42px minmax(0, 1fr) 54px; gap: 3px; font-size: 8px; margin: 1px 0; }
+  body[data-game] .hbar .track { height: 6px; }
+  body[data-game="sicbo"] #extra { flex: 1 1 0; min-height: 42px; max-height: 76px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 1px 6px; }
   body[data-game="sicbo"] #extra > h4:nth-child(1) { grid-column: 1; grid-row: 1; }
   body[data-game="sicbo"] #extra > .bars:nth-child(2) { grid-column: 1; grid-row: 2; }
   body[data-game="sicbo"] #extra > h4:nth-child(3) { grid-column: 2; grid-row: 1; }
   body[data-game="sicbo"] #extra > .bars:nth-child(4) { grid-column: 2; grid-row: 2; }
-  body[data-game="sicbo"] .stats .bars { height: 100%; min-height: 0; gap: 2px; padding-bottom: 2px; }
-  body[data-game="sicbo"] .bar { font-size: 8px; }
-  body[data-game="sicbo"] .bar span { margin-top: 1px; }
-  body[data-game="sicbo"] .stats .table-wrap { flex: 0 1 auto; min-height: 0; max-height: 52px; }
-  body[data-game="sicbo"] .stats table { font-size: 9px; }
-  body[data-game="sicbo"] .stats th, body[data-game="sicbo"] .stats td { padding: 3px 2px; }
-  body[data-game="sicbo"] .strategy-sections { gap: 6px; padding: 0 6px 6px; }
+  body[data-game="teenpatti"] #extra { flex: 0 0 auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px 6px; }
+  body[data-game="teenpatti"] #extra > h4, body[data-game="teenpatti"] #extra > p { grid-column: 1 / -1; margin: 0; font-size: 8px; }
+  body[data-game="kickoff"] #extra { flex: 0 0 auto; }
+  body[data-game="kickoff"] .ko-stats-grid { gap: 4px; margin-top: 2px; }
+  body[data-game="kickoff"] .ko-stat-box { padding: 3px 4px; border-radius: 5px; }
+  body[data-game="kickoff"] .ko-stat-box span, body[data-game="kickoff"] .ko-stat-box small { font-size: 8px; }
+  body[data-game="kickoff"] .ko-stat-box b { font-size: 12px; margin: 0; }
+  body[data-game] .stats .bars { height: 100%; min-height: 0; gap: 2px; padding-bottom: 1px; }
+  body[data-game] .bar { font-size: 7px; }
+  body[data-game] .bar span { margin-top: 1px; }
+  body[data-game] .stats .table-wrap { flex: 1 1 0; min-height: 28px; max-height: 60px; overflow: auto; }
+  body[data-game] .stats table { font-size: 8px; }
+  body[data-game] .stats th, body[data-game] .stats td { padding: 2px; }
 }
 
-body[data-game="sicbo"] .insights { display: none; }
+body[data-game] .insights { display: none; }

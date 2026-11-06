@@ -364,13 +364,19 @@
           ? set.playedMults[i]
           : progObj.mult(curLvl + i - set.step) * (set.recMult || 1))
         : set.plan.map((_, i) => progObj.mult(i) * (set.recMult || 1));
+      const rollIdx = set.rollIndex != null ? set.rollIndex : set.step;
+      const activePlan = Array.from({ length: set.plan.length }, (_, i) =>
+        i < set.step ? set.plan[i] : continuationSide(set.pattern, set.factor, rollIdx + (i - set.step) + (set.patternOffset || 0)));
+      const setLost = rows.filter((r) => r.setNo === set.no && r.role === 'bet' && r.result === 'loss' && !r.noBet)
+        .reduce((sum, r) => sum + Math.abs(r.pnl), 0);
       next = Object.assign({
         phase: set.delayLeft > 0 ? 'factor-delay' : 'bet',
         left: set.delayLeft,
         pattern: abstract(set.pattern),
         factor: set.factor,
-        plan: set.plan,
+        plan: activePlan,
         mults,
+        setLost,
         recovery: set.recovery,
         ladder: ladderInfo,
       }, betFor(set, set.step));
@@ -382,9 +388,15 @@
     } else if (cooldown > 0) {
       next = { phase: 'cooldown', left: cooldown, reason: cooldownReason, have: seq.length, need: curCfg.n, recovery: recInfo, ladder: ladderInfo };
     } else if (seq.length >= curCfg.n) {
-      next = { phase: 'factor', pattern: abstract(seq.slice(-curCfg.n)), raw: seq.slice(-curCfg.n), recovery: recInfo, ladder: ladderInfo };
+      const pat = seq.slice(-curCfg.n);
+      next = {
+        phase: 'factor', pattern: abstract(pat), raw: pat,
+        ifA: continuationSide(pat, 'A', curCfg.waitBet || 0),
+        ifB: continuationSide(pat, 'B', curCfg.waitBet || 0),
+        recovery: recInfo, ladder: ladderInfo,
+      };
     } else {
-      next = { phase: 'collect', have: seq.length, need: curCfg.n, recovery: recInfo, ladder: ladderInfo };
+      next = { phase: 'collect', have: seq.length, need: curCfg.n, raw: seq.slice(-curCfg.n), recovery: recInfo, ladder: ladderInfo };
     }
     return { rows, next };
   }

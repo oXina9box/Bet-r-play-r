@@ -207,10 +207,10 @@
     if (p) { pending = p; if (!pending.dice?.length) manualClaims.delete(bindingKey(currentBinding())); return render(); }
     const b = book();
     const last = b.entries[b.entries.length - 1];
-    if (last && last.s === curSession().id) { b.entries.pop(); save(); render(); }
+    if (last && last.s === curSession().id) { b.entries.pop(); manualBetAmount = null; save(); render(); }
   }
 
-  function clearPending() { pending = game().emptyPending(); manualClaims.delete(bindingKey(currentBinding())); render(); }
+  function clearPending() { pending = game().emptyPending(); manualBetAmount = null; manualClaims.delete(bindingKey(currentBinding())); render(); }
 
   function newSession() {
     if (!ready) return;
@@ -221,6 +221,7 @@
     data = { ...data, books: { ...data.books, [key]: { ...b, sessions: [...b.sessions, { id: uid(), start: Date.now() }] } } };
     pending = game().emptyPending();
     noBetArmed = false;
+    manualBetAmount = null;
     save(); render();
     toast('New session started');
   }
@@ -233,6 +234,7 @@
     data.cur = { site, game: gameId };
     pending = game().emptyPending();
     noBetArmed = false;
+    manualBetAmount = null;
     save();
     renderPad();
     render();
@@ -347,6 +349,8 @@
       `;
     }
 
+    if (tripleOverlay) alertBanner = '';
+
     let ladderBadge = '';
     if (nx.ladder) {
       const l = nx.ladder;
@@ -362,7 +366,7 @@
     const currentMult = Math.round((currentAmt / b.cfg.unit) * 100) / 100;
     const isManual = manualBetAmount != null && manualBetAmount !== nx.amount;
     const betAmt = `
-      <div class="bet-amt interactive">
+      <div class="bet-amt interactive${noBetArmed ? ' skip-armed' : ''}">
         <button id="betMinus" class="bet-step-btn" title="Decrease bet by 1 unit (${fmt(b.cfg.unit)})">−</button>
         <span class="bet-val">${fmt(currentAmt)}</span>
         <span class="bet-mult">(${currentMult}x)</span>
@@ -379,11 +383,12 @@
            <div class="pattern">Fading <b>${nx.pattern}</b> · factor ${sideTag(nx.factor)}</div>`;
     } else if (nx.phase === 'bet') {
       const plan = nx.plan.map((s, i) => `<div class="plan-step ${i < nx.step ? 'done' : i === nx.step ? 'now' : ''}">${sideTag(s)}<em>${nx.mults[i]}x</em></div>`).join('');
-      h = `<div class="phase">BET ${nx.step + 1} of ${nx.of}</div>
+      const winNet = currentAmt * (b.cfg.payout == null ? 1 : b.cfg.payout) - (nx.setLost || 0);
+      h = `<div class="phase">BET ${nx.step + 1} of ${nx.of}${noBetArmed ? ' · SKIP ARMED ($0)' : ''}</div>
            <div class="bet-side ${nx.side === 'A' ? 'a' : 'b'}">${g.sides[nx.side].label}</div>
            ${betAmt}
            <div class="plan">${plan}</div>
-           <div class="pattern">Fading <b>${nx.pattern}</b> · factor ${sideTag(nx.factor)}</div>`;
+           <div class="pattern">Fading <b>${nx.pattern}</b> · factor ${sideTag(nx.factor)} · <span class="win">Win ${signed(winNet)}</span></div>`;
     } else if (nx.phase === 'continue') {
       h = `<div class="phase">OPTIONAL CONTINUE AFTER BUST</div>
            <div class="bet-side ${nx.side === 'A' ? 'a' : 'b'}">${g.sides[nx.side].label}</div>
@@ -396,14 +401,16 @@
            <div class="bet-side wait">Wait ${nx.left}</div>
            <div class="bet-amt"><span>sitting out ${nx.left} ${unitWord} before starting a new pattern</span></div>`;
     } else if (nx.phase === 'factor') {
-      h = `<div class="phase">WAIT</div>
+      const preview = nx.ifA && nx.ifB ? ` · If ${sideTag('A')}→${sideTag(nx.ifA)} / If ${sideTag('B')}→${sideTag(nx.ifB)}` : '';
+      h = `<div class="phase">WAIT · NEXT SETS FACTOR</div>
            <div class="bet-side wait">No bet</div>
            <div class="bet-amt"><span>next ${g.entryName.toLowerCase()} sets the factor</span></div>
-           <div class="pattern">Pattern <b>${nx.pattern}</b> · ${nx.raw.map((s) => sideTag(s)).join('')}</div>`;
+           <div class="pattern">Pattern <b>${nx.pattern}</b> · ${nx.raw.map((s) => sideTag(s)).join('')}${preview}</div>`;
     } else {
-      h = `<div class="phase">COLLECTING</div>
+      const collected = nx.raw?.length ? `<div class="pattern">${nx.raw.map((s) => sideTag(s)).join('')} · ${nx.need - nx.have} more</div>` : '';
+      h = `<div class="phase">COLLECTING · NO BET</div>
            <div class="bet-side wait">${nx.have} / ${nx.need}</div>
-           <div class="bet-amt"><span>need ${nx.need} ${g.entryName.toLowerCase()}s for a pattern</span></div>`;
+           <div class="bet-amt"><span>need ${nx.need} ${g.entryName.toLowerCase()}s for a pattern</span></div>${collected}`;
     }
     $('next').className = 'next ' + nx.phase + (nx.phase === 'bet' ? ' side-' + nx.side.toLowerCase() : '') + (nx.recovery ? ' recovery' : '');
     const skip = nx.phase === 'bet' ? `<button id="skipBetOnce" class="skip-bet ${noBetArmed ? 'armed' : ''}">${noBetArmed ? 'Cancel one-time skip' : 'Skip this bet once'}</button>` : '';
@@ -445,13 +452,14 @@
     const raw = Array.isArray(last.raw) ? last.raw.join(', ') : last.raw?.c ? last.raw.c.join(', ') : last.raw?.w || '';
     const outcome = last.side ? g.sides[last.side].label : 'tie';
     const result = last.nb || last.noBet ? 'Bet skipped. No money risked.' : last.setEnd === 'bust' ? 'Bust.' : last.setEnd === 'won' ? 'Set won.' : last.result === 'loss' ? 'Bet lost.' : last.result === 'win' ? 'Bet won.' : '';
-    const advice = noBetArmed ? 'Skip the next roll. No bet.' : next.phase === 'bet' ? `Bet ${g.sides[next.side].label}, ${fmt(next.amount)}.`
-      : next.phase === 'continue' ? `Optional continue after bust: bet ${g.sides[next.side].label}, ${fmt(next.amount)}. I will resume this run if that wager is visible.`
+    const stake = manualBetAmount != null ? manualBetAmount : next.amount;
+    const advice = noBetArmed ? 'Skip the next roll. No bet.' : next.phase === 'bet' ? `Bet ${g.sides[next.side].label}, ${fmt(stake)}.`
+      : next.phase === 'continue' ? `Optional continue after bust: bet ${g.sides[next.side].label}, ${fmt(stake)}. I will resume this run if that wager is visible.`
         : next.phase === 'factor-delay' ? `Waiting ${next.left} rolls for the pattern.`
           : next.phase === 'cooldown' ? `Waiting ${next.left} rolls after ${next.reason}.`
             : next.phase === 'factor' ? 'No bet. Next roll sets the factor.'
               : `No bet. Collecting ${next.have} of ${next.need} rolls.`;
-    const signature = [data.cur.site, g.id, last.s, last.t, next.phase, next.side, next.amount, next.left, result, noBetArmed].join(':');
+    const signature = [data.cur.site, g.id, last.s, last.t, next.phase, next.side, stake, next.left, result, noBetArmed].join(':');
     if (signature === spokenSignature) return;
     spokenSignature = signature;
     const detail = last.o.total ? `total ${last.o.total}.` : last.o.red ? `red ${last.o.red}, blue ${last.o.blue}.` : '';
