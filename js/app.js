@@ -3,7 +3,9 @@
   const { PROGRESSIONS, GROUP_SIZES, run, stats, analyzeBusts, simulateDelays, recoveryOptions } = window.Engine;
   const GAMES = window.Games;
   const KEY = 'betrplayr.v1';
-  const DEFAULT_CFG = { n: 5, prog: 'double', unit: 1, payout: 1, waitBust: 0, waitWin: 1, waitBet: 0, recovery: 0 };
+  const DEFAULT_CFG = { n: 5, prog: 'double', unit: 1, payout: 1, waitBust: 0, waitWin: 1, waitBet: 0, recovery: 0, targetProfit: 0 };
+  let manualBetAmount = null;
+  let dismissedTripleRoll = null;
   const $ = (id) => document.getElementById(id);
   const fmt = (x) => (Math.round(x * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const signed = (x) => (x > 0 ? '+' : x < 0 ? '−' : '') + fmt(Math.abs(x));
@@ -208,6 +210,10 @@
       entry.nb = true;
       noBetArmed = false;
     }
+    if (manualBetAmount != null) {
+      entry.manualAmount = manualBetAmount;
+      manualBetAmount = null;
+    }
     const key = `${data.cur.site}:${data.cur.game}`;
     data = { ...data, books: { ...data.books, [key]: { ...b, entries: [...b.entries, entry] } } };
     manualClaims.delete(bindingKey(bound));
@@ -239,10 +245,10 @@
     if (p) { pending = p; if (!pending.dice?.length) manualClaims.delete(bindingKey(currentBinding())); return render(); }
     const b = book();
     const last = b.entries[b.entries.length - 1];
-    if (last && last.s === curSession().id) { b.entries.pop(); save(); render(); }
+    if (last && last.s === curSession().id) { b.entries.pop(); manualBetAmount = null; save(); render(); }
   }
 
-  function clearPending() { cancelVoice(); pending = game().emptyPending(); manualClaims.delete(bindingKey(currentBinding())); render(); }
+  function clearPending() { cancelVoice(); pending = game().emptyPending(); manualBetAmount = null; manualClaims.delete(bindingKey(currentBinding())); render(); }
 
   function newSession() {
     if (!ready) return;
@@ -254,6 +260,7 @@
     data = { ...data, books: { ...data.books, [key]: { ...b, sessions: [...b.sessions, { id: uid(), start: Date.now() }] } } };
     pending = game().emptyPending();
     noBetArmed = false;
+    manualBetAmount = null;
     save(); render();
     toast('New session started');
   }
@@ -267,6 +274,7 @@
     data.cur = { site, game: gameId };
     pending = game().emptyPending();
     noBetArmed = false;
+    manualBetAmount = null;
     save();
     renderPad();
     render();
@@ -341,6 +349,48 @@
       alertBanner = `<div class="special-alert ${prob.isHigh ? 'high' : ''}">${escapeHTML(prob.message)}<small>Past waiting does not increase the next outcome's probability.</small></div>`;
     }
 
+    const b = book();
+    let targetBadge = '';
+    if (b.cfg.targetProfit > 0) {
+      const s = stats(view.rows);
+      const targetDol = b.cfg.targetProfit;
+      const targetU = targetDol / b.cfg.unit;
+      const diffDol = targetDol - s.net;
+      const diffU = targetU - s.units;
+      const reached = s.net >= targetDol;
+      const signDol = diffDol > 0 ? `-$${fmt(diffDol).replace('$', '')}` : `+$${fmt(Math.abs(diffDol)).replace('$', '')}`;
+      const signU = diffU > 0 ? `-${diffU.toFixed(1)}u` : `+${Math.abs(diffU).toFixed(1)}u`;
+      targetBadge = `
+        <div class="target-badge ${reached ? 'achieved' : 'needed'}">
+          <span class="target-title">🎯 Target: ${fmt(targetDol)} (${targetU.toFixed(1)}u)</span>
+          <span class="target-progress">${reached ? 'Goal Achieved!' : 'Needed:'} <b>${fmt(Math.max(0, diffDol))}</b> (${Math.max(0, diffU).toFixed(1)}u)</span>
+          <span class="target-diff">[<b>${signDol}</b> / <b>${signU}</b>]</span>
+        </div>
+      `;
+    }
+
+    let tripleOverlay = '';
+    const tripleRisk = (data.cur.game === 'sicbo' && (nx.phase === 'bet' || nx.phase === 'continue'))
+      ? Engine.detectTripleRisk('sicbo', view.rows, nx.step)
+      : null;
+    if (tripleRisk && tripleRisk.due && dismissedTripleRoll !== view.rows.length) {
+      tripleOverlay = `
+        <div id="tripleAlertOverlay" class="triple-overlay ${tripleRisk.urgent ? 'urgent' : 'warning'}">
+          <div class="triple-overlay-card">
+            <div class="triple-overlay-badge">${tripleRisk.urgent ? '🚨 CRITICAL STEP 5 ALERT' : '⚠️ TRIPLE RISK DETECTED'}</div>
+            <div class="triple-overlay-title">${tripleRisk.urgent ? 'HIGH TRIPLE PROBABILITY ON STEP 5' : 'TRIPLE DUE SOON'}</div>
+            <div class="triple-overlay-body">${escapeHTML(tripleRisk.message)}</div>
+            <div class="triple-overlay-actions">
+              <button id="tripleOverlaySkip" class="triple-skip-btn ${tripleRisk.urgent ? 'urgent' : ''}">${noBetArmed ? '✓ Bet Skipped (Armed)' : (tripleRisk.urgent ? '🚨 STRONGLY URGED: SKIP THIS BET' : 'Skip This Bet (One-Time)')}</button>
+              <button id="tripleOverlayDismiss" class="triple-dismiss-btn">Dismiss</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    if (tripleOverlay) alertBanner = '';
+
     let ladderBadge = '';
     if (nx.ladder) {
       const l = nx.ladder;
@@ -352,6 +402,19 @@
       `;
     }
 
+    const currentAmt = manualBetAmount != null ? manualBetAmount : nx.amount;
+    const currentMult = Math.round((currentAmt / b.cfg.unit) * 100) / 100;
+    const isManual = manualBetAmount != null && manualBetAmount !== nx.amount;
+    const betAmt = `
+      <div class="bet-amt interactive${noBetArmed ? ' skip-armed' : ''}">
+        <button id="betMinus" class="bet-step-btn" title="Decrease bet by 1 unit (${fmt(b.cfg.unit)})">−</button>
+        <span class="bet-val">${fmt(currentAmt)}</span>
+        <span class="bet-mult">(${currentMult}x)</span>
+        <button id="betPlus" class="bet-step-btn" title="Increase bet by 1 unit (${fmt(b.cfg.unit)})">+</button>
+        ${isManual ? `<button id="betReset" class="bet-reset-btn" title="Reset to calculated stake">↺</button>` : ''}
+      </div>
+    `;
+
     let h;
     if (nx.phase === 'factor-delay') {
       h = `<div class="phase">FACTOR FOUND · WAITING</div>
@@ -360,15 +423,16 @@
            <div class="pattern">Fading <b>${nx.pattern}</b> · factor ${sideTag(nx.factor)}</div>`;
     } else if (nx.phase === 'bet') {
       const plan = nx.plan.map((s, i) => `<div class="plan-step ${i < nx.step ? 'done' : i === nx.step ? 'now' : ''}">${sideTag(s)}<em>${nx.mults[i]}x</em></div>`).join('');
-      h = `<div class="phase">BET ${nx.step + 1} of ${nx.of}</div>
+      const winNet = currentAmt * (b.cfg.payout == null ? 1 : b.cfg.payout) - (nx.setLost || 0);
+      h = `<div class="phase">BET ${nx.step + 1} of ${nx.of}${noBetArmed ? ' · SKIP ARMED ($0)' : ''}</div>
            <div class="bet-side ${nx.side === 'A' ? 'a' : 'b'}">${g.sides[nx.side].label}</div>
-           <div class="bet-amt">${fmt(nx.amount)} <span>(${nx.mult}x)</span></div>
+           ${betAmt}
            <div class="plan">${plan}</div>
-           <div class="pattern">Fading <b>${nx.pattern}</b> · factor ${sideTag(nx.factor)}</div>`;
+           <div class="pattern">Fading <b>${nx.pattern}</b> · factor ${sideTag(nx.factor)} · <span class="win">Win ${signed(winNet)}</span></div>`;
     } else if (nx.phase === 'continue') {
       h = `<div class="phase">OPTIONAL CONTINUE AFTER BUST</div>
            <div class="bet-side ${nx.side === 'A' ? 'a' : 'b'}">${g.sides[nx.side].label}</div>
-           <div class="bet-amt">${fmt(nx.amount)} <span>(${nx.mult}x) · bet ${nx.step + 1}</span></div>
+           ${betAmt}
            <div class="pattern">Run resumes only when a matching visible wager is detected.</div>`;
     } else if (nx.phase === 'cooldown') {
       const unitWord = nx.left === 1 ? g.entryName.toLowerCase() : g.entryName.toLowerCase() + 's';
@@ -377,19 +441,49 @@
            <div class="bet-side wait">Wait ${nx.left}</div>
            <div class="bet-amt"><span>sitting out ${nx.left} ${unitWord} before starting a new pattern</span></div>`;
     } else if (nx.phase === 'factor') {
-      h = `<div class="phase">WAIT</div>
+      const preview = nx.ifA && nx.ifB ? ` · If ${sideTag('A')}→${sideTag(nx.ifA)} / If ${sideTag('B')}→${sideTag(nx.ifB)}` : '';
+      h = `<div class="phase">WAIT · NEXT SETS FACTOR</div>
            <div class="bet-side wait">No bet</div>
            <div class="bet-amt"><span>next ${g.entryName.toLowerCase()} sets the factor</span></div>
-           <div class="pattern">Pattern <b>${nx.pattern}</b> · ${nx.raw.map((s) => sideTag(s)).join('')}</div>`;
+           <div class="pattern">Pattern <b>${nx.pattern}</b> · ${nx.raw.map((s) => sideTag(s)).join('')}${preview}</div>`;
     } else {
-      h = `<div class="phase">COLLECTING</div>
+      const collected = nx.raw?.length ? `<div class="pattern">${nx.raw.map((s) => sideTag(s)).join('')} · ${nx.need - nx.have} more</div>` : '';
+      h = `<div class="phase">COLLECTING · NO BET</div>
            <div class="bet-side wait">${nx.have} / ${nx.need}</div>
-           <div class="bet-amt"><span>need ${nx.need} ${g.entryName.toLowerCase()}s for a pattern</span></div>`;
+           <div class="bet-amt"><span>need ${nx.need} ${g.entryName.toLowerCase()}s for a pattern</span></div>${collected}`;
     }
     $('next').className = 'next ' + nx.phase + (nx.phase === 'bet' ? ' side-' + nx.side.toLowerCase() : '') + (nx.recovery ? ' recovery' : '');
     const skip = nx.phase === 'bet' ? `<button id="skipBetOnce" class="skip-bet ${noBetArmed ? 'armed' : ''}">${noBetArmed ? 'Cancel one-time skip' : 'Skip this bet once'}</button>` : '';
-    $('next').innerHTML = recBanner + alertBanner + h + ladderBadge + lastLine + skip;
+    $('next').innerHTML = tripleOverlay + targetBadge + recBanner + alertBanner + h + ladderBadge + lastLine + skip;
     $('skipBetOnce')?.addEventListener('click', toggleNoBet);
+    $('betMinus')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const cur = manualBetAmount != null ? manualBetAmount : nx.amount;
+      manualBetAmount = Math.max(0, Math.round((cur - b.cfg.unit) * 100) / 100);
+      render();
+    });
+    $('betPlus')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const cur = manualBetAmount != null ? manualBetAmount : nx.amount;
+      manualBetAmount = Math.round((cur + b.cfg.unit) * 100) / 100;
+      render();
+    });
+    $('betReset')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      manualBetAmount = null;
+      render();
+    });
+    $('tripleOverlaySkip')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!noBetArmed) toggleNoBet();
+      dismissedTripleRoll = view.rows.length;
+      render();
+    });
+    $('tripleOverlayDismiss')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dismissedTripleRoll = view.rows.length;
+      render();
+    });
     announceNext(last, nx, g);
   }
 
@@ -398,13 +492,14 @@
     const raw = Array.isArray(last.raw) ? last.raw.join(', ') : last.raw?.c ? last.raw.c.join(', ') : last.raw?.w || '';
     const outcome = last.side ? g.sides[last.side].label : 'tie';
     const result = last.nb || last.noBet ? 'Bet skipped. No money risked.' : last.setEnd === 'bust' ? 'Bust.' : last.setEnd === 'won' ? 'Set won.' : last.result === 'loss' ? 'Bet lost.' : last.result === 'win' ? 'Bet won.' : '';
-    const advice = noBetArmed ? 'Skip the next roll. No bet.' : next.phase === 'bet' ? `Bet ${g.sides[next.side].label}, ${fmt(next.amount)}.`
-      : next.phase === 'continue' ? `Optional continue after bust: bet ${g.sides[next.side].label}, ${fmt(next.amount)}. I will resume this run if that wager is visible.`
+    const stake = manualBetAmount != null ? manualBetAmount : next.amount;
+    const advice = noBetArmed ? 'Skip the next roll. No bet.' : next.phase === 'bet' ? `Bet ${g.sides[next.side].label}, ${fmt(stake)}.`
+      : next.phase === 'continue' ? `Optional continue after bust: bet ${g.sides[next.side].label}, ${fmt(stake)}. I will resume this run if that wager is visible.`
         : next.phase === 'factor-delay' ? `Waiting ${next.left} rolls for the pattern.`
           : next.phase === 'cooldown' ? `Waiting ${next.left} rolls after ${next.reason}.`
             : next.phase === 'factor' ? 'No bet. Next roll sets the factor.'
               : `No bet. Collecting ${next.have} of ${next.need} rolls.`;
-    const signature = [data.cur.site, g.id, last.s, last.t, next.phase, next.side, next.amount, next.left, result, noBetArmed].join(':');
+    const signature = [data.cur.site, g.id, last.s, last.t, next.phase, next.side, stake, next.left, result, noBetArmed].join(':');
     if (signature === spokenSignature) return;
     spokenSignature = signature;
     const detail = last.o.total ? `total ${last.o.total}.` : last.o.red ? `red ${last.o.red}, blue ${last.o.blue}.` : '';
@@ -422,7 +517,7 @@
     const end = r.setEnd === 'bust' ? ' bust' : r.setEnd === 'won' ? ' won' : '';
     const as = r.push && r.effSide ? ` as ${g.sides[r.effSide].label}` : '';
     if (r.push && r.effSide) c.sub = '→' + g.sides[r.effSide].short;
-    if (g.id === 'teenpatti' && r.screen && r.raw?.w) c.sub = 'winner only';
+    if ((g.id === 'teenpatti' || g.id === 'baccarat') && r.screen && r.raw?.w) c.sub = 'winner only';
     const nbText = r.noBet ? ' [NO BET] ' : '';
     const recText = r.recovery ? ` [Recovery ${r.recovery.currentSet}/${r.recovery.totalSets}] ` : '';
     const tip = `${nbText}${recText}` + (r.push ? `Tie, played${as || ' as nothing (no prior winner)'} · ` : '') + (r.role === 'factor' ? `Factor · fading ${r.pattern}` : r.role === 'factor-wait' ? `Delayed bet wait (${r.delayLeft} remaining)` : r.role === 'factor-break' ? 'Pattern broke during delay; sequence reset' : r.role === 'cooldown' ? `Cooldown after ${r.cooldownReason || 'bust'} (${r.cooldownLeft} remaining)` : r.bet ? `Bet ${g.sides[r.bet.side].label} ${fmt(r.bet.amount)} → ${r.result}` : '') + ' · double-click to toggle No Bet';
@@ -445,6 +540,11 @@
   }
 
   const MAX_PLAY_PRESETS = {
+    baccarat: {
+      name: 'Baccarat',
+      cfg: { n: 7, prog: 'double', recovery: 0, waitBust: 0 },
+      summary: 'Group 7 (6 bets) · Doubling · Recovery off · No wait after bust',
+    },
     teenpatti: {
       name: 'Teen Patti',
       cfg: { n: 7, prog: 'double', recovery: 0, waitBust: 0 },
@@ -497,6 +597,23 @@
     seg($('progSeg'), Object.entries(PROGRESSIONS).map(([k, p]) => [k, seqLabel(k, b.cfg.n - 1)]), b.cfg.prog, (v) => setCfg('prog', v));
     if (document.activeElement !== $('unit')) $('unit').value = b.cfg.unit;
     if (document.activeElement !== $('payout')) $('payout').value = b.cfg.payout;
+    if ($('targetProfit') && document.activeElement !== $('targetProfit')) {
+      $('targetProfit').value = b.cfg.targetProfit || '';
+    }
+    if ($('targetHint')) {
+      if (b.cfg.targetProfit > 0) {
+        const s = stats(view.rows);
+        const tDol = b.cfg.targetProfit;
+        const tUnits = tDol / b.cfg.unit;
+        const diffDol = tDol - s.net;
+        const diffUnits = tUnits - s.units;
+        const signDol = diffDol > 0 ? `-$${fmt(diffDol).replace('$', '')}` : `+$${fmt(Math.abs(diffDol)).replace('$', '')}`;
+        const signUnits = diffUnits > 0 ? `-${diffUnits.toFixed(1)}u` : `+${Math.abs(diffUnits).toFixed(1)}u`;
+        $('targetHint').textContent = `Target: ${fmt(tDol)} (${tUnits.toFixed(1)}u) · Needed: ${fmt(Math.max(0, diffDol))} (${Math.max(0, diffUnits).toFixed(1)}u) [${signDol} / ${signUnits}]`;
+      } else {
+        $('targetHint').textContent = 'Set a profit goal to track progress.';
+      }
+    }
     $('audioFeedback').checked = data.audioFeedback === true;
     $('voiceEntry').checked = data.voiceEntry === true;
     $('voiceEntryHelp').textContent = data.cur.game === 'sicbo' ? 'Say three numbers, one through six, in order.'
@@ -628,7 +745,7 @@
     $('stepBars').innerHTML = `<h4>Set won on bet #</h4>` + s.byStep.slice(0, used).map((x, i) => `<div class="hbar"><span>Bet ${i + 1}</span><div class="track"><div class="fill" style="width:${(x / maxStep) * 100}%"></div></div><em>${x} · ${pct(x, s.sets)}</em></div>`).join('') +
       `<div class="hbar bust"><span>Bust</span><div class="track"><div class="fill" style="width:${(s.bust / maxStep) * 100}%"></div></div><em>${s.bust} · ${pct(s.bust, s.sets)}</em></div>`;
 
-    $('extra').innerHTML = rows.length ? g.extraStats(rows) : '';
+    $('extra').innerHTML = g.extraStats(rows);
     renderBreakdown(rows);
   }
 
@@ -645,6 +762,9 @@
     if (bdMode === 'hour') keys.sort();
     const g = game();
     let h = `<thead><tr><th></th><th>${g.entryName}s</th><th>${g.sides.A.short}%</th><th>Sets</th><th>Won</th><th>Bust</th><th>Bust%</th><th>Net</th></tr></thead><tbody>`;
+    if (!keys.length) {
+      h += `<tr><td>Session #${book().sessions.length}</td><td>0</td><td>–</td><td>0</td><td>0</td><td>0</td><td>–</td><td class="win">${signed(0)}</td></tr>`;
+    }
     for (const k of keys.reverse()) {
       const s = stats(groups.get(k));
       const n = s.A + s.B;
@@ -815,7 +935,7 @@
         if (curSession().endedAt !== undefined) return false;
         if (manualClaims.has(bindingKey(bound)) || pending.dice?.length) return false;
       }
-      if (bound.game === 'teenpatti' && (pending.cards?.length || pending.active)) return false;
+      if ((bound.game === 'teenpatti' || bound.game === 'baccarat') && (pending.cards?.length || pending.active)) return false;
       const key = `${data.cur.site}:${data.cur.game}`, b = book();
       if (b.entries.some(e => e.screen?.round === observation.screen.round)) return false;
       const entry = { t: Date.now(), s: curSession().id, cfg: { ...b.cfg }, ...observation, ...(noBetArmed ? { nb: true } : {}) };
@@ -872,7 +992,7 @@
     siteInput.hidden = true;
     if (!name) return;
     if (screenReader?.canSwitch?.() === false) return toast('A verified hand is waiting. Finish or clear manual input, then resume recording.');
-    const id = (name.toLowerCase().replace(/[^a-z0-9]+/g, '-') || uid()).slice(0, 128);
+    const id = (name.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 128).replace(/^-+|-+$/g, '') || uid());
     if (!data.sites.some((s) => s.id === id)) {
       try { data = validate({ ...data, sites: [...data.sites, { id, name }] }); }
       catch (err) { toast('Invalid site name (maximum 1000 characters)'); return; }
@@ -883,11 +1003,19 @@
   siteInput.onblur = () => { siteInput.hidden = true; };
   $('unit').oninput = (e) => { const v = parseFloat(e.target.value); if (v > 0) setCfg('unit', v); };
   $('payout').oninput = (e) => { const v = parseFloat(e.target.value); if (v > 0) setCfg('payout', v); };
+  if ($('targetProfit')) {
+    $('targetProfit').oninput = (e) => {
+      const v = parseFloat(e.target.value);
+      setCfg('targetProfit', v > 0 ? v : 0);
+    };
+  }
   $('export').onclick = () => {
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }));
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }));
+    a.href = url;
     a.download = `bet-r-play-r-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
+    setTimeout(() => URL.revokeObjectURL?.(url), 1000);
     toast('Backup downloaded');
   };
   $('import').onchange = async (e) => {
@@ -971,6 +1099,18 @@
     });
   }
 
+  if (window.Games?.baccarat?.registerAutoCommit) {
+    window.Games.baccarat.registerAutoCommit(() => {
+      if (!ready || data.cur.game !== 'baccarat') return;
+      const res = game().confirmActive ? game().confirmActive(pending) : null;
+      if (!res) return;
+      if (res.error) toast(res.error);
+      pending = res.pending;
+      if (res.commit) commit(res.commit);
+      render();
+    });
+  }
+
   document.addEventListener('keydown', (e) => {
     if (!ready || $('optionsMenu')?.matches?.(':popover-open') || $('screenAreaDialog')?.open) return;
     if (e.target.matches?.('input, select, textarea') || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -984,7 +1124,7 @@
     }
     if (e.key === 'Backspace') { e.preventDefault(); undo(); }
     else if (e.key === 'Escape') clearPending();
-    else if (['Enter', ' ', 'Tab'].includes(e.key) && data.cur.game === 'teenpatti' && pending.active) {
+    else if (['Enter', ' ', 'Tab'].includes(e.key) && (data.cur.game === 'teenpatti' || data.cur.game === 'baccarat') && pending.active) {
       e.preventDefault(); press(e.key === ' ' ? 'space' : e.key.toLowerCase());
     }
     else if (e.key.toLowerCase() === 'v') {

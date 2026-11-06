@@ -1,7 +1,7 @@
 /* The Kickoff: Two dice (Red vs Blue, 1 each). Highest die wins.
  * Red > Blue = RED wins (Side A)
  * Blue > Red = BLUE wins (Side B)
- * Red == Blue = TIE (null / push, pattern sequence continues)
+ * Red == Blue = DRAW / TIE (loss for both Red and Blue)
  */
 (function (root) {
   const Kickoff = {
@@ -14,13 +14,13 @@
       if (dice && dice.w) {
         const tie = dice.w === 'T';
         const side = tie ? null : dice.w;
-        return { side, lossAll: false, tie, red: null, blue: null };
+        return { side, lossAll: tie, tie, red: null, blue: null };
       }
       const red = dice[0];
       const blue = dice[1];
       const tie = red === blue;
       const side = red > blue ? 'A' : blue > red ? 'B' : null;
-      return { side, lossAll: false, tie, red, blue };
+      return { side, lossAll: tie, tie, red, blue };
     },
 
     emptyPending: () => ({ dice: [] }),
@@ -28,7 +28,7 @@
     input(p, key) {
       key = String(key).toLowerCase();
       // Quick keys: wr (win red), wb (win blue), wt (win tie)
-      if (key === 'wr' || key === 'r') return { pending: this.emptyPending(), commit: { w: 'A' } };
+      if (key === 'wr' || key === 'wa' || key === 'r') return { pending: this.emptyPending(), commit: { w: 'A' } };
       if (key === 'wb' || key === 'b') return { pending: this.emptyPending(), commit: { w: 'B' } };
       if (key === 'wt' || key === 't') return { pending: this.emptyPending(), commit: { w: 'T' } };
 
@@ -78,25 +78,47 @@
 
     extraStats(rows) {
       let redWins = 0, blueWins = 0, ties = 0;
-      let redSum = 0, blueSum = 0, diceCount = 0;
+      let redSum = 0, blueSum = 0, diceCount = 0, marginSum = 0, redHigh = 0, blueHigh = 0;
+      let curSide = null, curStreak = 0, maxStreak = 0, maxSide = null, sinceTie = 0;
       for (const r of rows) {
         if (r.side === 'A') redWins++;
         else if (r.side === 'B') blueWins++;
         else ties++;
+        if (r.side) {
+          if (r.side === curSide) curStreak++;
+          else { curSide = r.side; curStreak = 1; }
+          if (curStreak > maxStreak) { maxStreak = curStreak; maxSide = curSide; }
+        }
         if (r.o && r.o.red && r.o.blue) {
           redSum += r.o.red;
           blueSum += r.o.blue;
+          marginSum += Math.abs(r.o.red - r.o.blue);
+          if (r.o.red >= 5) redHigh++;
+          if (r.o.blue >= 5) blueHigh++;
           diceCount++;
         }
       }
+      for (let i = rows.length - 1; i >= 0; i--) {
+        if (rows[i].side == null || rows[i].o?.tie) break;
+        sinceTie++;
+      }
       const total = rows.length || 1;
-      const redPct = ((redWins / total) * 100).toFixed(1);
-      const bluePct = ((blueWins / total) * 100).toFixed(1);
-      const tiePct = ((ties / total) * 100).toFixed(1);
-      const avgRed = diceCount ? (redSum / diceCount).toFixed(2) : '-';
-      const avgBlue = diceCount ? (blueSum / diceCount).toFixed(2) : '-';
+      const redPct = rows.length ? ((redWins / total) * 100).toFixed(1) : '0.0';
+      const bluePct = rows.length ? ((blueWins / total) * 100).toFixed(1) : '0.0';
+      const tiePct = rows.length ? ((ties / total) * 100).toFixed(1) : '0.0';
+      const avgRed = diceCount ? (redSum / diceCount).toFixed(2) : '–';
+      const avgBlue = diceCount ? (blueSum / diceCount).toFixed(2) : '–';
+      const avgMargin = diceCount ? (marginSum / diceCount).toFixed(2) : '–';
+      const tieCumPct = Math.round((1 - Math.pow(5 / 6, sinceTie)) * 100);
+      const streakTxt = curStreak ? `${this.sides[curSide].short}×${curStreak} <small>max ${maxSide ? this.sides[maxSide].short : ''}${maxStreak}</small>` : '–';
 
       return `
+        <div class="game-markers">
+          <div class="marker"><label>Streak</label><b>${streakTxt}</b></div>
+          <div class="marker ${sinceTie >= 6 ? 'warn' : ''}"><label>Tie Gap</label><b>${sinceTie}r <small>${tieCumPct}%</small></b></div>
+          <div class="marker"><label>Avg Margin</label><b>Δ ${avgMargin}</b></div>
+          <div class="marker"><label>High Die (5–6)</label><b>R ${ redHigh } / B ${ blueHigh }</b></div>
+        </div>
         <h4>Head-to-Head Record</h4>
         <div class="ko-stats-grid">
           <div class="ko-stat-box red"><span>RED WINS</span><b>${redWins}</b><small>${redPct}% (avg: ${avgRed})</small></div>

@@ -34,7 +34,7 @@ function boot({ cache = null, get = async () => ({ ok: true, json: async () => f
   };
   context.window = context;
   vm.createContext(context);
-  for (const file of ['js/history.js', 'js/engine.js', 'js/games/sicbo.js', 'js/games/teenpatti.js', 'js/games/kickoff.js', 'js/voice.js']) {
+  for (const file of ['js/history.js', 'js/engine.js', 'js/games/sicbo.js', 'js/games/teenpatti.js', 'js/games/baccarat.js', 'js/games/kickoff.js', 'js/voice.js']) {
     vm.runInContext(fs.readFileSync(file, 'utf8'), context, { filename: path.resolve(file) });
   }
   context.AppData = require('../js/data.js');
@@ -226,6 +226,13 @@ function boot({ cache = null, get = async () => ({ ok: true, json: async () => f
   const escaped = boot({ cache: hostile, protocol: 'file:' }); await tick();
   assert.ok(!escaped.element('site').innerHTML.includes('<img'), 'site names rendered as text');
   assert.match(escaped.element('site').innerHTML, /&lt;img/);
+  for (const name of ['???', '---']) {
+    escaped.element('newSite').value = name;
+    escaped.element('newSite').onkeydown({ key: 'Enter' });
+  }
+  const siteIds = JSON.parse(escaped.stored.get('betrplayr.v1')).sites.map((s) => s.id);
+  assert.equal(siteIds.length, 3, 'punctuation-only site names each get a unique fallback ID');
+  assert.ok(siteIds.every((id) => !id.startsWith('-') && !id.endsWith('-')));
 
   const newer = boot({ cache: fixture(500), get: async () => ({ ok: true, json: async () => fixture(100) }) }); await tick(); await newer.flush();
   assert.equal(JSON.parse(newer.requests.find((r) => r.options?.method === 'POST').options.body).savedAt, 500, 'newer browser history wins');
@@ -328,10 +335,38 @@ function boot({ cache = null, get = async () => ({ ok: true, json: async () => f
   assert.deepEqual(dealt[0].raw.c, ['As', 'Kh', 'Qd', 'Jc', '9h', '8s']);
   assert.equal(dealt[0].raw.order, 'alternating');
 
+  // Test Baccarat switching, fast entry, and natural commit under shuff
+  cards.pick('games', 'baccarat');
+  assert.equal(JSON.parse(cards.stored.get('betrplayr.v1')).cur.game, 'baccarat');
+  assert.match(cards.element('pad').innerHTML, /Player won/, 'baccarat pad rendered');
+  // Enter Natural 9: P: 9s, B: 7h, P: 10d, B: 8c
+  cards.key('9'); cards.key('2'); // 9s (Deal 1 - Player)
+  cards.key('7'); cards.key('1'); // 7h (Deal 2 - Banker)
+  cards.key('1'); cards.key('0'); cards.key('4'); // 10d (Deal 3 - Player)
+  cards.key('8'); cards.key('3'); // 8c (Deal 4 - Banker) -> Natural 9 auto-commits!
+  const baccBook = JSON.parse(cards.stored.get('betrplayr.v1')).books['shuff:baccarat'];
+  assert.equal(baccBook.entries.length, 1, 'Baccarat natural 9 commits after 4 cards');
+  assert.deepEqual(baccBook.entries[0].raw.c, ['9s', '7h', '10d', '8c']);
+  assert.equal(baccBook.entries[0].raw.order, 'alternating');
+  assert.match(cards.element('strip').innerHTML, /Natural 9|9-5/, 'strip renders Baccarat hand');
+
   // Voice toggle test
   assert.ok(cards.element('voiceBtn'), 'voice button exists');
   cards.key('v');
   cards.element('voiceBtn').onclick();
+  const voiceEvents = {};
+  const voiceHostile = boot({ protocol: 'file:', beforeApp(context) {
+    context.Voice = {
+      isSupported: () => true,
+      init(opts) { Object.assign(voiceEvents, opts); return true; },
+      parseSpeech: () => ({ cards: [], dice: [], commands: [] }),
+      toggle: () => true,
+    };
+  } });
+  await tick();
+  voiceEvents.onInterim({ transcript: '<img src=x onerror=alert(1)>' });
+  assert.ok(!voiceHostile.element('voiceTranscript').innerHTML.includes('<img'), 'voice transcript escapes HTML');
+  assert.equal(voiceHostile.element('voiceTranscript').textContent, '<img src=x onerror=alert(1)>', 'voice transcript renders hostile input as plain text');
 
   const teenHooks = {};
   const teenSeed = { ...fixture(), cur: { site: 'shuff', game: 'teenpatti' }, books: { 'shuff:teenpatti': { cfg: { n: 5, prog: 'double', unit: 1, payout: 1 }, sessions: [{ id: 'teen', start: 1 }], entries: [] } } };

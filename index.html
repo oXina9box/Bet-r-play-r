@@ -60,9 +60,9 @@
           </section>
           <section id="screenTeenCalibration" class="teen-calibration" aria-label="Teen Patti reading areas" hidden>
             <label for="screenTeenSource">Read</label>
-            <select id="screenTeenSource"><option value="winner">Winner only (fast)</option><option value="cards">Six cards and winner</option></select>
+            <select id="screenTeenSource"><option value="cards">Six cards: calculate winner</option><option value="winner">Winner only (fast)</option></select>
             <button id="screenTeenConfirm" disabled>Use saved reading areas</button>
-            <p class="muted small">Select the gold winner banner, including its background, and text shown before a new hand. Enter that text exactly. Recording waits for that signal before accepting a winner.</p>
+            <p class="muted small">Select the purple or gold winner banner, including its background, and text shown before a new hand. Enter that text exactly. Recording waits for that signal before accepting a winner.</p>
             <label for="screenTeenPhaseText">Text shown before the deal</label>
             <input id="screenTeenPhaseText" type="text" maxlength="80" autocomplete="off" placeholder="Exact text visible on your table" />
             <div class="teen-crops">
@@ -78,7 +78,7 @@
               </div>
             </div>
             <output id="screenTeenState" role="status" aria-live="polite">Share the table and select its reading areas.</output>
-            <p class="muted small">Winner-only records contain the result, without card details. If your table has no consistent pre-deal text, this reader needs a different round signal.</p>
+            <p class="muted small">Compare A’s left three cards with B’s right three; verify against the banner. Winner-only skips cards. Live recording requires consistent pre-deal text.</p>
           </section>
           <details id="screenDetails">
             <summary>Preview &amp; adjust</summary>
@@ -176,6 +176,7 @@
           <label>Base unit</label><input id="unit" type="number" min="0" step="0.01" />
           <label>Payout</label><input id="payout" type="number" min="0" step="0.01" title="Win pays this × stake (1 = even money)" />
         </div>
+        <div class="row"><label>Target profit</label><input id="targetProfit" type="number" min="0" step="0.5" placeholder="0 = off" title="Session profit target in dollars" /><span class="muted" id="targetHint"></span></div>
         <div class="row"><label>Wait after bust</label><div id="waitSeg" class="seg"></div></div>
         <div class="row"><label>Wait after win</label><div id="waitWinSeg" class="seg"></div></div>
         <div class="row"><label>Delay after factor</label><div id="waitBetSeg" class="seg"></div></div>
@@ -195,6 +196,7 @@
   <script src="js/engine.js"></script>
   <script src="js/games/sicbo.js"></script>
   <script src="js/games/teenpatti.js"></script>
+  <script src="js/games/baccarat.js"></script>
   <script src="js/games/kickoff.js"></script>
   <script src="js/voice.js"></script>
   <script src="js/data.js"></script>

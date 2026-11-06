@@ -110,8 +110,9 @@
       baseMult = p.mult(step);
     }
     const mult = baseMult * recMult;
+    const planIdx = set.rollIndex != null ? set.rollIndex : step;
     return {
-      side: set.plan[step] || continuationSide(set.pattern, set.factor, step + (set.patternOffset || 0)),
+      side: set.plan[planIdx] || continuationSide(set.pattern, set.factor, planIdx + (set.patternOffset || 0)),
       step,
       of: set.plan.length,
       mult,
@@ -130,8 +131,9 @@
   }
 
   function continueSet(set, ladderLevel, bustIndex, recoveryState) {
-    const extra = Array.from({ length: 4 }, (_, i) => continuationSide(set.pattern, set.factor, set.plan.length + i + (set.patternOffset || 0)));
-    return { ...set, plan: [...set.plan, ...extra], step: set.plan.length, playedMults: [...set.playedMults],
+    const startIdx = set.rollIndex != null ? set.rollIndex : set.plan.length;
+    const extra = Array.from({ length: 4 }, (_, i) => continuationSide(set.pattern, set.factor, startIdx + i + (set.patternOffset || 0)));
+    return { ...set, plan: [...set.plan, ...extra], step: set.plan.length, rollIndex: startIdx, playedMults: [...set.playedMults],
       ladderLevel, delayLeft: 0, continuing: true, bustIndex, recoveryState: recoveryState ? { ...recoveryState } : null };
   }
 
@@ -155,14 +157,19 @@
       const r = Object.assign({}, e, { role: 'collect', bet: null, result: null, pnl: 0, setEnd: null });
       rows.push(r);
 
-      // Tie: plays as whoever won last (for pattern/flow), but money-wise it's a push.
+      // Tie: plays as whoever won last (for pattern/flow), but money-wise it's a push unless lossAll.
       let side = e.side;
-      const push = side == null;
-      if (push) {
+      const push = side == null && !e.lossAll;
+      if (side == null) {
         side = seq[seq.length - 1];
-        r.push = true;
-        r.effSide = side;
-        if (!side) { r.role = 'tie'; continue; } // no prior winner this session: ignore
+        if (push) {
+          r.push = true;
+          r.effSide = side;
+          if (!side) { r.role = 'tie'; continue; } // no prior winner this session: ignore
+        } else {
+          r.effSide = side;
+          if (!side) { r.role = 'tie'; continue; }
+        }
       }
 
       if (!set && continuation) {
@@ -200,20 +207,25 @@
           continue;
         }
         const bet = betFor(set, set.step);
+        if (e.manualAmount != null && Number.isFinite(e.manualAmount) && e.manualAmount >= 0) {
+          bet.amount = e.manualAmount;
+          bet.mult = Math.round((bet.amount / (set.cfg.unit || 1)) * 100) / 100;
+        }
         r.role = 'bet';
         r.bet = bet;
         set.playedMults.push(bet.mult);
         r.setNo = set.no;
         if (set.recovery) r.recovery = Object.assign({}, set.recovery);
-        const win = side === bet.side && !e.lossAll;
+        const win = !push && !e.lossAll && side === bet.side;
         r.result = push ? 'push' : win ? 'win' : 'loss';
         r.pnl = push ? 0 : win ? bet.amount * (set.cfg.payout == null ? 1 : set.cfg.payout) : -bet.amount;
         if (e.nb) { r.noBet = true; r.pnl = 0; } // bet skipped: flow continues, no money
         r.units = r.pnl / set.cfg.unit;
+        set.rollIndex = (set.rollIndex || 0) + 1;
         if (win) {
           r.setEnd = 'won';
           r.setStep = set.step;
-          if (recoveryState && recoveryState.setsLeft > 0) {
+          if (!e.nb && recoveryState && recoveryState.setsLeft > 0) {
             recoveryState.setsLeft--;
             if (recoveryState.setsLeft <= 0) recoveryState = null;
           }
@@ -224,43 +236,46 @@
           cooldownReason = 'win';
           set = null;
         } else {
-          if (!push && set.cfg.prog === 'fib_ladder') {
-            ladderLevel = Math.min(FIB_SEQUENCE.length - 1, set.ladderLevel + 1);
-          }
-          if (++set.step >= set.plan.length) {
-            r.setEnd = 'bust';
-            r.setStep = set.step - 1;
-            r.pattern = abstract(set.pattern);
-            r.rawPattern = set.pattern.slice();
-            r.factor = set.factor;
-            r.plan = set.plan.slice();
-            r.setCfg = Object.assign({}, set.cfg);
-            continuation = continueSet(set, ladderLevel, rows.length - 1, recoveryState);
-            cooldown = (set.cfg && set.cfg.waitBust != null) ? set.cfg.waitBust : (curCfg.waitBust || 0);
-            cooldownReason = 'bust';
-
-            // If recovery was already active and busted, reset it to protect bankroll
-            if (set.recovery) {
-              recoveryState = null;
-            } else {
-              const recTarget = set.cfg.recovery;
-              if (recTarget > 0) {
-                const baseRisk = Array.from({ length: set.plan.length }, (_, k) => (PROGRESSIONS[set.cfg.prog] || PROGRESSIONS.double).mult(k)).reduce((a, b) => a + b, 0);
-                const recMult = recTarget === 1 ? (baseRisk + 1) : Math.ceil(baseRisk / recTarget);
-                recoveryState = {
-                  target: recTarget,
-                  setsLeft: recTarget,
-                  recMult,
-                  ...recoveryProfit(set.cfg, recMult, ladderLevel),
-                };
-              } else {
-                recoveryState = null;
-              }
+          // If bet was skipped, the bet value remains at the previous step value
+          if (!e.nb) {
+            if (!push && set.cfg.prog === 'fib_ladder') {
+              ladderLevel = Math.min(FIB_SEQUENCE.length - 1, set.ladderLevel + 1);
             }
-            set = null;
-          } else {
-            if (set.cfg.prog === 'fib_ladder') {
-              set.ladderLevel = ladderLevel;
+            if (++set.step >= set.plan.length) {
+              r.setEnd = 'bust';
+              r.setStep = set.step - 1;
+              r.pattern = abstract(set.pattern);
+              r.rawPattern = set.pattern.slice();
+              r.factor = set.factor;
+              r.plan = set.plan.slice();
+              r.setCfg = Object.assign({}, set.cfg);
+              continuation = continueSet(set, ladderLevel, rows.length - 1, recoveryState);
+              cooldown = (set.cfg && set.cfg.waitBust != null) ? set.cfg.waitBust : (curCfg.waitBust || 0);
+              cooldownReason = 'bust';
+
+              // If recovery was already active and busted, reset it to protect bankroll
+              if (set.recovery) {
+                recoveryState = null;
+              } else {
+                const recTarget = set.cfg.recovery;
+                if (recTarget > 0) {
+                  const baseRisk = Array.from({ length: set.plan.length }, (_, k) => (PROGRESSIONS[set.cfg.prog] || PROGRESSIONS.double).mult(k)).reduce((a, b) => a + b, 0);
+                  const recMult = recTarget === 1 ? (baseRisk + 1) : Math.ceil(baseRisk / recTarget);
+                  recoveryState = {
+                    target: recTarget,
+                    setsLeft: recTarget,
+                    recMult,
+                    ...recoveryProfit(set.cfg, recMult, ladderLevel),
+                  };
+                } else {
+                  recoveryState = null;
+                }
+              }
+              set = null;
+            } else {
+              if (set.cfg.prog === 'fib_ladder') {
+                set.ladderLevel = ladderLevel;
+              }
             }
           }
         }
@@ -306,6 +321,7 @@
           plan: betPlan(pattern, side, setCfg.waitBet || 0),
           cfg: setCfg,
           step: 0,
+          rollIndex: 0,
           playedMults: [],
           ladderLevel,
           recMult,
@@ -353,13 +369,19 @@
           ? set.playedMults[i]
           : progObj.mult(curLvl + i - set.step) * (set.recMult || 1))
         : set.plan.map((_, i) => progObj.mult(i) * (set.recMult || 1));
+      const rollIdx = set.rollIndex != null ? set.rollIndex : set.step;
+      const activePlan = Array.from({ length: set.plan.length }, (_, i) =>
+        i < set.step ? set.plan[i] : continuationSide(set.pattern, set.factor, rollIdx + (i - set.step) + (set.patternOffset || 0)));
+      const setLost = rows.filter((r) => r.setNo === set.no && r.role === 'bet' && r.result === 'loss' && !r.noBet)
+        .reduce((sum, r) => sum + Math.abs(r.pnl), 0);
       next = Object.assign({
         phase: set.delayLeft > 0 ? 'factor-delay' : 'bet',
         left: set.delayLeft,
         pattern: abstract(set.pattern),
         factor: set.factor,
-        plan: set.plan,
+        plan: activePlan,
         mults,
+        setLost,
         recovery: set.recovery,
         ladder: ladderInfo,
       }, betFor(set, set.step));
@@ -371,9 +393,15 @@
     } else if (cooldown > 0) {
       next = { phase: 'cooldown', left: cooldown, reason: cooldownReason, have: seq.length, need: curCfg.n, recovery: recInfo, ladder: ladderInfo };
     } else if (seq.length >= curCfg.n) {
-      next = { phase: 'factor', pattern: abstract(seq.slice(-curCfg.n)), raw: seq.slice(-curCfg.n), recovery: recInfo, ladder: ladderInfo };
+      const pat = seq.slice(-curCfg.n);
+      next = {
+        phase: 'factor', pattern: abstract(pat), raw: pat,
+        ifA: continuationSide(pat, 'A', curCfg.waitBet || 0),
+        ifB: continuationSide(pat, 'B', curCfg.waitBet || 0),
+        recovery: recInfo, ladder: ladderInfo,
+      };
     } else {
-      next = { phase: 'collect', have: seq.length, need: curCfg.n, recovery: recInfo, ladder: ladderInfo };
+      next = { phase: 'collect', have: seq.length, need: curCfg.n, raw: seq.slice(-curCfg.n), recovery: recInfo, ladder: ladderInfo };
     }
     return { rows, next };
   }
@@ -441,21 +469,22 @@
       for (let j = i + 1; j < rows.length && extraSteps.length < maxExtra; j++) {
         const sub = rows[j];
         if (!sameSession(r, sub)) break;
-        const push = sub.side == null;
-        const side = push ? previousSide : sub.side;
+        const push = sub.side == null && !sub.lossAll;
+        const side = sub.side == null ? previousSide : sub.side;
         const step = (r.bet?.step ?? n - 2) + 1 + extraSteps.length;
         const betSide = continuationSide(pat, r.factor, step + (cfg.waitBet || 0));
-        const win = side === betSide && !sub.lossAll;
+        const win = !push && !sub.lossAll && side === betSide;
+        const pushEnd = push && side === betSide;
         const mult = progression.mult(progression.ladder ? level : step) * recMult;
         const amount = mult * unit;
         const noBet = !!(sub.nb || sub.noBet);
         const pnl = push || noBet ? 0 : win ? amount * (cfg.payout == null ? 1 : cfg.payout) : -amount;
-        extraSteps.push({ step: step + 1, betSide, actualSide: sub.side, win, push, noBet, mult, amount, pnl });
+        extraSteps.push({ step: step + 1, betSide, actualSide: sub.side, win, push, pushEnd, noBet, mult, amount, pnl });
         previousSide = side;
-        if (win) break;
+        if (win || pushEnd) break;
         if (!push && progression.ladder) level = Math.min(FIB_SEQUENCE.length - 1, level + 1);
       }
-      const hit = extraSteps.find(s => s.win);
+      const hit = extraSteps.find(s => s.win || s.pushEnd);
       busts.push({
         setNo: r.setNo, rowIdx: i, pattern: r.pattern, factor: r.factor, n, prog, unit,
         extraSteps, hitOnBet: hit ? hit.step : null, resolved: !!hit,
@@ -570,7 +599,61 @@
     return null;
   }
 
-  const api = { PROGRESSIONS, FIB_SEQUENCE, GROUP_SIZES, opp, abstract, betPlan, run, stats, analyzeBusts, simulateDelays, recoveryOptions, specialProbability };
+  /**
+   * Evaluates triple probability based on roll gap since last triple and recent roll sequences (pair clustering).
+   * Flags urgent when step >= 4 (5th bet).
+   */
+  function detectTripleRisk(gameId, rows, step = 0) {
+    if (!rows || rows.length === 0 || gameId !== 'sicbo') return null;
+    let rollsSince = 0;
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const r = rows[i];
+      const dice = r.raw || (r.o && r.o.dice);
+      const isTriple = Boolean(r.lossAll || (r.o && r.o.triple) ||
+        (Array.isArray(dice) && dice.length === 3 && dice[0] === dice[1] && dice[1] === dice[2]));
+      if (isTriple) break;
+      rollsSince++;
+    }
+
+    const recent = rows.slice(-5);
+    let pairCount = 0;
+    for (const r of recent) {
+      const dice = r.raw || (r.o && r.o.dice);
+      if (Array.isArray(dice) && dice.length === 3) {
+        const isTriple = (dice[0] === dice[1] && dice[1] === dice[2]);
+        const isPair = !isTriple && (dice[0] === dice[1] || dice[1] === dice[2] || dice[0] === dice[2]);
+        if (isPair) pairCount++;
+      }
+    }
+
+    const gapDue = rollsSince >= 30;
+    const gapOverdue = rollsSince >= 36;
+    const pairClustering = pairCount >= 2 && rollsSince >= 15;
+    const isDue = gapDue || pairClustering;
+
+    if (!isDue && !gapOverdue) return null;
+
+    const urgent = (step >= 4); // 5th bet in a group or continuation
+    let message = '';
+    if (urgent) {
+      message = `🚨 CRITICAL RISK (Step ${step + 1}): High triple probability! (${rollsSince} rolls since last triple${pairClustering ? ' with ' + pairCount + ' pairs in last 5 rolls' : ''}). A triple will immediately bust your set at maximum stake. Strongly recommend skipping this roll.`;
+    } else if (gapOverdue) {
+      message = `⚠️ TRIPLE OVERDUE: ${rollsSince} rolls since last triple (avg is 36). Suggest skipping this bet.`;
+    } else {
+      message = `⚠️ TRIPLE RISK: ${rollsSince} rolls since last triple${pairClustering ? ' with frequent pairs detected' : ''}. Suggest skipping this bet.`;
+    }
+
+    return {
+      due: true,
+      urgent,
+      rollsSince,
+      pairCount,
+      gapOverdue,
+      message,
+    };
+  }
+
+  const api = { PROGRESSIONS, FIB_SEQUENCE, GROUP_SIZES, opp, abstract, betPlan, run, stats, analyzeBusts, simulateDelays, recoveryOptions, specialProbability, detectTripleRisk };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Engine = api;
 })(this);

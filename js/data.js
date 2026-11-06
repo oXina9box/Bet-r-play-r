@@ -1,6 +1,6 @@
 /* Shared backup/storage boundary. Validation returns a fresh, normalized v1 state. */
 (function (root) {
-  const GAMES = ['sicbo', 'teenpatti', 'kickoff'];
+  const GAMES = ['sicbo', 'teenpatti', 'kickoff', 'baccarat'];
   const PROGRESSIONS = ['double', 'plusone', 'fib', 'fib_ladder'];
   const RESERVED = ['__proto__', 'prototype', 'constructor'];
   const check = (ok) => { if (!ok) throw new Error('Invalid Bet-R Play-R backup'); };
@@ -32,14 +32,18 @@
     const waitBet = c.waitBet === undefined ? 0 : c.waitBet;
     const recovery = c.recovery === undefined ? 0 : c.recovery;
     const fibDrop = c.fibDrop === undefined ? 2 : c.fibDrop;
+    const targetProfit = c.targetProfit === undefined ? 0 : Number(c.targetProfit) || 0;
     check(Number.isInteger(waitBust) && waitBust >= 0 && waitBust <= 3);
     check(Number.isInteger(waitWin) && waitWin >= 0 && waitWin <= 4);
     check(Number.isInteger(waitBet) && waitBet >= 0 && waitBet <= 3);
     check(Number.isInteger(recovery) && recovery >= 0 && recovery <= 4);
     check(Number.isInteger(fibDrop) && fibDrop >= 1 && fibDrop <= 10);
+    check(number(targetProfit) && targetProfit >= 0);
     // Maximum supported multiplier includes recovery; reject arithmetic overflow.
     check(Number.isFinite(c.unit * c.payout * 144 * 127));
-    return { n: c.n, prog: c.prog, unit: c.unit, payout: c.payout, waitBust, waitWin, waitBet, recovery, fibDrop };
+    const out = { n: c.n, prog: c.prog, unit: c.unit, payout: c.payout, waitBust, waitWin, waitBet, recovery, fibDrop };
+    if (c.targetProfit !== undefined || targetProfit > 0) out.targetProfit = targetProfit;
+    return out;
   }
 
   function rawEntry(raw, game) {
@@ -47,6 +51,12 @@
     if (game === 'teenpatti') {
       check(object(raw) && Array.isArray(raw.c) && raw.c.length === 6);
       check(raw.c.every(c => typeof c === 'string' && /^(?:[2-9]|10|J|Q|K|A)[hdsc]$/.test(c)) && new Set(raw.c).size === 6);
+      check(raw.order === undefined || raw.order === 'alternating');
+      return { c: raw.c.slice(), ...(raw.order === undefined ? {} : { order: raw.order }) };
+    }
+    if (game === 'baccarat') {
+      check(object(raw) && Array.isArray(raw.c) && raw.c.length >= 4 && raw.c.length <= 6);
+      check(raw.c.every(c => typeof c === 'string' && /^(?:[2-9]|10|J|Q|K|A)[hdsc]$/.test(c)));
       check(raw.order === undefined || raw.order === 'alternating');
       return { c: raw.c.slice(), ...(raw.order === undefined ? {} : { order: raw.order }) };
     }

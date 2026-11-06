@@ -7,6 +7,9 @@ for (const [game, text, expected] of [
   ['teenpatti', 'PLAYER A', { side: 'A' }],
   ['teenpatti', 'PLAYERB', { side: 'B' }],
   ['teenpatti', 'TIE', { side: null }],
+  ['baccarat', 'PLAYER', { side: 'A' }],
+  ['baccarat', 'BANKER', { side: 'B' }],
+  ['baccarat', 'TIE', { side: null }],
   ['sicbo', 'BIG 16', { side: 'A', total: 16 }],
   ['sicbo', 'BIG16', { side: 'A', total: 16 }],
   ['sicbo', 'SMALL\n8', { side: 'B', total: 8 }],
@@ -160,6 +163,9 @@ assert.equal(Vision.parseMoney(null), null);
 const badge = { width: 20, height: 20, data: new Uint8ClampedArray(20 * 20 * 4) };
 for (let i = 0; i < 400; i++) badge.data.set(i < 40 ? [255, 255, 255, 255] : [190, 150, 40, 255], i * 4);
 assert.equal(Vision.teenBadge(badge), true, 'white letters and gold background');
+const purple = { ...badge, data: new Uint8ClampedArray(badge.data) };
+for (let i = 40; i < 400; i++) purple.data.set([190, 70, 190, 255], i * 4);
+assert.equal(Vision.teenBadge(purple), true, 'Player A uses a purple result badge');
 const label = { ...badge, data: new Uint8ClampedArray(badge.data) };
 for (let i = 40; i < 400; i++) label.data.set([25, 80, 150, 255], i * 4);
 assert.equal(Vision.teenBadge(label), false, 'white player label on blue is not a result badge');

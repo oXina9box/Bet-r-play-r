@@ -60,24 +60,39 @@
         i += 2;
         continue;
       }
-      if ((t === 'p1' || (t === 'player' && (tokens[i + 1] === '1' || tokens[i + 1] === 'one'))) && tokens[i + (t === 'p1' ? 1 : 2)] === 'won') {
+      if ((t === 'player' && tokens[i + 1] === 'won') || (t === 'p' && tokens[i + 1] === 'won')) {
         commands.push('wa');
-        i += (t === 'p1' ? 2 : 3);
+        i += 2;
         continue;
       }
-      if ((t === 'p2' || (t === 'player' && (tokens[i + 1] === '2' || tokens[i + 1] === 'two'))) && tokens[i + (t === 'p2' ? 1 : 2)] === 'won') {
+      if ((t === 'banker' && tokens[i + 1] === 'won') || (t === 'b' && tokens[i + 1] === 'won')) {
         commands.push('wb');
-        i += (t === 'p2' ? 2 : 3);
+        i += 2;
         continue;
       }
-      if (t === 'tie' || t === 'push') {
+      if ((t === 'p1' || t === 'pa' || (t === 'player' && (tokens[i + 1] === '1' || tokens[i + 1] === 'one' || tokens[i + 1] === 'a'))) && tokens[i + (t === 'p1' || t === 'pa' ? 1 : 2)] === 'won') {
+        commands.push('wa');
+        i += (t === 'p1' || t === 'pa' ? 2 : 3);
+        continue;
+      }
+      if ((t === 'p2' || t === 'pb' || (t === 'player' && (tokens[i + 1] === '2' || tokens[i + 1] === 'two' || tokens[i + 1] === 'b'))) && tokens[i + (t === 'p2' || t === 'pb' ? 1 : 2)] === 'won') {
+        commands.push('wb');
+        i += (t === 'p2' || t === 'pb' ? 2 : 3);
+        continue;
+      }
+      if ((t === 'red' || t === 'blue') && tokens[i + 1] === 'won') {
+        commands.push(t === 'red' ? 'wa' : 'wb');
+        i += 2;
+        continue;
+      }
+      if (t === 'tie' || t === 'push' || t === 'draw') {
         commands.push('wt');
         i++;
         continue;
       }
 
-      // Teen Patti: Cards parser
-      if (activeGame === 'teenpatti') {
+      // Teen Patti & Baccarat: Cards parser
+      if (activeGame === 'teenpatti' || activeGame === 'baccarat') {
         if (WORD_RANKS[t]) {
           const rank = WORD_RANKS[t];
           let j = i + 1;

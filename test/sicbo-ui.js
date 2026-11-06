@@ -53,7 +53,7 @@ module.exports = async function checkSicBoUI(page, file, waitFor, openOptions, o
   assert.match(await page.locator('#next').textContent(), /NO BET.*skipped/);
   assert.match(await page.locator('#skipBetOnce').textContent(), /^Skip this bet once$/,
     'skip automatically disarms after one result');
-  assert.ok(await page.evaluate(() => testSpeech.some(text => /Roll: 6, 2, 3/.test(text) && /BIG/.test(text) && /Bet SMALL, 2\.00/.test(text))),
+  assert.ok(await page.evaluate(() => testSpeech.some(text => /Roll: 6, 2, 3/.test(text) && /BIG/.test(text) && /Bet SMALL, 1\.00/.test(text))),
     'spoken feedback includes entered dice and next side/stake');
   assert.match(await page.evaluate(() => testSpeech.at(-1)), /skip|no bet/i, 'spoken result acknowledges skipped wager');
   for (const key of ['2', '4', '5']) await page.keyboard.press(key);
@@ -84,7 +84,7 @@ module.exports = async function checkSicBoUI(page, file, waitFor, openOptions, o
   await page.locator('#audioFeedback').uncheck();
   await page.keyboard.press('Escape');
 
-  for (const [width, height] of [[960, 900], [760, 900], [650, 900], [600, 800], [390, 900]]) {
+  for (const [width, height] of [[960, 900], [760, 900], [650, 900], [600, 800], [522, 828], [390, 900]]) {
     await page.setViewportSize({ width, height });
     const layout = await page.evaluate(() => {
       const bounds = selector => document.querySelector(selector).getBoundingClientRect().toJSON();
@@ -104,6 +104,12 @@ module.exports = async function checkSicBoUI(page, file, waitFor, openOptions, o
       'Recorder and Options stay in header');
     assert.ok(Math.abs(layout.recorder.top - layout.options.top) <= 3, 'Recorder sits beside Options');
     assert.ok(layout.options.left - layout.recorder.right <= 12, 'Recorder and Options remain adjacent');
+    if (width >= 520) {
+      await openOptions(page);
+      const optOverflow = await page.locator('#optionsMenu').evaluate(el => el.scrollHeight - el.clientHeight);
+      assert.ok(optOverflow <= 1, `Options panel must not scroll at ${width}x${height} (overflow ${optOverflow}px)`);
+      await page.keyboard.press('Escape');
+    }
     if (width >= 390) {
       assert.ok(Math.abs(layout.historyPanel.top - layout.advice.top) <= 2, `history must share the top row with advice at ${width}px`);
       assert.ok(layout.historyPanel.left >= layout.advice.right, `history must occupy the right half at ${width}px`);

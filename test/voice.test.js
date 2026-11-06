@@ -49,9 +49,23 @@ assert.deepStrictEqual(Voice.parseSpeech('cancel').commands, ['clear']);
 assert.deepStrictEqual(Voice.parseSpeech('new session').commands, ['newSession']);
 assert.deepStrictEqual(Voice.parseSpeech('p1 won').commands, ['wa']);
 assert.deepStrictEqual(Voice.parseSpeech('player 1 won').commands, ['wa']);
+assert.deepStrictEqual(Voice.parseSpeech('pa won').commands, ['wa']);
+assert.deepStrictEqual(Voice.parseSpeech('player a won').commands, ['wa']);
 assert.deepStrictEqual(Voice.parseSpeech('p2 won').commands, ['wb']);
 assert.deepStrictEqual(Voice.parseSpeech('player 2 won').commands, ['wb']);
+assert.deepStrictEqual(Voice.parseSpeech('pb won').commands, ['wb']);
+assert.deepStrictEqual(Voice.parseSpeech('player b won').commands, ['wb']);
 assert.deepStrictEqual(Voice.parseSpeech('tie').commands, ['wt']);
+assert.deepStrictEqual(Voice.parseSpeech('player won', 'baccarat').commands, ['wa']);
+assert.deepStrictEqual(Voice.parseSpeech('banker won', 'baccarat').commands, ['wb']);
+assert.deepStrictEqual(Voice.parseSpeech('p won', 'baccarat').commands, ['wa']);
+assert.deepStrictEqual(Voice.parseSpeech('b won', 'baccarat').commands, ['wb']);
+assert.deepStrictEqual(Voice.parseSpeech('nine of hearts', 'baccarat').cards, ['9h']);
+assert.deepStrictEqual(Voice.parseSpeech('red won', 'kickoff').commands, ['wa']);
+assert.deepStrictEqual(Voice.parseSpeech('blue won', 'kickoff').commands, ['wb']);
+assert.deepStrictEqual(Voice.parseSpeech('draw', 'kickoff').commands, ['wt']);
+const KO = require('../js/games/kickoff.js');
+assert.deepStrictEqual(KO.input(KO.emptyPending(), 'wa').commit, { w: 'A' });
 
 // Dice games
 assert.deepStrictEqual(Voice.parseSpeech('four five six', 'sicbo').dice, [4, 5, 6]);

@@ -3,6 +3,7 @@ const assert = require('assert');
 const E = require('../js/engine.js');
 const SicBo = require('../js/games/sicbo.js');
 const TP = require('../js/games/teenpatti.js');
+const Baccarat = require('../js/games/baccarat.js');
 
 const cfg = { n: 5, prog: 'double', unit: 1, payout: 1 };
 // Dice that produce a given total (non-triple unless forced).
@@ -81,6 +82,13 @@ assert.strictEqual(r.rows[6].result, 'push');
 assert.strictEqual(r.rows[6].pnl, 0);
 assert.strictEqual(r.next.step, 1); // Tie played as A, bet was B -> step advanced to bet 2
 
+// Baccarat flow in engine
+const baccEntries = (list) => list.map((x) => { const raw = typeof x === 'string' ? { w: x } : { c: x }; const o = Baccarat.outcome(raw); return { raw, o, side: o.side, lossAll: false, cfg }; });
+const br = E.run(baccEntries(['A', 'A', 'B', 'A', 'B', 'A', 'T']), cfg);
+assert.strictEqual(br.rows[6].result, 'push');
+assert.strictEqual(br.rows[6].pnl, 0);
+assert.strictEqual(br.next.step, 1);
+
 // No Bet: flow continues but pnl = 0 and not counted in wagered
 const nbe = (list) => list.map((x, i) => {
   const raw = DICE[x];
@@ -90,7 +98,8 @@ const nbe = (list) => list.map((x, i) => {
 r = E.run(nbe([11, 14, 9, 14, 6, 13, 12]), cfg);
 assert.strictEqual(r.rows[6].noBet, true);
 assert.strictEqual(r.rows[6].pnl, 0);
-assert.strictEqual(r.next.step, 1);
+assert.strictEqual(r.next.step, 0); // Frozen step: skipped bet 1 keeps next at bet 1 (1x)
+assert.strictEqual(r.next.mult, 1);
 const st = E.stats(r.rows);
 assert.strictEqual(st.skipped, 1);
 assert.strictEqual(st.wagered, 0);
@@ -270,12 +279,12 @@ const kickoffRounds = [
 ];
 const koEntries = kickoffRounds.map(d => {
   const o = Kickoff.outcome(d);
-  return { raw: d, o, side: o.side, lossAll: false };
+  return { raw: d, o, side: o.side, lossAll: o.lossAll };
 });
 const koRes = E.run(koEntries, { n: 5, prog: 'double', unit: 1, payout: 1, waitBust: 0, recovery: 0 });
 const koStats = E.stats(koRes.rows);
-assert.strictEqual(koStats.sets, 9);
-assert.strictEqual(koStats.won, 8);
+assert.strictEqual(koStats.sets, 8);
+assert.strictEqual(koStats.won, 7);
 assert.strictEqual(koStats.bust, 1);
 assert.strictEqual(koStats.ties, 7);
 
