@@ -1,0 +1,98 @@
+{
+  "note": "User-supplied isolated crops. Development fixtures only, not a held-out 30-round live benchmark. Labels assigned from physical pips alone.",
+  "cases": [
+    {
+      "file": "mgUbER.rgba.gz",
+      "width": 501,
+      "height": 543,
+      "dice": [
+        4,
+        4,
+        5
+      ],
+      "source": "/tmp/codex-clipboard-mgUbER.png",
+      "sourceBox": [
+        1029,
+        306,
+        1530,
+        849
+      ],
+      "kind": "physical-dice"
+    },
+    {
+      "file": "pypWTt.rgba.gz",
+      "width": 593,
+      "height": 563,
+      "dice": [
+        4,
+        6,
+        6
+      ],
+      "source": "/tmp/codex-clipboard-pypWTt.png",
+      "sourceBox": [
+        1113,
+        594,
+        1706,
+        1157
+      ],
+      "kind": "physical-dice"
+    },
+    {
+      "file": "qzizGm.rgba.gz",
+      "width": 566,
+      "height": 551,
+      "dice": [
+        1,
+        4,
+        5
+      ],
+      "source": "/tmp/codex-clipboard-qzizGm.png",
+      "sourceBox": [
+        1147,
+        596,
+        1713,
+        1147
+      ],
+      "kind": "physical-dice"
+    },
+    {
+      "file": "countdown.rgba.gz",
+      "width": 250,
+      "height": 250,
+      "source": "/tmp/codex-clipboard-3pWcF9.png",
+      "sourceBox": [
+        1150,
+        750,
+        1400,
+        1000
+      ],
+      "kind": "countdown"
+    },
+    {
+      "file": "invalid-region.rgba.gz",
+      "width": 93,
+      "height": 114,
+      "source": "/tmp/codex-clipboard-iZUb4l.png",
+      "sourceBox": [
+        412,
+        725,
+        505,
+        839
+      ],
+      "kind": "invalid-dice-region"
+    },
+    {
+      "file": "green-chip.rgba.gz",
+      "width": 81,
+      "height": 81,
+      "source": "/tmp/codex-clipboard-3pWcF9.png",
+      "sourceBox": [
+        1044,
+        1320,
+        1125,
+        1401
+      ],
+      "kind": "green-chip"
+    }
+  ]
+}

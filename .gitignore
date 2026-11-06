@@ -1,0 +1,6 @@
+data/
+
+.unlazy/
+node_modules/
+.directory
+.code-review-graph/

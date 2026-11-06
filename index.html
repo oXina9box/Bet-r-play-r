@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bet-R Play-R</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Bet-R <span>Play-R</span></div>
+    <div class="pickers">
+      <select id="site" title="Site"></select>
+      <button id="addSite" class="ghost" title="Add site">+</button>
+      <input id="newSite" class="site-input" placeholder="Site name, Enter" hidden />
+      <div id="games" class="seg"></div>
+    </div>
+    <div class="session">
+      <span id="saveStatus" class="save-status"></span>
+      <span id="sessionInfo"></span>
+      <details id="recorderMenu" class="recorder-menu"><summary id="recorderToggle" class="ghost">Recorder</summary>
+        <div class="recorder-panel"><div class="card screen-card">
+          <div class="screen-actions"><b>Visual recorder</b><button id="screenStart">Share screen</button><button id="screenSyncStart" hidden disabled>Start synced</button><button id="screenStop" disabled>Stop</button><button id="screenSelectArea">Draw watch area</button></div>
+          <div id="screenStatus" class="muted small" role="status" aria-live="polite">Select casino and game above, then share the casino tab or window.</div>
+          <section id="screenSicBoCalibration" class="reader-calibration" aria-label="Sic Bo reading areas">
+            <details id="screenSourceDetails" open>
+              <summary>Shared screen</summary>
+              <output id="screenSourceLabel">No screen shared</output>
+              <canvas id="screenSourcePreview" width="640" height="1" aria-label="Live shared source; green box marks the selected history column"></canvas>
+            </details>
+            <div class="reader-calibration-head"><b>Reading areas</b><output id="screenTimingStatus" aria-live="polite">Select history area, then start two seconds after it updates.</output><span id="screenCaptureIndicator" class="capture-indicator" data-active="false" role="status">Capture off</span></div>
+            <div class="reader-source">
+              <button id="screenHistorySelect" data-screen-region="history" aria-pressed="false" aria-label="Select the Sic Bo history section" title="Select the history strip containing totals and dice.">Select history section</button>
+              <canvas id="screenHistoryPreview" width="160" height="80" aria-label="Selected Sic Bo history section"></canvas>
+              <output id="screenHistoryStatus" data-status="waiting" aria-live="polite">Select the history section</output>
+            </div>
+            <div class="history-roll-calibration">
+              <h3>Mark the three rolls</h3>
+              <p class="muted small">Use the enlarged history preview. Select each box in newest to oldest order; every box must contain its total and three dice.</p>
+              <canvas id="screenHistoryCalibrationPreview" width="640" height="1" aria-label="Enlarged history section; drag to mark a roll total and its three dice"></canvas>
+              <div class="history-rolls">
+                <div class="history-roll" data-roll-preview="newest">
+                  <button id="screenRollNewestSelect" data-screen-roll="newest" aria-pressed="false">Mark Newest</button>
+                  <canvas id="screenRollNewestPreview" width="160" height="80" aria-label="Newest roll crop preview"></canvas>
+                  <output id="screenRollNewestStatus" aria-live="polite">Not selected</output>
+                </div>
+                <div class="history-roll" data-roll-preview="previous">
+                  <button id="screenRollPreviousSelect" data-screen-roll="previous" aria-pressed="false">Mark Previous</button>
+                  <canvas id="screenRollPreviousPreview" width="160" height="80" aria-label="Previous roll crop preview"></canvas>
+                  <output id="screenRollPreviousStatus" aria-live="polite">Not selected</output>
+                </div>
+                <div class="history-roll" data-roll-preview="twoBack">
+                  <button id="screenRollTwoBackSelect" data-screen-roll="twoBack" aria-pressed="false">Mark Two Back</button>
+                  <canvas id="screenRollTwoBackPreview" width="160" height="80" aria-label="Two back roll crop preview"></canvas>
+                  <output id="screenRollTwoBackStatus" aria-live="polite">Not selected</output>
+                </div>
+              </div>
+            </div>
+            <div class="reader-history-hint"><span>After all three boxes decode, the three visible rolls form a baseline; recording starts with the next verified update. Identical images alone never establish a new roll.</span><label for="screenHistoryDirection">Newest at <select id="screenHistoryDirection"><option value="left">Left</option><option value="right">Right</option></select></label></div>
+          </section>
+          <section id="screenTeenCalibration" class="teen-calibration" aria-label="Teen Patti reading areas" hidden>
+            <label for="screenTeenSource">Read</label>
+            <select id="screenTeenSource"><option value="winner">Winner only (fast)</option><option value="cards">Six cards and winner</option></select>
+            <button id="screenTeenConfirm" disabled>Use saved reading areas</button>
+            <p class="muted small">Select the gold winner banner, including its background, and text shown before a new hand. Enter that text exactly. Recording waits for that signal before accepting a winner.</p>
+            <label for="screenTeenPhaseText">Text shown before the deal</label>
+            <input id="screenTeenPhaseText" type="text" maxlength="80" autocomplete="off" placeholder="Exact text visible on your table" />
+            <div class="teen-crops">
+              <div class="reader-source">
+                <button id="screenTeenResultSelect" aria-pressed="false">Select winner banner</button>
+                <canvas id="screenTeenResultPreview" width="240" height="80" aria-label="Selected Teen Patti winner banner"></canvas>
+                <output id="screenTeenWinner" aria-live="polite">Waiting for a winner</output>
+              </div>
+              <div class="reader-source">
+                <button id="screenTeenPhaseSelect" aria-pressed="false">Select pre-deal text</button>
+                <canvas id="screenTeenPhasePreview" width="240" height="80" aria-label="Selected Teen Patti pre-deal text"></canvas>
+                <output id="screenTeenPhaseRead" aria-live="polite">Waiting for pre-deal text</output>
+              </div>
+            </div>
+            <output id="screenTeenState" role="status" aria-live="polite">Share the table and select its reading areas.</output>
+            <p class="muted small">Winner-only records contain the result, without card details. If your table has no consistent pre-deal text, this reader needs a different round signal.</p>
+          </section>
+          <details id="screenDetails">
+            <summary>Preview &amp; adjust</summary>
+            <p class="muted small">Draw around the game video to choose what to watch. Area saved per casino/game. Recorded rounds use your PC date and time.</p>
+            <div class="screen-actions"><label class="ghost btn">Test screenshot<input id="screenImage" type="file" accept="image/png,image/jpeg,image/webp" hidden /></label><button id="screenSave" disabled>Record reviewed screenshot</button><button id="screenDefaults">Reset regions</button></div>
+            <details><summary>Advanced reading regions</summary><label for="screenField">Adjust region</label> <select id="screenField"></select><p class="muted small">Optional: adjust a card, dice, result or wager region by dragging on the preview. Wager regions must show your actual stake with currency.</p></details>
+            <canvas id="screenPreview" width="640" height="1" aria-label="Captured screen; drag to adjust selected region"></canvas>
+            <p class="muted small">Reads completed rounds only. Unclear reads wait. Missing wagers remain unknown. No bets are placed.</p>
+          </details>
+        </div></div>
+      </details>
+      <button id="optionsToggle" class="ghost" popovertarget="optionsMenu">Options</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="left">
+      <div class="advice-wrap">
+        <div id="next" class="next"></div>
+
+        <section id="rollRecovery" hidden role="alert" aria-live="assertive">
+          <span id="rollRecoveryMessage">Could not verify the completed roll. Enter all three dice now.</span>
+          <span id="rollRecoveryCountdown" aria-live="off"></span>
+        </section>
+      </div>
+
+      <div class="entry">
+        <div id="voiceTranscript" class="voice-transcript" hidden></div>
+        <div id="pending" class="pending"></div>
+        <div id="pad"></div>
+        <div class="entry-actions">
+          <button id="voiceBtn" class="act voice-btn" title="Toggle Voice Microphone (Shortcut: V)"><span class="mic-icon">🎙️</span> Voice <span class="kbd">V</span></button>
+          <button id="noBet" class="act nobet-btn" title="Toggle No Bet: records this roll without risking money (shortcut: X)">No Bet <span class="kbd">X</span></button>
+          <button id="undo" class="act">Undo <span class="kbd">⌫</span></button>
+          <button id="clear" class="act">Clear <span class="kbd">Esc</span></button>
+        </div>
+      </div>
+
+      <div class="strip-wrap">
+        <div class="strip-head"><h3>This session</h3><span class="muted">newest first</span></div>
+        <div id="strip" class="strip"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <section class="strategy-sections" aria-label="Strategy analysis">
+    <div class="card stats">
+      <div class="stats-head">
+        <h3>Strategy simulation</h3>
+        <div id="scopeSeg" class="seg"></div>
+      </div>
+      <div id="statGrid" class="stat-grid"></div>
+      <div id="observedWagers" class="muted small"></div>
+      <div id="stepBars"></div>
+      <div id="extra"></div>
+      <div class="breakdown-head">
+        <h4>Breakdown</h4>
+        <div id="bdSeg" class="seg small"></div>
+      </div>
+      <div class="table-wrap"><table id="breakdown"></table></div>
+    </div>
+    <div class="card insights">
+      <div class="stats-head">
+        <h3>Strategy Analysis</h3>
+        <div id="insightSeg" class="seg small"></div>
+      </div>
+      <div id="insightContent"></div>
+    </div>
+  </section>
+
+  <dialog id="screenAreaDialog" class="watch-dialog" aria-labelledby="screenAreaTitle" aria-describedby="screenAreaHint">
+    <div class="options-head"><h2 id="screenAreaTitle">Draw watch area</h2><button id="screenAreaUseSaved" hidden>Use saved calibration</button><button id="screenAreaCancel" autofocus>Cancel</button></div>
+    <p id="screenAreaHint">Drag around the whole game video. Recording resumes when you release.</p>
+    <canvas id="screenAreaPreview" width="640" height="1" aria-label="Drag a rectangle around the game video"></canvas>
+  </dialog>
+
+  <div id="optionsMenu" class="options-panel" popover="auto" role="dialog" aria-labelledby="optionsTitle">
+    <div class="options-head"><h2 id="optionsTitle">Options</h2><button id="optionsClose" popovertarget="optionsMenu" popovertargetaction="hide" autofocus>Close</button></div>
+    <div class="options-content">
+      <div class="card"><h3>Session &amp; backups</h3><div class="data-actions">
+      <button id="newSession" class="ghost">New session</button>
+      <button id="export" class="ghost" title="Download a JSON backup">Export</button>
+      <label class="ghost btn" title="Restore from a JSON backup">Import<input id="import" type="file" accept="application/json" hidden /></label>
+      <button id="resetAll" class="ghost" title="Clear all saved data and start fresh">Reset data</button>
+      </div></div>
+      <div class="card settings">
+        <div class="settings-head">
+          <h3>Settings</h3>
+          <button id="maxPlay" class="max-play-btn" title="Apply the empirically proven best strategy for this game">⚡ Max Play</button>
+        </div>
+        <div class="row"><label>Group</label><div id="groupSeg" class="seg"></div><span class="muted" id="groupHint"></span></div>
+        <div class="row"><label>Progression</label><div id="progSeg" class="seg"></div></div>
+        <div class="row">
+          <label>Base unit</label><input id="unit" type="number" min="0" step="0.01" />
+          <label>Payout</label><input id="payout" type="number" min="0" step="0.01" title="Win pays this × stake (1 = even money)" />
+        </div>
+        <div class="row"><label>Wait after bust</label><div id="waitSeg" class="seg"></div></div>
+        <div class="row"><label>Wait after win</label><div id="waitWinSeg" class="seg"></div></div>
+        <div class="row"><label>Delay after factor</label><div id="waitBetSeg" class="seg"></div></div>
+        <div class="row"><label>Recovery mode</label><div id="recSeg" class="seg"></div></div>
+        <label class="audio-setting"><input id="audioFeedback" type="checkbox" /> Spoken roll and bet advice</label>
+        <div id="recNotes" class="rec-notes"></div>
+        <div class="muted small" id="cfgNote"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="js/engine.js"></script>
+  <script src="js/games/sicbo.js"></script>
+  <script src="js/games/teenpatti.js"></script>
+  <script src="js/games/kickoff.js"></script>
+  <script src="js/voice.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/vision.js"></script>
+  <script src="js/capture.js"></script>
+  <script src="js/sicbo-regions.js"></script>
+  <script src="js/sicbo-consensus.js"></script>
+  <script src="js/sicbo-recovery.js"></script>
+  <script src="js/screen.js"></script>
+  <script src="js/history.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
