@@ -42,14 +42,46 @@
 
     extraStats(rows) {
       const totals = Array(19).fill(0), faces = Array(7).fill(0);
-      for (const r of rows) { totals[r.o.total]++; r.raw.forEach((d) => faces[d]++); }
+      let odd = 0, even = 0, doubles = 0, curSide = null, curStreak = 0, maxStreak = 0, maxSide = null;
+      for (const r of rows) {
+        totals[r.o.total]++;
+        r.raw.forEach((d) => faces[d]++);
+        if (r.o.total % 2) odd++; else even++;
+        const [d1, d2, d3] = r.raw;
+        if (!r.o.triple && (d1 === d2 || d2 === d3 || d1 === d3)) doubles++;
+        if (r.side === curSide) curStreak++;
+        else { curSide = r.side; curStreak = 1; }
+        if (curStreak > maxStreak) { maxStreak = curStreak; maxSide = curSide; }
+      }
+      let sinceTriple = 0;
+      for (let i = rows.length - 1; i >= 0; i--) {
+        if (rows[i].o?.triple || rows[i].lossAll) break;
+        sinceTriple++;
+      }
+      const recentPairs = rows.slice(-5).filter((r) => {
+        const [a, b, c] = r.raw;
+        return !(a === b && b === c) && (a === b || b === c || a === c);
+      }).length;
+      const triplePct = Math.round((1 - Math.pow(35 / 36, sinceTriple)) * 100);
+      let hotT = 0, hotF = 0;
+      for (let i = 3; i <= 18; i++) if (totals[i] > totals[hotT]) hotT = i;
+      for (let i = 1; i <= 6; i++) if (faces[i] > faces[hotF]) hotF = i;
+      const streakTxt = curStreak ? `${this.sides[curSide].short}×${curStreak} <small>max ${maxSide ? this.sides[maxSide].short : ''}${maxStreak}</small>` : '–';
+      const hotTxt = rows.length ? `Σ${hotT}<small>(${totals[hotT]})</small> · ⚃${hotF}<small>(${faces[hotF]})</small>` : '–';
+      const markers = `<div class="game-markers">
+        <div class="marker"><label>Streak</label><b>${streakTxt}</b></div>
+        <div class="marker ${sinceTriple >= 36 ? 'warn' : ''}"><label>Triple Gap</label><b>${sinceTriple}r <small>${triplePct}%</small></b></div>
+        <div class="marker ${recentPairs >= 2 ? 'warn' : ''}"><label>Pairs (5r)</label><b>${recentPairs}/5 <small>${doubles} dbl</small></b></div>
+        <div class="marker"><label>Odd / Even</label><b>${odd}O / ${even}E</b></div>
+        <div class="marker"><label>Hot Σ / Die</label><b>${hotTxt}</b></div>
+      </div>`;
       const maxT = Math.max(1, ...totals), maxF = Math.max(1, ...faces);
       const bars = (arr, from, to, max, cls) => {
         let h = '';
         for (let i = from; i <= to; i++) h += `<div class="bar ${cls(i)}"><div class="fill" style="height:${(arr[i] / max) * 100}%"></div><span>${i}</span><em>${arr[i]}</em></div>`;
         return h;
       };
-      return `<h4>Totals</h4><div class="bars">${bars(totals, 3, 18, maxT, (i) => (i >= 11 ? 'a' : 'b'))}</div>
+      return `${markers}<h4>Totals</h4><div class="bars">${bars(totals, 3, 18, maxT, (i) => (i >= 11 ? 'a' : 'b'))}</div>
               <h4>Die faces</h4><div class="bars faces">${bars(faces, 1, 6, maxF, () => 'n')}</div>`;
     },
   };

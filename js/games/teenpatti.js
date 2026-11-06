@@ -272,17 +272,38 @@
 
     extraStats(rows) {
       const counts = Array(7).fill(0);
-      let carded = 0;
-      for (const r of rows) {
-        if (r.raw.w) continue;
-        carded++;
-        counts[r.o.ha]++; counts[r.o.hb]++;
+      let carded = 0, curSide = null, curStreak = 0, maxStreak = 0, maxSide = null, sinceTie = 0, seenTie = false;
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        if (r.side) {
+          if (r.side === curSide) curStreak++;
+          else { curSide = r.side; curStreak = 1; }
+          if (curStreak > maxStreak) { maxStreak = curStreak; maxSide = curSide; }
+        }
+        if (!r.raw.w) {
+          carded++;
+          counts[r.o.ha]++; counts[r.o.hb]++;
+        }
       }
-      if (!carded) return '<h4>Hand types</h4><p class="muted">Enter cards to see hand-type stats.</p>';
+      for (let i = rows.length - 1; i >= 0; i--) {
+        if (rows[i].side == null) { seenTie = true; break; }
+        sinceTie++;
+      }
+      const totalHands = carded * 2;
+      const pairPlus = counts[2] + counts[3] + counts[4] + counts[5] + counts[6];
+      const seqPlus = counts[4] + counts[5] + counts[6];
+      const pairPct = totalHands ? ((pairPlus / totalHands) * 100).toFixed(0) + '%' : '–';
+      const streakTxt = curStreak ? `${this.sides[curSide].short}×${curStreak} <small>max ${maxSide ? this.sides[maxSide].short : ''}${maxStreak}</small>` : '–';
+      const markers = `<div class="game-markers">
+        <div class="marker"><label>Streak</label><b>${streakTxt}</b></div>
+        <div class="marker"><label>Tie Gap</label><b>${sinceTie}h <small>${seenTie ? 'since tie' : 'no ties'}</small></b></div>
+        <div class="marker"><label>Pair+ Rate</label><b>${pairPct} <small>${pairPlus}/${totalHands}</small></b></div>
+        <div class="marker"><label>Seq / Trail</label><b>${seqPlus} <small>${counts[6]} trail</small></b></div>
+      </div>`;
       const max = Math.max(1, ...counts);
       let h = '';
-      for (let i = 6; i >= 1; i--) h += `<div class="hbar"><span>${CATS[i]}</span><div class="track"><div class="fill" style="width:${(counts[i] / max) * 100}%"></div></div><em>${counts[i]} · ${((counts[i] / (carded * 2)) * 100).toFixed(1)}%</em></div>`;
-      return `<h4>Hand types (${carded} carded hands)</h4>${h}`;
+      for (let i = 6; i >= 1; i--) h += `<div class="hbar"><span>${CATS[i]}</span><div class="track"><div class="fill" style="width:${(counts[i] / max) * 100}%"></div></div><em>${counts[i]} · ${totalHands ? ((counts[i] / totalHands) * 100).toFixed(1) : '0.0'}%</em></div>`;
+      return `${markers}<h4>Hand types (${carded} carded hands)</h4>${h}`;
     },
   };
 

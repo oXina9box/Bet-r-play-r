@@ -696,7 +696,7 @@
     $('stepBars').innerHTML = `<h4>Set won on bet #</h4>` + s.byStep.slice(0, used).map((x, i) => `<div class="hbar"><span>Bet ${i + 1}</span><div class="track"><div class="fill" style="width:${(x / maxStep) * 100}%"></div></div><em>${x} · ${pct(x, s.sets)}</em></div>`).join('') +
       `<div class="hbar bust"><span>Bust</span><div class="track"><div class="fill" style="width:${(s.bust / maxStep) * 100}%"></div></div><em>${s.bust} · ${pct(s.bust, s.sets)}</em></div>`;
 
-    $('extra').innerHTML = rows.length ? g.extraStats(rows) : '';
+    $('extra').innerHTML = g.extraStats(rows);
     renderBreakdown(rows);
   }
 
@@ -713,6 +713,9 @@
     if (bdMode === 'hour') keys.sort();
     const g = game();
     let h = `<thead><tr><th></th><th>${g.entryName}s</th><th>${g.sides.A.short}%</th><th>Sets</th><th>Won</th><th>Bust</th><th>Bust%</th><th>Net</th></tr></thead><tbody>`;
+    if (!keys.length) {
+      h += `<tr><td>Session #${book().sessions.length}</td><td>0</td><td>–</td><td>0</td><td>0</td><td>0</td><td>–</td><td class="win">${signed(0)}</td></tr>`;
+    }
     for (const k of keys.reverse()) {
       const s = stats(groups.get(k));
       const n = s.A + s.B;
