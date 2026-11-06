@@ -60,6 +60,16 @@
         i += 2;
         continue;
       }
+      if ((t === 'player' && tokens[i + 1] === 'won') || (t === 'p' && tokens[i + 1] === 'won')) {
+        commands.push('wa');
+        i += 2;
+        continue;
+      }
+      if ((t === 'banker' && tokens[i + 1] === 'won') || (t === 'b' && tokens[i + 1] === 'won')) {
+        commands.push('wb');
+        i += 2;
+        continue;
+      }
       if ((t === 'p1' || (t === 'player' && (tokens[i + 1] === '1' || tokens[i + 1] === 'one'))) && tokens[i + (t === 'p1' ? 1 : 2)] === 'won') {
         commands.push('wa');
         i += (t === 'p1' ? 2 : 3);
@@ -81,8 +91,8 @@
         continue;
       }
 
-      // Teen Patti: Cards parser
-      if (activeGame === 'teenpatti') {
+      // Teen Patti & Baccarat: Cards parser
+      if (activeGame === 'teenpatti' || activeGame === 'baccarat') {
         if (WORD_RANKS[t]) {
           const rank = WORD_RANKS[t];
           let j = i + 1;

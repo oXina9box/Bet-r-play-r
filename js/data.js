@@ -1,6 +1,6 @@
 /* Shared backup/storage boundary. Validation returns a fresh, normalized v1 state. */
 (function (root) {
-  const GAMES = ['sicbo', 'teenpatti', 'kickoff'];
+  const GAMES = ['sicbo', 'teenpatti', 'kickoff', 'baccarat'];
   const PROGRESSIONS = ['double', 'plusone', 'fib', 'fib_ladder'];
   const RESERVED = ['__proto__', 'prototype', 'constructor'];
   const check = (ok) => { if (!ok) throw new Error('Invalid Bet-R Play-R backup'); };
@@ -51,6 +51,12 @@
     if (game === 'teenpatti') {
       check(object(raw) && Array.isArray(raw.c) && raw.c.length === 6);
       check(raw.c.every(c => typeof c === 'string' && /^(?:[2-9]|10|J|Q|K|A)[hdsc]$/.test(c)) && new Set(raw.c).size === 6);
+      check(raw.order === undefined || raw.order === 'alternating');
+      return { c: raw.c.slice(), ...(raw.order === undefined ? {} : { order: raw.order }) };
+    }
+    if (game === 'baccarat') {
+      check(object(raw) && Array.isArray(raw.c) && raw.c.length >= 4 && raw.c.length <= 6);
+      check(raw.c.every(c => typeof c === 'string' && /^(?:[2-9]|10|J|Q|K|A)[hdsc]$/.test(c)));
       check(raw.order === undefined || raw.order === 'alternating');
       return { c: raw.c.slice(), ...(raw.order === undefined ? {} : { order: raw.order }) };
     }

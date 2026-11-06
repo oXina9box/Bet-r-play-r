@@ -9,6 +9,10 @@
       const match = /^(?:PLAYER ?([AB])|(TIE))$/.exec(value);
       return match ? { side: match[1] || null } : null;
     }
+    if (game === 'baccarat') {
+      const match = /^(?:PLAYER|(BANKER)|(TIE))$/.exec(value);
+      return match ? { side: match[1] ? 'B' : match[2] ? null : 'A' } : null;
+    }
     if (game === 'kickoff') {
       return /^(RED|BLUE|DRAW)$/.test(value) ? { side: value === 'RED' ? 'A' : value === 'BLUE' ? 'B' : null } : null;
     }

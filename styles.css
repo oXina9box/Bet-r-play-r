@@ -741,8 +741,9 @@ body[data-game="sicbo"] .reader-calibration { display: block; margin-top: 8px; }
   body[data-game="sicbo"] #extra > .bars:not(.faces) { grid-column: 1; grid-row: 3; }
   body[data-game="sicbo"] #extra > h4:last-of-type { grid-column: 2; grid-row: 2; }
   body[data-game="sicbo"] #extra > .bars.faces { grid-column: 2; grid-row: 3; }
-  body[data-game="teenpatti"] #extra { flex: 0 0 auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px 6px; }
-  body[data-game="teenpatti"] #extra > h4, body[data-game="teenpatti"] #extra > p { grid-column: 1 / -1; margin: 0; font-size: 8px; }
+  body[data-game="teenpatti"] #extra, body[data-game="baccarat"] #extra { flex: 0 0 auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px 6px; }
+  body[data-game="teenpatti"] #extra > h4, body[data-game="teenpatti"] #extra > p,
+  body[data-game="baccarat"] #extra > h4, body[data-game="baccarat"] #extra > p { grid-column: 1 / -1; margin: 0; font-size: 8px; }
   body[data-game="kickoff"] #extra { flex: 0 0 auto; display: flex; flex-direction: column; gap: 2px; }
   body[data-game="kickoff"] .ko-stats-grid { gap: 4px; margin-top: 2px; }
   body[data-game="kickoff"] .ko-stat-box { padding: 3px 4px; border-radius: 5px; }

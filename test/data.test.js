@@ -15,7 +15,7 @@ assert.equal(clean.books['shuff:sicbo'].cfg.fibDrop, 2);
 assert.equal(clean.books['shuff:sicbo'].entries[0].cfg.recovery, 0);
 assert.equal(clean.books['shuff:sicbo'].cfg.waitWin, 0, 'missing Sic Bo win wait uses the standard zero-game wait');
 assert.equal(clean.books['shuff:sicbo'].cfg.waitBet, 0);
-for (const game of ['teenpatti', 'kickoff']) {
+for (const game of ['teenpatti', 'kickoff', 'baccarat']) {
   assert.equal(validate(fixture(game, game === 'kickoff' ? [6, 2] : { w: 'A' })).books[`shuff:${game}`].cfg.waitWin, 1,
     `${game} keeps its standard one-game win wait`);
 }
@@ -44,18 +44,25 @@ for (const prog of ['double', 'plusone', 'fib', 'fib_ladder']) {
   const d = fixture(); d.books['shuff:sicbo'].cfg.prog = prog; validate(d);
 }
 for (const [game, raw] of [['kickoff', [6, 2]], ['kickoff', { w: 'T' }],
-  ['teenpatti', { w: 'A' }], ['teenpatti', { c: ['Ah', 'Kd', 'Qs', 'Jc', '10h', '9d'] }]]) validate(fixture(game, raw));
+  ['teenpatti', { w: 'A' }], ['teenpatti', { c: ['Ah', 'Kd', 'Qs', 'Jc', '10h', '9d'] }],
+  ['baccarat', { w: 'A' }], ['baccarat', { c: ['9h', '7s', '10d', '8c'] }]]) validate(fixture(game, raw));
 const alternating = fixture('teenpatti', { c: ['Ah', 'Kh', 'Qh', 'Jh', '9h', '8h'], order: 'alternating' });
 assert.equal(validate(alternating).books['shuff:teenpatti'].entries[0].raw.order, 'alternating');
 alternating.books['shuff:teenpatti'].entries[0].raw.order = 'unknown';
 assert.throws(() => validate(alternating));
+const alternatingBac = fixture('baccarat', { c: ['9h', '7s', '10d', '8c'], order: 'alternating' });
+assert.equal(validate(alternatingBac).books['shuff:baccarat'].entries[0].raw.order, 'alternating');
+alternatingBac.books['shuff:baccarat'].entries[0].raw.order = 'unknown';
+assert.throws(() => validate(alternatingBac));
 for (const d of [null, {}, { sites: [], books: {} }, { ...createDefault(), v: 2 },
   { ...createDefault(), sites: [] }, { ...createDefault(), cur: { site: 'missing', game: 'sicbo' } },
   JSON.parse('{"v":1,"sites":[{"id":"shuff","name":"Shuff"}],"cur":{"site":"shuff","game":"sicbo"},"books":{},"__proto__":{}}'),
   fixture('sicbo', ['<img src=x onerror=alert(1)>', 1, 1]), fixture('sicbo', [1, 2]),
   fixture('kickoff', [1, 7]), fixture('kickoff', { w: 'X' }),
   fixture('teenpatti', { c: ['Ah', 'Ah', 'Qs', 'Jc', '10h', '9d'] }),
-  fixture('teenpatti', { c: ['invalid', 'Kd', 'Qs', 'Jc', '10h', '9d'] })]) assert.throws(() => validate(d));
+  fixture('teenpatti', { c: ['invalid', 'Kd', 'Qs', 'Jc', '10h', '9d'] }),
+  fixture('baccarat', { c: ['9h', '7s', '10d'] }),
+  fixture('baccarat', { c: ['invalid', '7s', '10d', '8c'] })]) assert.throws(() => validate(d));
 for (const edit of [
   d => { d.books['shuff:sicbo'].cfg.unit = Infinity; },
   d => { d.books['shuff:sicbo'].cfg.unit = 0; },

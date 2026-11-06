@@ -477,7 +477,7 @@
     const end = r.setEnd === 'bust' ? ' bust' : r.setEnd === 'won' ? ' won' : '';
     const as = r.push && r.effSide ? ` as ${g.sides[r.effSide].label}` : '';
     if (r.push && r.effSide) c.sub = '→' + g.sides[r.effSide].short;
-    if (g.id === 'teenpatti' && r.screen && r.raw?.w) c.sub = 'winner only';
+    if ((g.id === 'teenpatti' || g.id === 'baccarat') && r.screen && r.raw?.w) c.sub = 'winner only';
     const nbText = r.noBet ? ' [NO BET] ' : '';
     const recText = r.recovery ? ` [Recovery ${r.recovery.currentSet}/${r.recovery.totalSets}] ` : '';
     const tip = `${nbText}${recText}` + (r.push ? `Tie, played${as || ' as nothing (no prior winner)'} · ` : '') + (r.role === 'factor' ? `Factor · fading ${r.pattern}` : r.role === 'factor-wait' ? `Delayed bet wait (${r.delayLeft} remaining)` : r.role === 'factor-break' ? 'Pattern broke during delay; sequence reset' : r.role === 'cooldown' ? `Cooldown after ${r.cooldownReason || 'bust'} (${r.cooldownLeft} remaining)` : r.bet ? `Bet ${g.sides[r.bet.side].label} ${fmt(r.bet.amount)} → ${r.result}` : '') + ' · double-click to toggle No Bet';
@@ -500,6 +500,11 @@
   }
 
   const MAX_PLAY_PRESETS = {
+    baccarat: {
+      name: 'Baccarat',
+      cfg: { n: 7, prog: 'double', recovery: 0, waitBust: 0 },
+      summary: 'Group 7 (6 bets) · Doubling · Recovery off · No wait after bust',
+    },
     teenpatti: {
       name: 'Teen Patti',
       cfg: { n: 7, prog: 'double', recovery: 0, waitBust: 0 },
@@ -874,7 +879,7 @@
         if (curSession().endedAt !== undefined) return false;
         if (manualClaims.has(bindingKey(bound)) || pending.dice?.length) return false;
       }
-      if (bound.game === 'teenpatti' && (pending.cards?.length || pending.active)) return false;
+      if ((bound.game === 'teenpatti' || bound.game === 'baccarat') && (pending.cards?.length || pending.active)) return false;
       const key = `${data.cur.site}:${data.cur.game}`, b = book();
       if (b.entries.some(e => e.screen?.round === observation.screen.round)) return false;
       const entry = { t: Date.now(), s: curSession().id, cfg: { ...b.cfg }, ...observation, ...(noBetArmed ? { nb: true } : {}) };
@@ -1031,8 +1036,8 @@
           else if (cmd === 'wa' || cmd === 'wb' || cmd === 'wt') press(cmd);
         }
 
-        // Teen Patti cards
-        if (data.cur.game === 'teenpatti' && parsed.cards.length > 0) {
+        // Teen Patti / Baccarat cards
+        if ((data.cur.game === 'teenpatti' || data.cur.game === 'baccarat') && parsed.cards.length > 0) {
           for (const card of parsed.cards) {
             press(card);
           }
@@ -1065,12 +1070,24 @@
     });
   }
 
+  if (window.Games?.baccarat?.registerAutoCommit) {
+    window.Games.baccarat.registerAutoCommit(() => {
+      if (!ready || data.cur.game !== 'baccarat') return;
+      const res = game().confirmActive ? game().confirmActive(pending) : null;
+      if (!res) return;
+      if (res.error) toast(res.error);
+      pending = res.pending;
+      if (res.commit) commit(res.commit);
+      render();
+    });
+  }
+
   document.addEventListener('keydown', (e) => {
     if (!ready || $('optionsMenu')?.matches?.(':popover-open') || $('screenAreaDialog')?.open) return;
     if (e.target.matches?.('input, select, textarea') || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === 'Backspace') { e.preventDefault(); undo(); }
     else if (e.key === 'Escape') clearPending();
-    else if (['Enter', ' ', 'Tab'].includes(e.key) && data.cur.game === 'teenpatti' && pending.active) {
+    else if (['Enter', ' ', 'Tab'].includes(e.key) && (data.cur.game === 'teenpatti' || data.cur.game === 'baccarat') && pending.active) {
       e.preventDefault(); press(e.key === ' ' ? 'space' : e.key.toLowerCase());
     }
     else if (e.key.toLowerCase() === 'v') {

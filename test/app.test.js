@@ -34,7 +34,7 @@ function boot({ cache = null, get = async () => ({ ok: true, json: async () => f
   };
   context.window = context;
   vm.createContext(context);
-  for (const file of ['js/history.js', 'js/engine.js', 'js/games/sicbo.js', 'js/games/teenpatti.js', 'js/games/kickoff.js', 'js/voice.js']) {
+  for (const file of ['js/history.js', 'js/engine.js', 'js/games/sicbo.js', 'js/games/teenpatti.js', 'js/games/baccarat.js', 'js/games/kickoff.js', 'js/voice.js']) {
     vm.runInContext(fs.readFileSync(file, 'utf8'), context, { filename: path.resolve(file) });
   }
   context.AppData = require('../js/data.js');
@@ -233,6 +233,21 @@ function boot({ cache = null, get = async () => ({ ok: true, json: async () => f
   assert.equal(dealt.length, 1, '6th card immediately commits without timer delay');
   assert.deepEqual(dealt[0].raw.c, ['As', 'Kh', 'Qd', 'Jc', '9h', '8s']);
   assert.equal(dealt[0].raw.order, 'alternating');
+
+  // Test Baccarat switching, fast entry, and natural commit under shuff
+  cards.pick('games', 'baccarat');
+  assert.equal(JSON.parse(cards.stored.get('betrplayr.v1')).cur.game, 'baccarat');
+  assert.match(cards.element('pad').innerHTML, /Player won/, 'baccarat pad rendered');
+  // Enter Natural 9: P: 9s, B: 7h, P: 10d, B: 8c
+  cards.key('9'); cards.key('2'); // 9s (Deal 1 - Player)
+  cards.key('7'); cards.key('1'); // 7h (Deal 2 - Banker)
+  cards.key('1'); cards.key('0'); cards.key('4'); // 10d (Deal 3 - Player)
+  cards.key('8'); cards.key('3'); // 8c (Deal 4 - Banker) -> Natural 9 auto-commits!
+  const baccBook = JSON.parse(cards.stored.get('betrplayr.v1')).books['shuff:baccarat'];
+  assert.equal(baccBook.entries.length, 1, 'Baccarat natural 9 commits after 4 cards');
+  assert.deepEqual(baccBook.entries[0].raw.c, ['9s', '7h', '10d', '8c']);
+  assert.equal(baccBook.entries[0].raw.order, 'alternating');
+  assert.match(cards.element('strip').innerHTML, /Natural 9|9-5/, 'strip renders Baccarat hand');
 
   // Voice toggle test
   assert.ok(cards.element('voiceBtn'), 'voice button exists');
