@@ -1,7 +1,7 @@
 /* Shared backup/storage boundary. Validation returns a fresh, normalized v1 state. */
 (function (root) {
   const GAMES = ['sicbo', 'teenpatti', 'kickoff', 'baccarat'];
-  const PROGRESSIONS = ['double', 'plusone', 'fib', 'fib_ladder'];
+  const PROGRESSIONS = ['double', 'plusone', 'fib', 'fib_ladder', 'fib_climber'];
   const RESERVED = ['__proto__', 'prototype', 'constructor'];
   const check = (ok) => { if (!ok) throw new Error('Invalid Bet-R Play-R backup'); };
   const object = x => x !== null && typeof x === 'object' && !Array.isArray(x);
@@ -31,17 +31,23 @@
     const waitWin = c.waitWin === undefined ? defaultWaitWin : c.waitWin;
     const waitBet = c.waitBet === undefined ? 0 : c.waitBet;
     const recovery = c.recovery === undefined ? 0 : c.recovery;
-    const fibDrop = c.fibDrop === undefined ? 2 : c.fibDrop;
+    const fibDrop = c.fibDrop === undefined ? (c.prog === 'fib_climber' ? 1 : 2) : c.fibDrop;
+    const fibBank = c.fibBank === undefined ? 0 : c.fibBank;
+    const entryMode = c.entryMode === undefined ? 'cards' : c.entryMode;
     const targetProfit = c.targetProfit === undefined ? 0 : Number(c.targetProfit) || 0;
     check(Number.isInteger(waitBust) && waitBust >= 0 && waitBust <= 3);
     check(Number.isInteger(waitWin) && waitWin >= 0 && waitWin <= 4);
     check(Number.isInteger(waitBet) && waitBet >= 0 && waitBet <= 3);
     check(Number.isInteger(recovery) && recovery >= 0 && recovery <= 4);
     check(Number.isInteger(fibDrop) && fibDrop >= 1 && fibDrop <= 10);
+    check(Number.isInteger(fibBank) && [0, 10, 15, 20, 25].includes(fibBank));
+    check(['cards', 'quick'].includes(entryMode));
     check(number(targetProfit) && targetProfit >= 0);
     // Maximum supported multiplier includes recovery; reject arithmetic overflow.
     check(Number.isFinite(c.unit * c.payout * 144 * 127));
     const out = { n: c.n, prog: c.prog, unit: c.unit, payout: c.payout, waitBust, waitWin, waitBet, recovery, fibDrop };
+    if (c.fibBank !== undefined) out.fibBank = fibBank;
+    if (c.entryMode !== undefined) out.entryMode = entryMode;
     if (c.targetProfit !== undefined || targetProfit > 0) out.targetProfit = targetProfit;
     return out;
   }

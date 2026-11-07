@@ -225,7 +225,7 @@
     if (!ready) return;
     cancelVoice();
     if (data.cur.game === 'sicbo' && curSession().endedAt !== undefined) return toast('Session ended. Start a new session to continue.');
-    const res = game().input(pending, key);
+    const res = game().input(pending, key, book().cfg);
     if (!res) return;
     pending = res.pending;
     if (data.cur.game === 'sicbo') {
@@ -287,13 +287,13 @@
     el.onclick = (e) => { const b = e.target.closest('button'); if (b) onPick(b.dataset.v); };
   }
 
-  function renderPad() { $('pad').innerHTML = game().padHTML(); }
+  function renderPad() { $('pad').innerHTML = game().padHTML(book().cfg); }
 
   function render() {
     view = compute();
     renderHeader();
     renderNext();
-    $('pending').innerHTML = game().pendingHTML(pending) + (noBetArmed ? '<span class="nobet-indicator">NO BET ARMED</span>' : '');
+    $('pending').innerHTML = game().pendingHTML(pending, book().cfg) + (noBetArmed ? '<span class="nobet-indicator">NO BET ARMED</span>' : '');
     const nbBtn = $('noBet');
     if (nbBtn) {
       nbBtn.classList.toggle('armed', noBetArmed);
@@ -374,12 +374,16 @@
       ? Engine.detectTripleRisk('sicbo', view.rows, nx.step)
       : null;
     if (tripleRisk && tripleRisk.due && dismissedTripleRoll !== view.rows.length) {
+      const shieldNotice = tripleRisk.shieldRecommended
+        ? `<div class="triple-shield-badge">${escapeHTML(tripleRisk.shieldMessage)}</div>`
+        : '';
       tripleOverlay = `
         <div id="tripleAlertOverlay" class="triple-overlay ${tripleRisk.urgent ? 'urgent' : 'warning'}">
           <div class="triple-overlay-card">
             <div class="triple-overlay-badge">${tripleRisk.urgent ? '🚨 CRITICAL STEP 5 ALERT' : '⚠️ TRIPLE RISK DETECTED'}</div>
             <div class="triple-overlay-title">${tripleRisk.urgent ? 'HIGH TRIPLE PROBABILITY ON STEP 5' : 'TRIPLE DUE SOON'}</div>
             <div class="triple-overlay-body">${escapeHTML(tripleRisk.message)}</div>
+            ${shieldNotice}
             <div class="triple-overlay-actions">
               <button id="tripleOverlaySkip" class="triple-skip-btn ${tripleRisk.urgent ? 'urgent' : ''}">${noBetArmed ? '✓ Bet Skipped (Armed)' : (tripleRisk.urgent ? '🚨 STRONGLY URGED: SKIP THIS BET' : 'Skip This Bet (One-Time)')}</button>
               <button id="tripleOverlayDismiss" class="triple-dismiss-btn">Dismiss</button>
@@ -391,12 +395,21 @@
 
     if (tripleOverlay) alertBanner = '';
 
+    let dragonBanner = '';
+    const dragon = Engine.detectDragon ? Engine.detectDragon(view.rows) : null;
+    if (dragon && (nx.phase === 'bet' || nx.phase === 'continue' || nx.phase === 'factor' || nx.phase === 'factor-delay')) {
+      dragonBanner = `<div class="dragon-alert ${dragon.action}">${escapeHTML(dragon.message)}</div>`;
+    }
+
     let ladderBadge = '';
     if (nx.ladder) {
       const l = nx.ladder;
+      const icon = l.isClimber ? '🧗' : '🪜';
+      const name = l.isClimber ? 'Fib Climber' : 'Fib Ladder';
+      const bankText = l.bankTarget > 0 ? ` · Bank: <b>${l.bankProfit}/${l.bankTarget}u</b>` : '';
       ladderBadge = `
         <div class="ladder-badge">
-          <div><b>🪜 Fib Ladder Step ${l.step}</b> <span>(${l.mult}x stake)</span></div>
+          <div><b>${icon} ${name} Step ${l.step}</b> <span>(${l.mult}x stake)</span>${bankText}</div>
           <div class="ladder-flow">Win: <b>${l.dropMult}x</b> · Loss: <b>${l.climbMult}x</b></div>
         </div>
       `;
@@ -454,7 +467,7 @@
     }
     $('next').className = 'next ' + nx.phase + (nx.phase === 'bet' ? ' side-' + nx.side.toLowerCase() : '') + (nx.recovery ? ' recovery' : '');
     const skip = nx.phase === 'bet' ? `<button id="skipBetOnce" class="skip-bet ${noBetArmed ? 'armed' : ''}">${noBetArmed ? 'Cancel one-time skip' : 'Skip this bet once'}</button>` : '';
-    $('next').innerHTML = tripleOverlay + targetBadge + recBanner + alertBanner + h + ladderBadge + lastLine + skip;
+    $('next').innerHTML = tripleOverlay + targetBadge + recBanner + alertBanner + dragonBanner + h + ladderBadge + lastLine + skip;
     $('skipBetOnce')?.addEventListener('click', toggleNoBet);
     $('betMinus')?.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -593,8 +606,37 @@
   function renderSettings() {
     const b = book();
     updateMaxPlayBtn();
+    const isTeenPatti = data.cur.game === 'teenpatti';
+    const tpRow = $('teenPattiModeRow');
+    if (tpRow) {
+      if (tpRow.style) tpRow.style.display = isTeenPatti ? '' : 'none';
+      else tpRow.hidden = !isTeenPatti;
+      if (isTeenPatti) {
+        seg($('teenPattiModeSeg'), [
+          ['cards', 'Cards (Rank+Suit)'],
+          ['quick', 'Quick 1/2 (1=A, 2=B)'],
+        ], b.cfg.entryMode || 'cards', (v) => setCfg('entryMode', v));
+      }
+    }
     seg($('groupSeg'), GROUP_SIZES.map((n) => [n, `${n} <small>(${n - 1} bets)</small>`]), b.cfg.n, (v) => setCfg('n', Number(v)));
     seg($('progSeg'), Object.entries(PROGRESSIONS).map(([k, p]) => [k, seqLabel(k, b.cfg.n - 1)]), b.cfg.prog, (v) => setCfg('prog', v));
+
+    const isFib = b.cfg.prog === 'fib_ladder' || b.cfg.prog === 'fib_climber';
+    const fibBankRow = $('fibBankRow');
+    if (fibBankRow) {
+      if (fibBankRow.style) fibBankRow.style.display = isFib ? '' : 'none';
+      else fibBankRow.hidden = !isFib;
+      if (isFib) {
+        seg($('fibBankSeg'), [
+          [0, 'Off'],
+          [10, '10+'],
+          [15, '15+'],
+          [20, '20+'],
+          [25, '25+'],
+        ], b.cfg.fibBank || 0, (v) => setCfg('fibBank', Number(v)));
+      }
+    }
+
     if (document.activeElement !== $('unit')) $('unit').value = b.cfg.unit;
     if (document.activeElement !== $('payout')) $('payout').value = b.cfg.payout;
     if ($('targetProfit') && document.activeElement !== $('targetProfit')) {
@@ -633,17 +675,23 @@
     const progObj = PROGRESSIONS[b.cfg.prog] || PROGRESSIONS.double;
     const mults = Array.from({ length: b.cfg.n - 1 }, (_, i) => progObj.mult(i));
     const risk = mults.reduce((a, x) => a + x, 0) * b.cfg.unit;
-    $('cfgNote').innerHTML = `${b.cfg.prog === 'fib_ladder' ? 'Starting ladder stakes' : 'Base set stakes'}: <b>${fmt(risk)}</b> (${mults.map((m) => fmt(m * b.cfg.unit)).join(' / ')})${b.cfg.prog === 'fib_ladder' ? ' · later ladder stakes can be higher' : ' · recovery can increase stakes'}${view.next.phase === 'bet' ? ' · <span class="warn">changes apply from the next set</span>' : ''}`;
+    const isLadder = b.cfg.prog === 'fib_ladder' || b.cfg.prog === 'fib_climber';
+    $('cfgNote').innerHTML = `${isLadder ? 'Starting ladder stakes' : 'Base set stakes'}: <b>${fmt(risk)}</b> (${mults.map((m) => fmt(m * b.cfg.unit)).join(' / ')})${isLadder ? ' · later ladder stakes can be higher' : ' · recovery can increase stakes'}${view.next.phase === 'bet' ? ' · <span class="warn">changes apply from the next set</span>' : ''}`;
   }
 
   function renderRecNotes(cfg) {
     const el = $('recNotes');
     if (!el) return;
-    if (cfg.prog === 'fib_ladder') {
+    if (cfg.prog === 'fib_ladder' || cfg.prog === 'fib_climber') {
+      const isClimber = cfg.prog === 'fib_climber';
+      const drop = cfg.fibDrop != null ? cfg.fibDrop : (isClimber ? 1 : 2);
+      const icon = isClimber ? '🧗' : '🪜';
+      const name = isClimber ? 'Fib Climber' : 'Fib Ladder';
+      const bankNotice = cfg.fibBank > 0 ? ` · Bank profit reset at <b>+${cfg.fibBank}u</b>` : '';
       el.innerHTML = `
         <div class="ladder-badge" style="margin-top:6px; margin-bottom:6px;">
-          <div><b>Continuous Fibonacci Ladder Active</b></div>
-          <div class="ladder-flow">Climbs on loss (+1) · Drops ${cfg.fibDrop || 2} on win · Stakes can increase; recovery is not guaranteed</div>
+          <div><b>${icon} Continuous ${name} Active</b></div>
+          <div class="ladder-flow">Climbs on loss (+1) · Drops ${drop} on win${bankNotice} · Recovery is not guaranteed</div>
         </div>
       `;
       return;
@@ -691,16 +739,19 @@
 
   function seqLabel(k, nBets) {
     if (k === 'fib_ladder') return '🪜 Fib Ladder';
+    if (k === 'fib_climber') return '🧗 Fib Climber';
     const progObj = PROGRESSIONS[k] || PROGRESSIONS.double;
     return Array.from({ length: nBets }, (_, i) => progObj.mult(i) + 'x').join(' ');
   }
 
   function setCfg(k, v) {
-    if (!ready || (k !== 'prog' && (!Number.isFinite(v) || !(v >= 0)))) return;
+    if (!ready || (k !== 'prog' && k !== 'entryMode' && (!Number.isFinite(v) || !(v >= 0)))) return;
     const b = book(), key = data.cur.site + ':' + data.cur.game;
     try { data = validate({ ...data, books: { ...data.books, [key]: { ...b, cfg: { ...b.cfg, [k]: v } } } }); }
     catch (err) { toast('Invalid setting'); return; }
-    save(); render();
+    save();
+    if (k === 'entryMode') renderPad();
+    render();
   }
 
   function scopeRows() {

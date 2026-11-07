@@ -9,6 +9,7 @@
     plusone: { label: '1x 3x 7x 15x', mult: (k) => 2 ** (k + 1) - 1 },
     fib: { label: '1x 2x 3x 5x', mult: (k) => FIB_SEQUENCE[k] || FIB_SEQUENCE[FIB_SEQUENCE.length - 1] },
     fib_ladder: { label: 'Fib Ladder', mult: (k) => FIB_SEQUENCE[k] || FIB_SEQUENCE[FIB_SEQUENCE.length - 1], ladder: true },
+    fib_climber: { label: 'Fib Climber', mult: (k) => FIB_SEQUENCE[k] || FIB_SEQUENCE[FIB_SEQUENCE.length - 1], ladder: true, climber: true },
   };
   const GROUP_SIZES = [4, 5, 6, 7];
   const opp = (s) => (s === 'A' ? 'B' : 'A');
@@ -152,6 +153,7 @@
     let continuation = null;
     let recoveryState = null;
     let ladderLevel = 0;
+    let sessionBankProfit = 0;
 
     for (const e of entries) {
       const r = Object.assign({}, e, { role: 'collect', bet: null, result: null, pnl: 0, setEnd: null });
@@ -196,6 +198,7 @@
             set = null;
             recoveryState = null;
             ladderLevel = 0;
+            sessionBankProfit = 0;
             cooldown = 0;
             continue;
           }
@@ -221,6 +224,17 @@
         r.pnl = push ? 0 : win ? bet.amount * (set.cfg.payout == null ? 1 : set.cfg.payout) : -bet.amount;
         if (e.nb) { r.noBet = true; r.pnl = 0; } // bet skipped: flow continues, no money
         r.units = r.pnl / set.cfg.unit;
+
+        const isLadderProg = set.cfg.prog === 'fib_ladder' || set.cfg.prog === 'fib_climber';
+        if (!e.nb && isLadderProg && (set.cfg.fibBank || 0) > 0) {
+          sessionBankProfit += (r.pnl / set.cfg.unit);
+          if (sessionBankProfit >= set.cfg.fibBank) {
+            r.bankReset = true;
+            ladderLevel = 0;
+            sessionBankProfit = 0;
+          }
+        }
+
         set.rollIndex = (set.rollIndex || 0) + 1;
         if (win) {
           r.setEnd = 'won';
@@ -229,8 +243,9 @@
             recoveryState.setsLeft--;
             if (recoveryState.setsLeft <= 0) recoveryState = null;
           }
-          if (set.cfg.prog === 'fib_ladder') {
-            ladderLevel = Math.max(0, set.ladderLevel - set.cfg.fibDrop);
+          if (isLadderProg) {
+            const drop = set.cfg.fibDrop != null ? set.cfg.fibDrop : (set.cfg.prog === 'fib_climber' ? 1 : 2);
+            ladderLevel = r.bankReset ? 0 : Math.max(0, set.ladderLevel - drop);
           }
           cooldown = set.cfg.waitWin || 0;
           cooldownReason = 'win';
@@ -238,7 +253,7 @@
         } else {
           // If bet was skipped, the bet value remains at the previous step value
           if (!e.nb) {
-            if (!push && set.cfg.prog === 'fib_ladder') {
+            if (!push && isLadderProg && !r.bankReset) {
               ladderLevel = Math.min(FIB_SEQUENCE.length - 1, set.ladderLevel + 1);
             }
             if (++set.step >= set.plan.length) {
@@ -273,7 +288,7 @@
               }
               set = null;
             } else {
-              if (set.cfg.prog === 'fib_ladder') {
+              if (isLadderProg) {
                 set.ladderLevel = ladderLevel;
               }
             }
@@ -300,7 +315,9 @@
         // Old recorded configurations predate recovery and ladder drop settings.
         const setCfg = Object.assign({}, curCfg, e.cfg);
         setCfg.recovery = e.cfg ? (e.cfg.recovery == null ? 0 : e.cfg.recovery) : (curCfg.recovery || 0);
-        setCfg.fibDrop = e.cfg ? (e.cfg.fibDrop == null ? 2 : e.cfg.fibDrop) : (curCfg.fibDrop == null ? 2 : curCfg.fibDrop);
+        const defaultDrop = (e.cfg?.prog || curCfg.prog) === 'fib_climber' ? 1 : 2;
+        setCfg.fibDrop = e.cfg ? (e.cfg.fibDrop == null ? defaultDrop : e.cfg.fibDrop) : (curCfg.fibDrop == null ? defaultDrop : curCfg.fibDrop);
+        setCfg.fibBank = e.cfg ? (e.cfg.fibBank || 0) : (curCfg.fibBank || 0);
         if (recoveryState && setCfg.recovery !== recoveryState.target) recoveryState = null;
         let recMult = 1;
         let recInfo = null;
@@ -349,10 +366,12 @@
       profitMax: recoveryState.profitMax,
     } : null;
 
-    const isLadder = (set ? set.cfg.prog : curCfg.prog) === 'fib_ladder';
+    const nextProg = set ? set.cfg.prog : curCfg.prog;
+    const isLadder = nextProg === 'fib_ladder' || nextProg === 'fib_climber';
     const curLvl = isLadder ? (set ? (set.ladderLevel || 0) : ladderLevel) : 0;
     const nextCfg = set ? set.cfg : curCfg;
-    const dropLvl = Math.max(0, curLvl - (nextCfg.fibDrop == null ? 2 : nextCfg.fibDrop));
+    const defaultDrop = nextCfg.prog === 'fib_climber' ? 1 : 2;
+    const dropLvl = Math.max(0, curLvl - (nextCfg.fibDrop == null ? defaultDrop : nextCfg.fibDrop));
     const climbLvl = Math.min(FIB_SEQUENCE.length - 1, curLvl + 1);
     const ladderInfo = isLadder ? {
       level: curLvl,
@@ -360,6 +379,9 @@
       mult: FIB_SEQUENCE[curLvl],
       dropMult: FIB_SEQUENCE[dropLvl],
       climbMult: FIB_SEQUENCE[climbLvl],
+      isClimber: nextCfg.prog === 'fib_climber',
+      bankTarget: nextCfg.fibBank || 0,
+      bankProfit: Math.max(0, Math.round(sessionBankProfit * 10) / 10),
     } : null;
 
     if (set) {
@@ -634,6 +656,13 @@
     if (!isDue && !gapOverdue) return null;
 
     const urgent = (step >= 4); // 5th bet in a group or continuation
+    const shieldRecommended = (step >= 3) && (gapDue || pairClustering);
+    const shieldStake = step >= 5 ? 2 : 1;
+    let shieldMessage = '';
+    if (shieldRecommended) {
+      shieldMessage = `🛡️ TRIPLE SHIELD: Bet ${shieldStake}u on Any Triple (30:1) to hedge your Step ${step + 1} Big/Small bet.`;
+    }
+
     let message = '';
     if (urgent) {
       message = `🚨 CRITICAL RISK (Step ${step + 1}): High triple probability! (${rollsSince} rolls since last triple${pairClustering ? ' with ' + pairCount + ' pairs in last 5 rolls' : ''}). A triple will immediately bust your set at maximum stake. Strongly recommend skipping this roll.`;
@@ -649,11 +678,58 @@
       rollsSince,
       pairCount,
       gapOverdue,
+      shieldRecommended,
+      shieldStake,
+      shieldMessage,
       message,
     };
   }
 
-  const api = { PROGRESSIONS, FIB_SEQUENCE, GROUP_SIZES, opp, abstract, betPlan, run, stats, analyzeBusts, simulateDelays, recoveryOptions, specialProbability, detectTripleRisk };
+  /**
+   * Detects dragons (unbroken streaks of identical sides, e.g. 4+ in a row).
+   * User anti-streak rule:
+   * - Streak of 4 (1, 2, 3, 4 straight): Suggest SKIP roll 5.
+   * - Streak of 5: Suggest BET roll 6 (bet anti-streak on opp(streakSide)).
+   * - Streak of 6+: Extended dragon.
+   */
+  function detectDragon(rows) {
+    if (!rows || rows.length < 4) return null;
+    let streakSide = null;
+    let streakLen = 0;
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const r = rows[i];
+      const s = r.effSide || r.side;
+      if (!s || r.push) continue;
+      if (streakSide === null) {
+        streakSide = s;
+        streakLen = 1;
+      } else if (s === streakSide) {
+        streakLen++;
+      } else {
+        break;
+      }
+    }
+    if (streakLen < 4) return null;
+    const antiSide = opp(streakSide);
+    const action = streakLen === 4 ? 'skip' : (streakLen === 5 ? 'bet' : 'watch');
+    let message = '';
+    if (streakLen === 4) {
+      message = `🐉 DRAGON ALERT (4 straight ${streakSide}s): Anti-streak rule recommends SKIPPING Roll 5. If 5 resets, bet next factor.`;
+    } else if (streakLen === 5) {
+      message = `🐉 DRAGON ALERT (5 straight ${streakSide}s): Anti-streak rule recommends BETTING Roll 6 on ${antiSide}.`;
+    } else {
+      message = `🐉 EXTENDED DRAGON (${streakLen} straight ${streakSide}s): Anti-streak caution on ${streakSide}.`;
+    }
+    return {
+      side: streakSide,
+      length: streakLen,
+      action,
+      antiSide,
+      message,
+    };
+  }
+
+  const api = { PROGRESSIONS, FIB_SEQUENCE, GROUP_SIZES, opp, abstract, betPlan, run, stats, analyzeBusts, simulateDelays, recoveryOptions, specialProbability, detectTripleRisk, detectDragon };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Engine = api;
 })(this);

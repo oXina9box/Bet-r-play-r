@@ -40,9 +40,23 @@ assert.deepEqual(validate(recovered), recovered, 'recovery fields survive export
 assert.deepEqual(validate(source).books['shuff:sicbo'].sessions[0], { id: 's1', start: 1 }, 'older sessions remain supported');
 clean.books['shuff:sicbo'].entries[0].raw[0] = 6;
 assert.equal(source.books['shuff:sicbo'].entries[0].raw[0], 1);
-for (const prog of ['double', 'plusone', 'fib', 'fib_ladder']) {
+for (const prog of ['double', 'plusone', 'fib', 'fib_ladder', 'fib_climber']) {
   const d = fixture(); d.books['shuff:sicbo'].cfg.prog = prog; validate(d);
 }
+for (const bank of [0, 10, 15, 20, 25]) {
+  const d = fixture(); d.books['shuff:sicbo'].cfg.fibBank = bank;
+  assert.equal(validate(d).books['shuff:sicbo'].cfg.fibBank, bank);
+}
+for (const badBank of [-1, 5, 30, NaN, 'ten']) {
+  const d = fixture(); d.books['shuff:sicbo'].cfg.fibBank = badBank;
+  assert.throws(() => validate(d));
+}
+for (const mode of ['cards', 'quick']) {
+  const d = fixture('teenpatti', { w: 'A' }); d.books['shuff:teenpatti'].cfg.entryMode = mode;
+  assert.equal(validate(d).books['shuff:teenpatti'].cfg.entryMode, mode);
+}
+const badMode = fixture('teenpatti', { w: 'A' }); badMode.books['shuff:teenpatti'].cfg.entryMode = 'invalid';
+assert.throws(() => validate(badMode));
 for (const [game, raw] of [['kickoff', [6, 2]], ['kickoff', { w: 'T' }],
   ['teenpatti', { w: 'A' }], ['teenpatti', { c: ['Ah', 'Kd', 'Qs', 'Jc', '10h', '9d'] }],
   ['baccarat', { w: 'A' }], ['baccarat', { c: ['9h', '7s', '10d', '8c'] }]]) validate(fixture(game, raw));

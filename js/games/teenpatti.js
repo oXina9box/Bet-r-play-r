@@ -100,13 +100,20 @@
       return { pending: { cards, active: null } };
     },
 
-    input(p, key) {
+    input(p, key, cfg) {
       p = Object.assign({ active: null }, p, { cards: (p && p.cards) || [] });
       key = String(key).toLowerCase();
 
       // Quick entry
       if (key === 'wa' || key === 'wb' || key === 'wt') {
         return { pending: this.emptyPending(), commit: { w: key[1].toUpperCase() } };
+      }
+
+      // Quick 1/2 mode: 1 = Player A, 2 = Player B, 3 = Tie
+      if (cfg?.entryMode === 'quick') {
+        if (key === '1') return { pending: this.emptyPending(), commit: { w: 'A' } };
+        if (key === '2') return { pending: this.emptyPending(), commit: { w: 'B' } };
+        if (key === '3') return { pending: this.emptyPending(), commit: { w: 'T' } };
       }
 
       // Space / Enter / Tab: explicitly confirm current active card (defaults to Hearts if suit wasn't chosen)
@@ -194,7 +201,12 @@
       return null;
     },
 
-    pendingHTML(p) {
+    pendingHTML(p, cfg) {
+      if (cfg?.entryMode === 'quick') {
+        return `<div class="quick-status-panel">
+          <div class="quick-status-hint">Quick Mode Active · Press <b>1</b> for Player A · <b>2</b> for Player B · <b>3</b> for Tie</div>
+        </div>`;
+      }
       p = p || { cards: [], active: null };
       const cards = p.cards || [];
       const currentDeal = cards.length; // 0..5
@@ -242,7 +254,17 @@
       </div>`;
     },
 
-    padHTML() {
+    padHTML(cfg) {
+      if (cfg?.entryMode === 'quick') {
+        return `<div class="pad quick-pad">
+          <div class="multitap-hint">Quick Entry Mode: Press <b>1</b> for Player A · <b>2</b> for Player B · <b>3</b> for Tie</div>
+          <div class="quick-large">
+            <button class="key qa-large" data-key="1"><span class="kbd">1</span> PLAYER A WON</button>
+            <button class="key qb-large" data-key="2"><span class="kbd">2</span> PLAYER B WON</button>
+            <button class="key qt-large" data-key="3"><span class="kbd">3</span> TIE</button>
+          </div>
+        </div>`;
+      }
       const ranks = RANKS.map((r) => {
         const k = r === '10' ? '0' : r.toLowerCase();
         return `<button class="key rank" data-key="r:${k}">${r}${r === '10' ? '<span class="kbd">0</span>' : ''}</button>`;
@@ -259,9 +281,9 @@
         <div class="ranks">${ranks}</div>
         <div class="suits">${suits}</div>
         <div class="quick"><span>Quick:</span>
-          <button class="key qa" data-key="wa">Player A won</button>
-          <button class="key qt" data-key="wt">Tie</button>
-          <button class="key qb" data-key="wb">Player B won</button></div></div>`;
+          <button class="key qa" data-key="wa" title="Player A won"><span class="kbd">1</span> Player A won</button>
+          <button class="key qt" data-key="wt" title="Tie"><span class="kbd">3</span> Tie</button>
+          <button class="key qb" data-key="wb" title="Player B won"><span class="kbd">2</span> Player B won</button></div></div>`;
     },
 
     chip(raw, o) {

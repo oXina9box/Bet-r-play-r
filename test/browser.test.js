@@ -70,7 +70,7 @@ async function checkOptionsUI(page) {
   }
   assert.equal(await page.locator('#optionsMenu label:has(#import)').isVisible(), true);
   assert.equal(await page.locator('#optionsMenu #groupSeg button').count(), 4);
-  assert.equal(await page.locator('#optionsMenu #progSeg button').count(), 4);
+  assert.equal(await page.locator('#optionsMenu #progSeg button').count(), 5);
   await page.keyboard.press('Escape');
   assert.equal(await page.locator('#optionsMenu').isVisible(), false);
   assert.equal(await page.locator('#pending').innerHTML(), pending, 'dismissing Options must preserve pending dice');

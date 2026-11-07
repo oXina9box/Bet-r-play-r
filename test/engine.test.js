@@ -258,6 +258,61 @@ assert.strictEqual(rLadder.rows[7].result, 'win');
 assert.strictEqual(rLadder.next.ladder.level, 0);
 assert.strictEqual(rLadder.next.ladder.mult, 1);
 
+// Fib Climber (drop 1 on win)
+const cfgClimber = { n: 5, prog: 'fib_climber', unit: 1, payout: 1 };
+assert.strictEqual(E.PROGRESSIONS.fib_climber.climber, true);
+assert.strictEqual(E.PROGRESSIONS.fib_climber.ladder, true);
+// Step 0 loss (12 Big), Step 1 loss (6 Small), Step 2 win (6 Small on S) -> climbs to level 2, then drops 1 level to level 1
+const rClimber = E.run(entries([11, 14, 9, 14, 6, 13, 12, 6, 6], cfgClimber), cfgClimber);
+assert.strictEqual(rClimber.next.ladder.level, 1);
+assert.strictEqual(rClimber.next.ladder.mult, 2);
+assert.strictEqual(rClimber.next.ladder.isClimber, true);
+
+// Fib Bank Profit Reset
+const cfgBank = { n: 5, prog: 'fib_climber', unit: 1, payout: 1, fibBank: 10 };
+let bankRolls = [11, 14, 9, 14, 6];
+for (let i = 0; i < 20; i++) {
+  const r = E.run(entries(bankRolls, cfgBank), cfgBank);
+  if (r.next.phase === 'factor') bankRolls.push(13);
+  else if (r.next.phase === 'bet') bankRolls.push(r.next.side === 'A' ? 15 : 6);
+  else if (r.next.phase === 'cooldown') bankRolls.push(6);
+}
+const rBankRes = E.run(entries(bankRolls, cfgBank), cfgBank);
+assert.ok(rBankRes.rows.some(r => r.bankReset === true), 'bank profit reset triggers at target');
+assert.strictEqual(rBankRes.next.ladder.level, 0);
+
+// Dragon Detection (Streak 4 -> skip, Streak 5 -> bet)
+const dragonRows4 = [{ effSide: 'A' }, { effSide: 'A' }, { effSide: 'A' }, { effSide: 'A' }];
+const d4 = E.detectDragon(dragonRows4);
+assert.strictEqual(d4.length, 4);
+assert.strictEqual(d4.action, 'skip');
+assert.strictEqual(d4.side, 'A');
+assert.strictEqual(d4.antiSide, 'B');
+
+const dragonRows5 = [{ effSide: 'B' }, { effSide: 'B' }, { effSide: 'B' }, { effSide: 'B' }, { effSide: 'B' }];
+const d5 = E.detectDragon(dragonRows5);
+assert.strictEqual(d5.length, 5);
+assert.strictEqual(d5.action, 'bet');
+assert.strictEqual(d5.side, 'B');
+assert.strictEqual(d5.antiSide, 'A');
+assert.strictEqual(E.detectDragon([{ effSide: 'A' }, { effSide: 'A' }, { effSide: 'A' }]), null);
+
+// Triple Shield Recommendation
+const sbTripleRows = Array(36).fill(null).map(() => ({ raw: [1, 2, 4], lossAll: false }));
+assert.strictEqual(E.detectTripleRisk('sicbo', sbTripleRows, 1).shieldRecommended, false);
+const sbTr3 = E.detectTripleRisk('sicbo', sbTripleRows, 3);
+assert.strictEqual(sbTr3.shieldRecommended, true);
+assert.strictEqual(sbTr3.shieldStake, 1);
+const sbTr5 = E.detectTripleRisk('sicbo', sbTripleRows, 5);
+assert.strictEqual(sbTr5.shieldRecommended, true);
+assert.strictEqual(sbTr5.shieldStake, 2);
+
+// Teen Patti Quick 1/2 Entry Mode
+assert.deepStrictEqual(TP.input(TP.emptyPending(), '1', { entryMode: 'quick' }).commit, { w: 'A' });
+assert.deepStrictEqual(TP.input(TP.emptyPending(), '2', { entryMode: 'quick' }).commit, { w: 'B' });
+assert.deepStrictEqual(TP.input(TP.emptyPending(), '3', { entryMode: 'quick' }).commit, { w: 'T' });
+assert.strictEqual(TP.input(TP.emptyPending(), '1', { entryMode: 'cards' }).pending.active.rank, '10');
+
 // ---------- 3. The Kickoff Game Tests ----------
 const Kickoff = require('../js/games/kickoff.js');
 assert.strictEqual(Kickoff.id, 'kickoff');

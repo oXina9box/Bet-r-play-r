@@ -91,11 +91,116 @@ main { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); ga
 .triple-overlay-title { font-size: 15px; font-weight: 900; color: #fff; }
 .triple-overlay-body { font-size: 11px; line-height: 1.35; color: #cbd5e1; }
 .triple-overlay-actions { display: flex; gap: 8px; margin-top: 4px; }
+.triple-shield-badge {
+  background: rgba(59, 130, 246, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.5);
+  color: #93c5fd;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-top: 4px;
+}
 .triple-skip-btn { font-size: 12px; font-weight: bold; padding: 6px 12px; border-radius: 4px; border: none; cursor: pointer; }
 .triple-overlay.warning .triple-skip-btn { background: #eab308; color: #000; }
 .triple-overlay.urgent .triple-skip-btn { background: #ef4444; color: #fff; box-shadow: 0 0 12px rgba(239, 68, 68, 0.6); }
 .triple-dismiss-btn { font-size: 11px; padding: 5px 9px; border-radius: 4px; border: 1px solid #475569; background: transparent; color: #94a3b8; cursor: pointer; }
 .triple-dismiss-btn:hover { background: #1e293b; color: #fff; }
+
+/* Dragon alerts */
+.dragon-alert {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.dragon-alert.skip {
+  background: rgba(239, 68, 68, 0.16);
+  border: 1px solid rgba(239, 68, 68, 0.6);
+  color: #fca5a5;
+  animation: pulse-urgent 1.5s infinite alternate;
+}
+.dragon-alert.bet {
+  background: rgba(34, 197, 94, 0.16);
+  border: 1px solid rgba(34, 197, 94, 0.6);
+  color: #86efac;
+}
+.dragon-alert.watch {
+  background: rgba(234, 179, 8, 0.15);
+  border: 1px solid rgba(234, 179, 8, 0.5);
+  color: #fde047;
+}
+
+/* Quick 1/2 Entry Mode */
+.quick-status-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  margin-bottom: 6px;
+}
+.quick-status-hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+.quick-status-hint b {
+  color: var(--text);
+}
+.quick-pad .quick-large {
+  display: grid;
+  grid-template-columns: 1fr 1fr 0.8fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+.quick-large .key {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 14px 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid var(--line);
+}
+.quick-large .qa-large {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fca5a5;
+}
+.quick-large .qa-large:hover {
+  background: rgba(239, 68, 68, 0.35);
+}
+.quick-large .qb-large {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.5);
+  color: #93c5fd;
+}
+.quick-large .qb-large:hover {
+  background: rgba(59, 130, 246, 0.35);
+}
+.quick-large .qt-large {
+  background: rgba(234, 179, 8, 0.2);
+  border-color: rgba(234, 179, 8, 0.5);
+  color: #fde047;
+}
+.quick-large .qt-large:hover {
+  background: rgba(234, 179, 8, 0.35);
+}
+.quick-large .kbd {
+  font-size: 16px;
+  font-weight: 900;
+}
+
 .plan { display: flex; justify-content: center; gap: 8px; margin: 14px 0 6px; }
 .plan-step { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); opacity: .55; }
 .plan-step em { font-style: normal; font-size: 12px; color: var(--muted); }

@@ -5,13 +5,27 @@ const os = require('node:os');
 const path = require('node:path');
 const { createServer } = require('../server');
 
+function playwright() {
+  for (const name of [process.env.PLAYWRIGHT_PATH, 'playwright', 'playwright-core'].filter(Boolean)) {
+    try { return require(name); } catch (err) { if (err.code !== 'MODULE_NOT_FOUND') throw err; }
+  }
+  const links = path.join(os.homedir(), '.cache', 'ms-playwright', '.links');
+  if (fs.existsSync(links)) {
+    for (const file of fs.readdirSync(links)) {
+      const installed = fs.readFileSync(path.join(links, file), 'utf8').trim();
+      if (fs.existsSync(installed)) return require(installed);
+    }
+  }
+  throw new Error('Playwright required: set PLAYWRIGHT_PATH to an existing playwright-core installation');
+}
+
 test('hold Space voice entry records each game only on release', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'betr-voice-'));
   const server = createServer({ dataDir: dir });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   let browser;
   try {
-    browser = await require(process.env.PLAYWRIGHT_PATH || 'playwright').chromium.launch({ headless: true, args: ['--no-sandbox'] });
+    browser = await playwright().chromium.launch({ headless: true, args: ['--no-sandbox'] });
     const page = await browser.newPage();
     await page.addInitScript(() => {
       window.SpeechRecognition = class {
