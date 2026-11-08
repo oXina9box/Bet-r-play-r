@@ -55,6 +55,20 @@ function boot({ cache = null, get = async () => ({ ok: true, json: async () => f
 }
 
 (async () => {
+  const syncApp = boot({ post: async url => url === '/session/end'
+    ? { ok: true, json: async () => ({ file: 'live results/Sic_Bo_Results.ods' }) } : { ok: true } });
+  await tick();
+  syncApp.key('1'); syncApp.key('2'); syncApp.key('3');
+  syncApp.element('newSession').onclick(); await tick();
+  const sent = syncApp.requests.find(request => request.url === '/session/end');
+  assert.deepEqual(JSON.parse(sent.options.body).entries.map(({ raw }) => raw), [[1, 2, 3]]);
+  assert.deepEqual(Object.keys(JSON.parse(sent.options.body).entries[0]).sort(), ['raw', 's', 't']);
+  assert.match(syncApp.element('toast').textContent, /Session results moved to live results\/Sic_Bo_Results\.ods/);
+  assert.equal(JSON.parse(syncApp.stored.get('betrplayr.v1')).books['shuff:sicbo'].entries.length, 1);
+  const failedSync = boot({ post: async url => url === '/session/end' ? { ok: false } : { ok: true } });
+  await tick(); failedSync.key('1'); failedSync.key('2'); failedSync.key('3');
+  failedSync.element('newSession').onclick(); await tick();
+  assert.match(failedSync.element('toast').textContent, /Sync failed/);
   const scoreApp = boot({ cache: { ...fixture(), cur: { site: 'shuff', game: 'kickoff' } }, protocol: 'file:' });
   await tick();
   const scoreEntries = () => JSON.parse(scoreApp.stored.get('betrplayr.v1')).books['shuff:kickoff']?.entries || [];

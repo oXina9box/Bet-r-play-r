@@ -7,13 +7,12 @@
     "test": "node --test test/*.test.js",
     "test:e2e": "node test/server.test.js && node test/browser.test.js",
     "audit:data": "node scripts/audit-data.js",
-    "generate:tracker": "node scripts/generate-tracker.js"
+    "generate:tracker": "node scripts/generate-tracker.js",
+    "sync:live": "node scripts/sync-live-results.js"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",
+    "exceljs": "^4.4.0",
     "tesseract.js": "^7.0.0"
-  },
-  "devDependencies": {
-    "exceljs": "^4.4.0"
   }
 }

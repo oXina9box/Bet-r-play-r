@@ -268,11 +268,35 @@
 
   function clearPending() { cancelVoice(); pending = game().emptyPending(); manualBetAmount = null; manualClaims.delete(bindingKey(currentBinding())); render(); }
 
+  async function syncSessionResults(gameId, entries) {
+    if (!entries.length) return;
+    const fail = () => toast('Session history retained. Sync failed; rerun npm run sync:live.');
+    if (API === null) return fail();
+    try {
+      const response = await fetch(API + '/session/end', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ game: gameId, entries }),
+        signal: AbortSignal.timeout(120000),
+      });
+      if (!response.ok) return fail();
+      const result = await response.json();
+      if (typeof result?.file !== 'string' || !result.file.trim()) return fail();
+      toast(`Session results moved to ${result.file}`);
+    } catch { fail(); }
+  }
+
   function newSession() {
     if (!ready) return;
     cancelVoice();
     if (screenReader?.canSwitch?.() === false) return toast('A verified hand is waiting. Finish or clear manual input, then resume recording.');
     if (!book().entries.some((e) => e.s === curSession().id) && curSession().endedAt === undefined && !curSession().missedRoll) return toast('Current session is already empty');
+    const gameId = data.cur.game;
+    const entries = ['sicbo', 'kickoff', 'teenpatti'].includes(gameId)
+      ? book().entries.filter(e => e.s === curSession().id).map(({ t, s, raw, screen, scoreHit }) => ({
+        t, s, raw: Array.isArray(raw) ? raw.slice() : raw,
+        ...(screen === undefined ? {} : { screen: { ...screen } }),
+        ...(scoreHit === undefined ? {} : { scoreHit }),
+      }))
+      : [];
     screenReader?.stop('New session selected; click Start to record');
     const b = book(), key = `${data.cur.site}:${data.cur.game}`;
     data = { ...data, books: { ...data.books, [key]: { ...b, sessions: [...b.sessions, { id: uid(), start: Date.now() }] } } };
@@ -281,7 +305,9 @@
     manualBetAmount = null;
     save(); render();
     toast('New session started');
+    if (entries.length) void syncSessionResults(gameId, entries);
   }
+
 
   function switchTo(site, gameId) {
     if (!ready) return;

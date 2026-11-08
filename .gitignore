@@ -5,4 +5,5 @@ node_modules/
 .directory
 .code-review-graph/
 Betting_Bankroll_Sprint_Tracker.*
+live results/
 .omp/
