@@ -23,6 +23,42 @@
       return { side, lossAll: tie, tie, red, blue };
     },
 
+    // Rules are fixed in advance; unknown outcomes and session changes break each context.
+    drawPatterns(rows, current = rows[rows.length - 1]) {
+      const rules = [
+        { id: 'after-draw', label: 'After a draw', size: 1, match: d => d[0] },
+        { id: 'back-to-back', label: 'After two straight draws', size: 2, match: d => d[0] && d[1] },
+        { id: 'one-off', label: 'Draw, one off → draw', size: 2, match: d => d[0] && !d[1] },
+        { id: 'alternating', label: 'After draw–off–draw', size: 3, match: d => d[0] && !d[1] && d[2] },
+        { id: 'cluster', label: '2+ draws in last 5', size: 5, match: d => d.filter(Boolean).length >= 2 },
+      ];
+      const last = rows[rows.length - 1];
+      const anchored = current && last && current.s === last.s && JSON.stringify(current.raw) === JSON.stringify(last.raw);
+      return rules.map(rule => {
+        const tail = rows.slice(-rule.size);
+        const active = !!(anchored && tail.length === rule.size && tail.every(r => r.s === last.s && drawResult(r.raw) !== null) && rule.match(tail.map(r => drawResult(r.raw))));
+        const counts = contextCounts(rows, rule.size, window => rule.match(window.map(r => drawResult(r.raw))));
+        return { id: rule.id, label: rule.label, active, ...counts, play: active && higherDrawRate(counts) };
+      });
+    },
+
+    drawSignal(rows, current = rows[rows.length - 1]) {
+      const latest = current?.raw;
+      const pair = validDice(latest) ? latest.slice() : null;
+      const patterns = this.drawPatterns(rows, current);
+      const counts = pair ? contextCounts(rows, 1, window => window[0].raw[0] === pair[0] && window[0].raw[1] === pair[1], true)
+        : { matches: 0, draws: 0, others: 0, otherDraws: 0 };
+      const last = rows[rows.length - 1];
+      const anchored = !!(pair && last && current.s === last.s && JSON.stringify(current.raw) === JSON.stringify(last.raw));
+      const exact = { id: 'exact-pair', label: pair ? `After R${pair[0]} / B${pair[1]}` : 'Exact dice pair', active: anchored, ...counts, play: anchored && higherDrawRate(counts) };
+      const candidates = [...patterns, exact].filter(p => p.active);
+      const evidence = candidates.find(p => p.play) || candidates.find(p => p.matches >= 20 && p.others >= 20) || (anchored ? exact : candidates[0]) || { ...exact, label: 'No active draw pattern' };
+      const play = candidates.some(p => p.play);
+      const reason = !current ? 'Record a roll' : !candidates.length ? 'No matching draw pattern' : play ? evidence.label
+        : evidence.matches < 20 || evidence.others < 20 ? 'Collecting matches (20 minimum per group)' : 'No clear draw signal';
+      return { ...counts, pair, patterns, evidence, play, reason };
+    },
+
     emptyPending: () => ({ dice: [] }),
 
     input(p, key) {
@@ -79,7 +115,7 @@
     extraStats(rows) {
       let redWins = 0, blueWins = 0, ties = 0;
       let redSum = 0, blueSum = 0, diceCount = 0, marginSum = 0, redHigh = 0, blueHigh = 0;
-      let curSide = null, curStreak = 0, maxStreak = 0, maxSide = null, sinceTie = 0;
+      let curSide = null, curStreak = 0, maxStreak = 0, maxSide = null;
       for (const r of rows) {
         if (r.side === 'A') redWins++;
         else if (r.side === 'B') blueWins++;
@@ -98,10 +134,6 @@
           diceCount++;
         }
       }
-      for (let i = rows.length - 1; i >= 0; i--) {
-        if (rows[i].side == null || rows[i].o?.tie) break;
-        sinceTie++;
-      }
       const total = rows.length || 1;
       const redPct = rows.length ? ((redWins / total) * 100).toFixed(1) : '0.0';
       const bluePct = rows.length ? ((blueWins / total) * 100).toFixed(1) : '0.0';
@@ -109,16 +141,18 @@
       const avgRed = diceCount ? (redSum / diceCount).toFixed(2) : '–';
       const avgBlue = diceCount ? (blueSum / diceCount).toFixed(2) : '–';
       const avgMargin = diceCount ? (marginSum / diceCount).toFixed(2) : '–';
-      const tieCumPct = Math.round((1 - Math.pow(5 / 6, sinceTie)) * 100);
+      const recent = rows.slice(-20);
+      const recentDraws = recent.filter(r => r.o?.tie).length;
       const streakTxt = curStreak ? `${this.sides[curSide].short}×${curStreak} <small>max ${maxSide ? this.sides[maxSide].short : ''}${maxStreak}</small>` : '–';
 
       return `
         <div class="game-markers">
           <div class="marker"><label>Streak</label><b>${streakTxt}</b></div>
-          <div class="marker ${sinceTie >= 6 ? 'warn' : ''}"><label>Tie Gap</label><b>${sinceTie}r <small>${tieCumPct}%</small></b></div>
+          <div class="marker"><label>Recent Draws</label><b>${recentDraws} / ${recent.length}</b></div>
           <div class="marker"><label>Avg Margin</label><b>Δ ${avgMargin}</b></div>
           <div class="marker"><label>High Die (5–6)</label><b>R ${ redHigh } / B ${ blueHigh }</b></div>
         </div>
+        <div class="muted small">Score hits marked: ${rows.filter(r => r.scoreHit).length} / ${rows.length} rolls</div>
         <h4>Head-to-Head Record</h4>
         <div class="ko-stats-grid">
           <div class="ko-stat-box red"><span>RED WINS</span><b>${redWins}</b><small>${redPct}% (avg: ${avgRed})</small></div>
@@ -128,6 +162,35 @@
       `;
     },
   };
+
+  const validDice = raw => Array.isArray(raw) && raw.length === 2 && raw.every(n => Number.isInteger(n) && n >= 1 && n <= 6);
+  function drawResult(raw) {
+    if (validDice(raw)) return raw[0] === raw[1];
+    return ['A', 'B', 'T'].includes(raw?.w) ? raw.w === 'T' : null;
+  }
+
+  function contextCounts(rows, size, match, exact = false) {
+    return rows.reduce((acc, next, i) => {
+      if (i < size || drawResult(next.raw) === null || (exact && !validDice(next.raw))) return acc;
+      const window = rows.slice(i - size, i);
+      if (!window.every(r => r.s === next.s && drawResult(r.raw) !== null && (!exact || validDice(r.raw)))) return acc;
+      const draw = drawResult(next.raw) ? 1 : 0;
+      return match(window) ? { ...acc, matches: acc.matches + 1, draws: acc.draws + draw }
+        : { ...acc, others: acc.others + 1, otherDraws: acc.otherDraws + draw };
+    }, { matches: 0, draws: 0, others: 0, otherDraws: 0 });
+  }
+
+  function higherDrawRate(counts) {
+    if (counts.matches < 20 || counts.others < 20) return false;
+    // Conservative intervals across the six predefined comparisons; no counts are pooled.
+    const interval = (wins, total) => {
+      const z = 2.87, z2 = z * z, rate = wins / total, denom = 1 + z2 / total;
+      const center = (rate + z2 / (2 * total)) / denom;
+      const radius = z * Math.sqrt(rate * (1 - rate) / total + z2 / (4 * total ** 2)) / denom;
+      return { low: center - radius, high: center + radius };
+    };
+    return interval(counts.draws, counts.matches).low > interval(counts.otherDraws, counts.others).high;
+  }
 
   const PIPS = { 1: [5], 2: [1, 9], 3: [1, 5, 9], 4: [1, 3, 7, 9], 5: [1, 3, 5, 7, 9], 6: [1, 3, 4, 6, 7, 9] };
   function pip(n) {

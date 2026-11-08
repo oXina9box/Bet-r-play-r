@@ -10,7 +10,7 @@ const ASSETS = {
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/index.html': ['index.html', 'text/html; charset=utf-8'],
   '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
-  ...Object.fromEntries(['data', 'app', 'history', 'engine', 'voice', 'vision', 'capture', 'sicbo-regions', 'sicbo-consensus', 'sicbo-recovery', 'screen', 'games/sicbo', 'games/teenpatti', 'games/kickoff']
+  ...Object.fromEntries(['data', 'app', 'history', 'engine', 'voice', 'vision', 'capture', 'sicbo-regions', 'sicbo-consensus', 'sicbo-recovery', 'screen', 'games/sicbo', 'games/teenpatti', 'games/baccarat', 'games/kickoff']
     .map(name => [`/js/${name}.js`, [`js/${name}.js`, 'text/javascript; charset=utf-8']])),
 };
 const HEADERS = {
@@ -21,7 +21,7 @@ const HEADERS = {
 };
 
 function write(file, body) {
-  const tmp = file + '.tmp';
+  const tmp = `${file}.${Date.now()}-${randomUUID()}.tmp`;
   try { fs.writeFileSync(tmp, body); fs.renameSync(tmp, file); }
   finally { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); }
 }
@@ -47,6 +47,7 @@ function createServer({ dataDir = path.join(__dirname, 'data'), maxBodyBytes = 1
       fs.mkdirSync(backups, { recursive: true });
       if (url === '/snapshot') write(path.join(backups, `pre-import-${Date.now()}-${randomUUID()}.json`), body);
       else {
+        if (fs.existsSync(file)) write(path.join(backups, `pre-save-${Date.now()}.json`), fs.readFileSync(file, 'utf8'));
         const day = new Date().toLocaleDateString('en-CA');
         write(path.join(backups, `${day}.json`), body);
         write(file, body);
@@ -117,7 +118,7 @@ function parsePort(value = PORT) {
   return port;
 }
 
-module.exports = { createServer, parsePort };
+module.exports = { createServer, parsePort, write };
 if (require.main === module) {
   let port;
   try { port = parsePort(process.argv.find(arg => arg.startsWith('--port='))?.slice(7)); }

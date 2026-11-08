@@ -622,7 +622,7 @@
   }
 
   /**
-   * Evaluates triple probability based on roll gap since last triple and recent roll sequences (pair clustering).
+   * Evaluates triple risk exposure based on roll gap since last triple and recent roll sequences (pair clustering).
    * Flags urgent when step >= 4 (5th bet).
    */
   function detectTripleRisk(gameId, rows, step = 0) {
@@ -665,11 +665,11 @@
 
     let message = '';
     if (urgent) {
-      message = `🚨 CRITICAL RISK (Step ${step + 1}): High triple probability! (${rollsSince} rolls since last triple${pairClustering ? ' with ' + pairCount + ' pairs in last 5 rolls' : ''}). A triple will immediately bust your set at maximum stake. Strongly recommend skipping this roll.`;
+      message = `🚨 CRITICAL RISK (Step ${step + 1}): Historical gap threshold reached (${rollsSince} rolls since last triple${pairClustering ? ' with ' + pairCount + ' pairs in last 5 rolls' : ''}). A triple will immediately bust your set at maximum stake. Strongly recommend skipping this roll.`;
     } else if (gapOverdue) {
-      message = `⚠️ TRIPLE OVERDUE: ${rollsSince} rolls since last triple (avg is 36). Suggest skipping this bet.`;
+      message = `⚠️ TRIPLE OVERDUE: Historical gap threshold reached (${rollsSince} rolls since last triple vs avg 36). Suggest skipping this bet or hedging with triple shield.`;
     } else {
-      message = `⚠️ TRIPLE RISK: ${rollsSince} rolls since last triple${pairClustering ? ' with frequent pairs detected' : ''}. Suggest skipping this bet.`;
+      message = `⚠️ TRIPLE RISK: Historical gap threshold reached (${rollsSince} rolls since last triple${pairClustering ? ' with frequent pairs detected' : ''}). Suggest skipping this bet or hedging with triple shield.`;
     }
 
     return {

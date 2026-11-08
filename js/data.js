@@ -102,7 +102,9 @@
         rounds.add(screen.screen.round);
       }
       const wager = e.wager === undefined ? {} : { wager: wagerEntry(e.wager) };
-      return { t: e.t, s: e.s, raw: rawEntry(e.raw, game), cfg: config(e.cfg), ...(e.nb === undefined ? {} : { nb: e.nb }), ...screen, ...wager };
+      check(e.scoreHit === undefined || (game === 'kickoff' && typeof e.scoreHit === 'boolean'));
+      const score = e.scoreHit === undefined ? {} : { scoreHit: e.scoreHit };
+      return { t: e.t, s: e.s, raw: rawEntry(e.raw, game), cfg: config(e.cfg), ...(e.nb === undefined ? {} : { nb: e.nb }), ...screen, ...wager, ...score };
     });
     return { cfg: config(value.cfg, game === 'sicbo' ? 0 : 1), sessions, entries };
   }

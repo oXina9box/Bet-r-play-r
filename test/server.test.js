@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const { createServer } = require('../server');
+const { createServer, write } = require('../server');
 const { createDefault } = require('../js/data');
 
 async function main() {
@@ -36,7 +36,13 @@ async function main() {
     assert.match(page.body, /Bet-R Play-R/);
     assert.match(page.headers['content-security-policy'], /script-src 'self'/);
     assert.equal(page.headers['x-content-type-options'], 'nosniff');
-    for (const asset of ['/styles.css', '/js/data.js', '/js/history.js', '/js/engine.js', '/js/games/kickoff.js', '/js/vision.js', '/js/capture.js', '/js/screen.js']) assert.equal((await request(asset)).status, 200);
+    const scriptMatches = [...page.body.matchAll(/<script\s+src="([^"]+)"/g)].map(m => '/' + m[1]);
+    const linkMatches = [...page.body.matchAll(/<link\s+[^>]*href="([^"]+)"/g)].map(m => '/' + m[1]);
+    assert.ok(scriptMatches.includes('/js/games/baccarat.js'), 'index.html includes baccarat.js');
+    for (const asset of [...linkMatches, ...scriptMatches]) {
+      const res = await request(asset);
+      assert.equal(res.status, 200, `Asset ${asset} status must be 200`);
+    }
     assert.equal((await request('/data')).body, 'null');
     for (const url of ['/server.js', '/run.sh', '/data/betrplayr.json', '/../server.js', '/.git/config']) assert.equal((await request(url)).status, 404);
     const hostile = { Origin: 'https://evil.example' };
@@ -66,6 +72,13 @@ async function main() {
     assert.equal(fs.readdirSync(path.join(dir, 'backups')).length, 1);
     assert.equal((await request('/snapshot', { method: 'POST', body: JSON.stringify(data), headers: { Origin: origin, 'Content-Type': 'application/json' } })).status, 200);
     assert.equal(fs.readdirSync(path.join(dir, 'backups')).length, 2);
+    const dataV2 = { ...data, savedAt: 789 };
+    assert.equal((await post(JSON.stringify(dataV2))).status, 200);
+    const backupFiles = fs.readdirSync(path.join(dir, 'backups'));
+    assert.ok(backupFiles.some(f => f.startsWith('pre-save-')), 'pre-save backup snapshot created');
+    const concurrentFile = path.join(dir, 'concurrent-test.txt');
+    await Promise.all(Array.from({ length: 25 }, (_, i) => Promise.resolve().then(() => write(concurrentFile, `write-${i}`))));
+    assert.ok(fs.existsSync(concurrentFile));
     assert.equal((await post(' '.repeat(4097))).status, 413);
     const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a69sAAAAASUVORK5CYII=';
     const scan = body => request('/ocr', { method: 'POST', body: JSON.stringify(body), headers: { Origin: origin, 'Content-Type': 'application/json' } });
@@ -80,7 +93,7 @@ async function main() {
     assert.equal(recognized.status, 200);
     assert.deepEqual(JSON.parse(recognized.body), [{ id: 'result', text: 'BIG 16', confidence: 94 }]);
     assert.ok(Buffer.isBuffer(calls[0][0].png));
-    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'betrplayr.json'), 'utf8')), data);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'betrplayr.json'), 'utf8')), dataV2);
     fs.writeFileSync(path.join(dir, 'betrplayr.json'), '{broken');
     assert.equal((await request('/data')).status, 500);
     fs.rmSync(path.join(dir, 'backups'), { recursive: true });

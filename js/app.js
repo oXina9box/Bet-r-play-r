@@ -199,6 +199,17 @@
     toast(noBetArmed ? 'No Bet ARMED — this entry will record as $0 bet' : 'No Bet disarmed');
   }
 
+  function toggleScoreHit() {
+    if (!ready || data.cur.game !== 'kickoff') return;
+    const b = book(), last = b.entries[b.entries.length - 1];
+    if (!last || last.s !== curSession().id) return toast('Record a roll first, then mark its score hit.');
+    const updated = { ...last, scoreHit: !last.scoreHit };
+    const key = `${data.cur.site}:${data.cur.game}`;
+    data = { ...data, books: { ...data.books, [key]: { ...b, entries: [...b.entries.slice(0, -1), updated] } } };
+    save(); render();
+    toast(updated.scoreHit ? 'Latest roll: score hit marked' : 'Latest roll: score hit removed');
+  }
+
   function commit(raw) {
     if (!ready) return;
     const bound = currentBinding();
@@ -245,7 +256,14 @@
     if (p) { pending = p; if (!pending.dice?.length) manualClaims.delete(bindingKey(currentBinding())); return render(); }
     const b = book();
     const last = b.entries[b.entries.length - 1];
-    if (last && last.s === curSession().id) { b.entries.pop(); manualBetAmount = null; save(); render(); }
+    if (last && last.s === curSession().id) {
+      b.entries.pop();
+      if (last.nb === true) noBetArmed = true;
+      if (last.manualAmount != null) manualBetAmount = last.manualAmount;
+      else manualBetAmount = null;
+      save();
+      render();
+    }
   }
 
   function clearPending() { cancelVoice(); pending = game().emptyPending(); manualBetAmount = null; manualClaims.delete(bindingKey(currentBinding())); render(); }
@@ -299,6 +317,13 @@
       nbBtn.classList.toggle('armed', noBetArmed);
       nbBtn.innerHTML = `No Bet ${noBetArmed ? '(ARMED) ' : ''}<span class="kbd">X</span>`;
     }
+    const scoreButton = $('scoreHit');
+    const lastRoll = view.rows[view.rows.length - 1];
+    scoreButton.hidden = data.cur.game !== 'kickoff';
+    scoreButton.disabled = !lastRoll;
+    scoreButton.setAttribute?.('aria-pressed', String(!!lastRoll?.scoreHit));
+    scoreButton.classList.toggle('armed', !!lastRoll?.scoreHit);
+    scoreButton.innerHTML = `${lastRoll?.scoreHit ? '✓ Score hit' : 'Score hit'} <span class="kbd">0</span>`;
     renderStrip();
     renderSettings();
     renderStats();
@@ -345,10 +370,18 @@
 
     let alertBanner = '';
     const prob = Engine.specialProbability ? Engine.specialProbability(data.cur.game, view.rows) : null;
-    if (prob && (prob.isOverdue || prob.isHigh)) {
+    if (g.id !== 'kickoff' && prob && (prob.isOverdue || prob.isHigh)) {
       alertBanner = `<div class="special-alert ${prob.isHigh ? 'high' : ''}">${escapeHTML(prob.message)}<small>Past waiting does not increase the next outcome's probability.</small></div>`;
     }
 
+    let drawBanner = '';
+    if (g.id === 'kickoff') {
+      const signal = g.drawSignal(book().entries, last || null);
+      const evidence = signal.evidence;
+      const contexts = signal.patterns.filter(p => p.active);
+      const patternLine = contexts.map(p => `${p.label}: ${p.draws}/${p.matches}${p.play ? ' ✓' : ''}`).join(' · ');
+      drawBanner = `<div id="drawSignal" class="draw-signal ${signal.play ? 'play' : 'wait'}" role="status"><strong>${signal.play ? 'PLAY DRAW' : 'WAIT DRAW'}</strong><span>${escapeHTML(signal.reason)}</span><small>${escapeHTML(evidence.label)} · Draws: ${evidence.draws}/${evidence.matches} matches vs ${evidence.otherDraws}/${evidence.others} other contexts · All saved history · Historical signal</small>${patternLine ? `<small>${escapeHTML(patternLine)}</small>` : ''}</div>`;
+    }
     const b = book();
     let targetBadge = '';
     if (b.cfg.targetProfit > 0) {
@@ -381,7 +414,7 @@
         <div id="tripleAlertOverlay" class="triple-overlay ${tripleRisk.urgent ? 'urgent' : 'warning'}">
           <div class="triple-overlay-card">
             <div class="triple-overlay-badge">${tripleRisk.urgent ? '🚨 CRITICAL STEP 5 ALERT' : '⚠️ TRIPLE RISK DETECTED'}</div>
-            <div class="triple-overlay-title">${tripleRisk.urgent ? 'HIGH TRIPLE PROBABILITY ON STEP 5' : 'TRIPLE DUE SOON'}</div>
+            <div class="triple-overlay-title">${tripleRisk.urgent ? 'HIGH STAKE AT RISK ON STEP 5' : 'HISTORICAL GAP THRESHOLD REACHED'}</div>
             <div class="triple-overlay-body">${escapeHTML(tripleRisk.message)}</div>
             ${shieldNotice}
             <div class="triple-overlay-actions">
@@ -467,7 +500,7 @@
     }
     $('next').className = 'next ' + nx.phase + (nx.phase === 'bet' ? ' side-' + nx.side.toLowerCase() : '') + (nx.recovery ? ' recovery' : '');
     const skip = nx.phase === 'bet' ? `<button id="skipBetOnce" class="skip-bet ${noBetArmed ? 'armed' : ''}">${noBetArmed ? 'Cancel one-time skip' : 'Skip this bet once'}</button>` : '';
-    $('next').innerHTML = tripleOverlay + targetBadge + recBanner + alertBanner + dragonBanner + h + ladderBadge + lastLine + skip;
+    $('next').innerHTML = tripleOverlay + targetBadge + recBanner + drawBanner + alertBanner + dragonBanner + h + ladderBadge + lastLine + skip;
     $('skipBetOnce')?.addEventListener('click', toggleNoBet);
     $('betMinus')?.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -517,8 +550,10 @@
     spokenSignature = signature;
     const detail = last.o.total ? `total ${last.o.total}.` : last.o.red ? `red ${last.o.red}, blue ${last.o.blue}.` : '';
     const text = `${g.entryName}: ${raw}. ${outcome}. ${detail} ${last.lossAll ? 'Triple. ' : ''}${result} ${advice}`;
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(new window.SpeechSynthesisUtterance(text));
+    try {
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(new window.SpeechSynthesisUtterance(text));
+    } catch {}
   }
 
   function historyChip(r) {
@@ -533,8 +568,9 @@
     if ((g.id === 'teenpatti' || g.id === 'baccarat') && r.screen && r.raw?.w) c.sub = 'winner only';
     const nbText = r.noBet ? ' [NO BET] ' : '';
     const recText = r.recovery ? ` [Recovery ${r.recovery.currentSet}/${r.recovery.totalSets}] ` : '';
-    const tip = `${nbText}${recText}` + (r.push ? `Tie, played${as || ' as nothing (no prior winner)'} · ` : '') + (r.role === 'factor' ? `Factor · fading ${r.pattern}` : r.role === 'factor-wait' ? `Delayed bet wait (${r.delayLeft} remaining)` : r.role === 'factor-break' ? 'Pattern broke during delay; sequence reset' : r.role === 'cooldown' ? `Cooldown after ${r.cooldownReason || 'bust'} (${r.cooldownLeft} remaining)` : r.bet ? `Bet ${g.sides[r.bet.side].label} ${fmt(r.bet.amount)} → ${r.result}` : '') + ' · double-click to toggle No Bet';
-    return `<div class="chip ${sideCls}${r.lossAll ? ' special' : ''}${end}${r.noBet ? ' no-bet' : ''}" data-entry-idx="${r.entryIdx}" title="${escapeHTML(tip)}">${role}${res}<b>${escapeHTML(c.main)}</b><small>${escapeHTML(c.sub)}</small>${c.flag ? `<i class="flag">${escapeHTML(c.flag)}</i>` : ''}</div>`;
+    const scoreText = r.scoreHit ? ' [SCORE HIT] ' : '';
+    const tip = `${scoreText}${nbText}${recText}` + (r.push ? `Tie, played${as || ' as nothing (no prior winner)'} · ` : '') + (r.role === 'factor' ? `Factor · fading ${r.pattern}` : r.role === 'factor-wait' ? `Delayed bet wait (${r.delayLeft} remaining)` : r.role === 'factor-break' ? 'Pattern broke during delay; sequence reset' : r.role === 'cooldown' ? `Cooldown after ${r.cooldownReason || 'bust'} (${r.cooldownLeft} remaining)` : r.bet ? `Bet ${g.sides[r.bet.side].label} ${fmt(r.bet.amount)} → ${r.result}` : '') + ' · double-click to toggle No Bet';
+    return `<div class="chip ${sideCls}${r.lossAll ? ' special' : ''}${end}${r.noBet ? ' no-bet' : ''}" data-entry-idx="${r.entryIdx}" title="${escapeHTML(tip)}">${role}${res}<b>${escapeHTML(c.main)}</b><small>${escapeHTML(c.sub)}${r.scoreHit ? ' · ★ SCORE' : ''}</small>${c.flag ? `<i class="flag">${escapeHTML(c.flag)}</i>` : ''}</div>`;
   }
 
 
@@ -664,13 +700,19 @@
     seg($('waitSeg'), [[0, '0 (none)'], [1, '1 roll'], [2, '2 rolls'], [3, '3 rolls']], b.cfg.waitBust || 0, (v) => setCfg('waitBust', Number(v)));
     seg($('waitWinSeg'), [[0, data.cur.game === 'sicbo' ? '0 (standard)' : '0'], [1, data.cur.game === 'sicbo' ? '1' : '1 (standard)'], [2, '2'], [3, '3'], [4, '4']], b.cfg.waitWin || 0, (v) => setCfg('waitWin', Number(v)));
     seg($('waitBetSeg'), [[0, '0 (none)'], [1, '1'], [2, '2'], [3, '3']], b.cfg.waitBet || 0, (v) => setCfg('waitBet', Number(v)));
-    seg($('recSeg'), [
-      [0, 'Off (Flat)'],
-      [4, '4 Sets'],
-      [3, '3 Sets'],
-      [2, '2 Sets'],
-      [1, '1 Set'],
-    ], b.cfg.recovery || 0, (v) => setCfg('recovery', Number(v)));
+    if (b.cfg.prog && b.cfg.prog.startsWith('fib')) {
+      seg($('recSeg'), [
+        [0, 'Off (Self-Recovering)'],
+      ], 0, () => {});
+    } else {
+      seg($('recSeg'), [
+        [0, 'Off (Flat)'],
+        [4, '4 Sets'],
+        [3, '3 Sets'],
+        [2, '2 Sets'],
+        [1, '1 Set'],
+      ], b.cfg.recovery || 0, (v) => setCfg('recovery', Number(v)));
+    }
     renderRecNotes(b.cfg);
     const progObj = PROGRESSIONS[b.cfg.prog] || PROGRESSIONS.double;
     const mults = Array.from({ length: b.cfg.n - 1 }, (_, i) => progObj.mult(i));
@@ -692,6 +734,15 @@
         <div class="ladder-badge" style="margin-top:6px; margin-bottom:6px;">
           <div><b>${icon} Continuous ${name} Active</b></div>
           <div class="ladder-flow">Climbs on loss (+1) · Drops ${drop} on win${bankNotice} · Recovery is not guaranteed</div>
+        </div>
+      `;
+      return;
+    }
+    if (cfg.prog === 'fib') {
+      el.innerHTML = `
+        <div class="ladder-badge" style="margin-top:6px; margin-bottom:6px;">
+          <div><b>🐚 Fibonacci Active</b></div>
+          <div class="ladder-flow">Self-recovering progression · Extra recovery sets disabled</div>
         </div>
       `;
       return;
@@ -747,7 +798,15 @@
   function setCfg(k, v) {
     if (!ready || (k !== 'prog' && k !== 'entryMode' && (!Number.isFinite(v) || !(v >= 0)))) return;
     const b = book(), key = data.cur.site + ':' + data.cur.game;
-    try { data = validate({ ...data, books: { ...data.books, [key]: { ...b, cfg: { ...b.cfg, [k]: v } } } }); }
+    if (k === 'recovery' && b.cfg.prog && b.cfg.prog.startsWith('fib') && v !== 0) {
+      toast('Fibonacci progressions are self-recovering');
+      return;
+    }
+    const nextCfg = { ...b.cfg, [k]: v };
+    if (k === 'prog' && typeof v === 'string' && v.startsWith('fib')) {
+      nextCfg.recovery = 0;
+    }
+    try { data = validate({ ...data, books: { ...data.books, [key]: { ...b, cfg: nextCfg } } }); }
     catch (err) { toast('Invalid setting'); return; }
     save();
     if (k === 'entryMode') renderPad();
@@ -1030,6 +1089,7 @@
     save(); render();
     toast(entry.nb ? 'Marked as No Bet ($0)' : 'Marked as bet placed');
   });
+  $('scoreHit').onclick = toggleScoreHit;
   $('newSession').onclick = newSession;
   $('site').onchange = (e) => switchTo(e.target.value, data.cur.game);
   // Inline "add site" field: Enter adds, Esc or clicking away cancels. No dialogs.
@@ -1164,12 +1224,16 @@
 
   document.addEventListener('keydown', (e) => {
     if (!ready || $('optionsMenu')?.matches?.(':popover-open') || $('screenAreaDialog')?.open) return;
-    if (e.target.matches?.('input, select, textarea') || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.target.matches?.('input, select, textarea') || e.target.isContentEditable || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (['Enter', ' ', 'Tab'].includes(e.key) && (data.cur.game === 'teenpatti' || data.cur.game === 'baccarat') && pending.active?.rank) {
+      e.preventDefault(); press(e.key === ' ' ? 'space' : e.key.toLowerCase());
+      return;
+    }
     if (e.key === ' ' && data.voiceEntry) {
       e.preventDefault();
       if (e.repeat || voiceHeld || voiceBinding) return;
       voiceBinding = currentBinding(); voiceHeld = true;
-      window.speechSynthesis?.cancel();
+      try { window.speechSynthesis?.cancel(); } catch {}
       if (!window.Voice?.start()) { voiceHeld = false; voiceBinding = null; }
       return;
     }
@@ -1183,6 +1247,7 @@
       toggleVoice();
     }
     else if (e.key.toLowerCase() === 'x') { e.preventDefault(); toggleNoBet(); }
+    else if (e.key === '0' && data.cur.game === 'kickoff') { e.preventDefault(); if (!e.repeat) toggleScoreHit(); }
     else if (/^[0-9]$/.test(e.key)) { e.preventDefault(); press(e.key); }
     else if (e.key.length === 1) press(e.key.toLowerCase());
   });
@@ -1197,6 +1262,7 @@
     renderPad(); render(); renderSaveStatus();
     document.querySelectorAll('button, input, select').forEach((el) => { el.disabled = false; });
     wire();
+    if (data.cur.game === 'kickoff') $('scoreHit').disabled = !view.rows.length;
     restoreRollRecoveries();
   });
 })();

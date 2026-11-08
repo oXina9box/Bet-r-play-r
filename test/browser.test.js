@@ -546,6 +546,27 @@ async function main() {
     assert.deepEqual(banners.map(b => b.result?.side), ['B', null], `Kickoff banner crops: ${JSON.stringify(banners)}`);
     await require('./kickoff-live')(capture, file, reads, waitFor, checkReloadedResult);
     await checkSplitOCR(capture, 'kickoff', reads);
+    // Seed history through the validated UI import path; latest ordered pair is R6/B4.
+    const drawHistory = require('../js/data').validate(JSON.parse(fs.readFileSync(file)));
+    const koBook = drawHistory.books['shuff:kickoff'];
+    const sessionId = koBook.sessions.at(-1).id;
+    koBook.entries = Array.from({ length: 25 }, (_, i) => [[6, 4], [1, 1]].map((raw, j) => ({ s: sessionId, t: i * 2 + j + 1, raw, cfg: koBook.cfg }))).flat();
+    koBook.entries.push({ s: sessionId, t: 100, raw: [6, 4], cfg: koBook.cfg });
+    await capture.locator('#import').setInputFiles({ name: 'draw-history.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(drawHistory)) });
+    await capture.waitForFunction(() => document.querySelector('#drawSignal').textContent.includes('PLAY DRAW'));
+    assert.match(await capture.locator('#drawSignal').textContent(), /24\/24 matches/);
+    assert.match(await capture.locator('#drawSignal').textContent(), /Draw, one off/);
+    await capture.locator('#pad [data-key="wt"]').click();
+    await capture.waitForFunction(() => document.querySelector('#drawSignal').textContent.includes('WAIT DRAW'));
+    assert.match(await capture.locator('#drawSignal').textContent(), /After a draw/);
+    koBook.entries = Array.from({ length: 35 }, (_, i) => [...'TTTTAAA'].map((w, j) => ({
+      s: sessionId, t: i * 7 + j + 1, raw: { w: w === 'T' ? 'T' : 'A' }, cfg: koBook.cfg,
+    }))).flat();
+    koBook.entries.push({ s: sessionId, t: 1000, raw: { w: 'T' }, cfg: koBook.cfg });
+    await capture.locator('#import').setInputFiles({ name: 'draw-clumps.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(drawHistory)) });
+    await capture.waitForFunction(() => document.querySelector('#drawSignal').textContent.includes('PLAY DRAW'));
+    assert.match(await capture.locator('#drawSignal').textContent(), /After a draw/);
+    assert.match(await capture.locator('#drawSignal').textContent(), /105\/140 matches/);
     for (const width of [1024, 960, 760, 600, 390]) {
       await capture.setViewportSize({ width, height: 900 });
       const layout = await capture.evaluate(() => ({

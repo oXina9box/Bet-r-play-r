@@ -65,6 +65,18 @@ module.exports = async function checkKickoffLive(page, file, reads, waitFor, che
   await checkReloadedResult(page, 'kickoff');
   assert.equal(entries().length, 1, 'reload and a fresh sharing stream cannot duplicate the settled roll');
   assert.deepEqual(entries()[0], saved, 'reload preserves dice and metadata');
+  await page.locator('#scoreHit').click();
+  await waitFor(() => entries()[0].scoreHit === true, 'Score hit mark not saved');
+  assert.equal(entries().length, 1);
+  await page.keyboard.press('0');
+  await waitFor(() => entries()[0].scoreHit === false, 'Zero did not remove score hit');
+  await page.keyboard.press('0');
+  await waitFor(() => entries()[0].scoreHit === true, 'Zero did not mark score hit');
+  saved.scoreHit = true;
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector('#scoreHit').getAttribute('aria-pressed') === 'true');
+  assert.match(await page.locator('#strip').textContent(), /SCORE/);
+  assert.match(await page.locator('#drawSignal').textContent(), /WAIT DRAW/);
   const downloaded = page.waitForEvent('download');
   await page.locator('#optionsToggle').click();
   await page.locator('#export').click();

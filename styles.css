@@ -780,6 +780,13 @@ body[data-game="sicbo"] .reader-calibration { display: block; margin-top: 8px; }
   body[data-game] .last { font-size: 10px; margin-top: 1px; line-height: 1.2; }
   body[data-game] .skip-bet { justify-self: center; font-size: 9px; padding: 2px 6px; margin-top: 1px; }
   body[data-game] .ladder-badge, body[data-game] .special-alert { margin-top: 1px; padding: 2px 5px; font-size: 8px; gap: 4px; flex-wrap: wrap; }
+  body[data-game] .triple-shield-badge,
+  body[data-game] .dragon-alert {
+    margin-top: 1px;
+    padding: 2px 5px;
+    font-size: 8px;
+    line-height: 1.2;
+  }
   body[data-game] .recovery-banner { margin: 0; padding: 1px 4px; font-size: 8px; }
   body[data-game] .left > .entry { flex: 0 0 auto; }
   body[data-game] .pending { min-height: 26px; margin: 0 0 3px; gap: 5px; }
@@ -863,3 +870,9 @@ body[data-game="sicbo"] .reader-calibration { display: block; margin-top: 8px; }
 }
 
 body[data-game] .insights { display: none; }
+
+.draw-signal { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 8px 10px; margin-bottom: 8px; border: 1px solid #767d8c; border-radius: 8px; background: #202532; color: #e6e8ee; }
+.draw-signal strong { font-size: 18px; }
+.draw-signal small { flex-basis: 100%; font-size: 11px; }
+.draw-signal.play { border-color: #52d69b; background: #12392c; color: #c0f9dd; }
+#scoreHit.armed { border-color: #52d69b; color: #52d69b; }

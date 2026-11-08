@@ -43,6 +43,7 @@ assert.ok(risk30, '30 rolls triggers triple risk');
 assert.equal(risk30.due, true);
 assert.equal(risk30.rollsSince, 30);
 assert.equal(risk30.urgent, false, 'Step 1 is not urgent');
+assert.match(risk30.message, /Historical gap threshold reached/);
 
 // Overdue threshold (36 rolls)
 const rolls36 = Array.from({ length: 36 }, () => rollRow(10));
@@ -51,6 +52,7 @@ assert.ok(risk36);
 assert.equal(risk36.gapOverdue, true);
 assert.match(risk36.message, /TRIPLE OVERDUE/);
 
+assert.match(risk36.message, /Historical gap threshold reached/);
 // Pair clustering detection: 2 pairs in last 5 rolls after 15 rolls
 const rollsPairCluster = [
   ...Array.from({ length: 15 }, () => rollRow(10)), // 2, 3, 5 (no pair)
@@ -72,6 +74,8 @@ assert.equal(riskStep5.urgent, true, 'Step 5 bet flags urgent');
 assert.match(riskStep5.message, /CRITICAL RISK/);
 assert.match(riskStep5.message, /Strongly recommend skipping/);
 
+assert.match(riskStep5.message, /Historical gap threshold reached/);
+assert.match(riskStep5.shieldMessage, /TRIPLE SHIELD/);
 // Reset on actual triple
 const rollsAfterTriple = [...rolls36, rollRow('triple4'), rollRow(10), rollRow(11)];
 assert.equal(Engine.detectTripleRisk('sicbo', rollsAfterTriple), null, 'Risk clears after recent triple');

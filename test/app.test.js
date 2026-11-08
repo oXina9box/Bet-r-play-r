@@ -55,6 +55,25 @@ function boot({ cache = null, get = async () => ({ ok: true, json: async () => f
 }
 
 (async () => {
+  const scoreApp = boot({ cache: { ...fixture(), cur: { site: 'shuff', game: 'kickoff' } }, protocol: 'file:' });
+  await tick();
+  const scoreEntries = () => JSON.parse(scoreApp.stored.get('betrplayr.v1')).books['shuff:kickoff']?.entries || [];
+  scoreApp.key('0'); assert.equal(scoreEntries().length, 0);
+  scoreApp.key('6'); scoreApp.key('4');
+  scoreApp.key('0'); assert.equal(scoreEntries()[0].scoreHit, true);
+  scoreApp.key('0', { repeat: true }); assert.equal(scoreEntries()[0].scoreHit, true);
+  assert.equal(scoreEntries().length, 1, 'mark does not add a roll');
+  assert.match(scoreApp.element('strip').innerHTML, /SCORE/);
+  scoreApp.element('scoreHit').onclick(); assert.equal(scoreEntries()[0].scoreHit, false);
+  scoreApp.key('0', { target: { matches: () => true } }); assert.equal(scoreEntries()[0].scoreHit, false);
+  scoreApp.key('0'); scoreApp.key('2'); scoreApp.key('3');
+  assert.equal(scoreEntries()[0].scoreHit, true);
+  assert.equal(scoreEntries()[1].scoreHit, undefined, 'new rolls start unmarked');
+  scoreApp.element('newSession').onclick(); scoreApp.key('0');
+  assert.equal(scoreEntries()[1].scoreHit, undefined, 'empty session cannot mark old rolls');
+  scoreApp.pick('games', 'sicbo'); scoreApp.key('0');
+  assert.equal(scoreEntries().length, 2);
+  assert.equal(scoreApp.element('scoreHit').hidden, true);
   for (const [game, transcript, raw] of [
     ['sicbo', 'one six two', [1, 6, 2]],
     ['kickoff', 'six two', [6, 2]],
@@ -452,5 +471,75 @@ function boot({ cache = null, get = async () => ({ ok: true, json: async () => f
   assert.equal(switched.state().books['shuff:sicbo'].sessions[0].endedAt, undefined, 'switching games cannot revive the old deadline');
   assert.equal(switched.state().books['shuff:kickoff'].sessions[0].endedAt, undefined);
 
+
+  // Spacebar confirmation over voice entry in card games
+  let voiceStarts = 0;
+  const cardVoiceApp = boot({
+    protocol: 'file:',
+    cache: { ...fixture(), cur: { site: 'shuff', game: 'teenpatti' } },
+    beforeApp(context) {
+      context.Voice = { isSupported: () => true, init() {}, start: () => { voiceStarts++; return true; }, stop: () => {}, cancel() {}, active: () => false };
+    }
+  });
+  await tick();
+  cardVoiceApp.element('voiceEntry').checked = true;
+  cardVoiceApp.element('voiceEntry').onchange?.({ target: { checked: true } });
+  cardVoiceApp.key('a');
+  assert.equal(voiceStarts, 0);
+  cardVoiceApp.key(' ');
+  assert.equal(voiceStarts, 0, 'Spacebar confirmed pending card rank rather than starting voice');
+  assert.match(cardVoiceApp.element('pending').innerHTML, /A♥/, 'Card Ah confirmed by spacebar');
+  cardVoiceApp.key(' ');
+  assert.equal(voiceStarts, 1, 'Spacebar starts voice when no card rank pending');
+  cardVoiceApp.key('a', { target: { isContentEditable: true } });
+  assert.equal(cardVoiceApp.element('pending').innerHTML.includes('rank-pending'), false, 'contenteditable ignored');
+
+  // Undo restores armed No Bet and manual bet amount
+  const undoApp = boot({ protocol: 'file:' });
+  await tick();
+  undoApp.key('x');
+  assert.match(undoApp.element('pending').innerHTML, /NO BET ARMED/);
+  undoApp.key('1'); undoApp.key('2'); undoApp.key('3');
+  const undoState1 = JSON.parse(undoApp.stored.get('betrplayr.v1'));
+  const entries1 = undoState1.books['shuff:sicbo'].entries;
+  assert.equal(entries1.length, 1);
+  assert.equal(entries1[0].nb, true);
+  assert.equal(undoApp.element('pending').innerHTML.includes('NO BET ARMED'), false, 'No Bet disarmed after commit');
+  undoApp.key('Backspace');
+  const undoState2 = JSON.parse(undoApp.stored.get('betrplayr.v1'));
+  assert.equal(undoState2.books['shuff:sicbo'].entries.length, 0);
+  assert.match(undoApp.element('pending').innerHTML, /NO BET ARMED/, 'undo restored armed No Bet');
+
+  // Enforce recovery=0 and locked selector for Fibonacci progressions
+  const fibApp = boot({ protocol: 'file:' });
+  await tick();
+  fibApp.pick('recSeg', 2);
+  let fibState = JSON.parse(fibApp.stored.get('betrplayr.v1'));
+  assert.equal(fibState.books['shuff:sicbo'].cfg.recovery, 2);
+  fibApp.pick('progSeg', 'fib_ladder');
+  fibState = JSON.parse(fibApp.stored.get('betrplayr.v1'));
+  assert.equal(fibState.books['shuff:sicbo'].cfg.prog, 'fib_ladder');
+  assert.equal(fibState.books['shuff:sicbo'].cfg.recovery, 0, 'switching to fib resets recovery to 0');
+  assert.match(fibApp.element('recSeg').innerHTML, /Off \(Self-Recovering\)/);
+  fibApp.pick('recSeg', 2);
+  fibState = JSON.parse(fibApp.stored.get('betrplayr.v1'));
+  assert.equal(fibState.books['shuff:sicbo'].cfg.recovery, 0, 'recovery remains 0 for fib_ladder');
+
+  // Protect speech synthesis calls against browser exceptions
+  const speechApp = boot({
+    protocol: 'file:',
+    beforeApp(context) {
+      context.speechSynthesis = {
+        cancel() {},
+        speak() { throw new Error('Speech synthesis error'); },
+      };
+      context.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
+    }
+  });
+  await tick();
+  speechApp.element('audioFeedback').checked = true;
+  speechApp.element('audioFeedback').onchange?.({ target: { checked: true } });
+  speechApp.key('1'); speechApp.key('2'); speechApp.key('3');
+  assert.equal(JSON.parse(speechApp.stored.get('betrplayr.v1')).books['shuff:sicbo'].entries.length, 1);
   console.log('All app tests passed');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
