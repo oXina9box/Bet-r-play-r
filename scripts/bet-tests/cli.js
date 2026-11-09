@@ -9,6 +9,7 @@ const {pathToFileURL}=require('node:url');
 const ExcelJS=require('exceljs');
 const {GAME_META,loadHistory}=require('./history');
 const {createWorkbook,readInputs,cacheResults}=require('./workbook');
+const {expandWorkbook}=require('./compact');
 const {simulate}=require('./engine');
 const {defaultScenario}=require('./engine');
 const {presets}=require('./schema');
@@ -39,8 +40,9 @@ async function generate({game,sourceDir,sourceFile,outputDir=path.resolve('bet t
     if(refresh&&(await exists(ods)||await exists(xlsx))){
       const previous=await exists(ods)?await convertFile(ods,'xlsx',stage):xlsx;
       const workbook=new ExcelJS.Workbook();await workbook.xlsx.readFile(previous);inputs=readInputs(workbook,game);
-      const sourceCell=workbook.getWorksheet('Guide')?.getCell('B2');
-      previousRounds=Math.max(0,(workbook.getWorksheet('Rounds')?.rowCount||1)-1);
+      const previousLayout=workbook.getWorksheet('Configurations')?expandWorkbook(workbook):workbook;
+      const sourceCell=previousLayout.getWorksheet('Guide')?.getCell('B2');
+      previousRounds=Math.max(0,(previousLayout.getWorksheet('Rounds')?.rowCount||1)-1);
       if(sourceCell&&typeof sourceCell.value==='string'&&/\.(xlsx|csv|json)$/i.test(sourceCell.value))previousSource=sourceCell.value;
     }
     const history=await loadHistory(game,{sourceDir:sourceDir||path.resolve('live results'),sourceFile:sourceFile||(!sourceDir&&previousSource?previousSource:undefined)});

@@ -169,7 +169,7 @@ function buildLedger(ws, { scenarioColumn, ruleRows, ladderRanges, capacity, his
     const alloc1=iff(`${cfg('players')}=1`,desired.D,iff(`${cfg('drawOwner')}="P1"`,desired.D,iff(`${cfg('drawOwner')}="P2"`,0,`CEILING(${desired.D}/2,${cfg('increment')})`)));
     const alloc2=`(${desired.D}-${alloc1})`;
     const stake1=iff(`${cfg('players')}=1`,`${actualColors}+${desired.D}`,`${desired.A}+${alloc1}`);
-    const stake2=`${desired.B}+${alloc2}`;
+    const stake2=`(${desired.B}+${alloc2})`;
     const invalidTerms=[both(`${cfg('players')}=1`,`${desired.A}>0`,`${desired.B}>0`),both(`${cfg('drawMode')}="off"`,`${desired.D}>0`)];
     for(const [index,lane] of LANES.entries()) {
       const letter=String.fromCharCode(67+index),stepLetter=String.fromCharCode(70+index);

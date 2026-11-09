@@ -63,25 +63,46 @@ def main():
                     cell.setString(str(value))
             document.calculateAll()
             output = {}
-            for sheet in document.Sheets:
-                if sheet.Name in ['Guide', 'Rounds', 'Scenarios', 'Rules', 'Overrides', 'Ladders']:
-                    continue
-                cursor = sheet.createCursor()
-                cursor.gotoEndOfUsedArea(False)
-                last = cursor.RangeAddress.EndRow
-                values = sheet.getCellRangeByPosition(0, 0, 30 if sheet.Name != 'Comparison' else 11, last).getDataArray()
+
+            def inspect(sheet, start_col, width, last):
+                values = sheet.getCellRangeByPosition(start_col, 0, start_col + width - 1, last).getDataArray()
                 errors = []
                 for row in range(last + 1):
-                    for col in range(31 if sheet.Name != 'Comparison' else 12):
+                    for col in range(start_col, start_col + width):
                         cell = sheet.getCellByPosition(col, row)
                         error = cell.getError()
                         if error:
                             errors.append({'row': row+1, 'column': col+1, 'error': error, 'formula': cell.getFormula()})
-                output[sheet.Name] = {'values': values, 'errors': errors}
+                return {'values': values, 'errors': errors}
+
+            if document.Sheets.hasByName('Configurations'):
+                settings = document.Sheets.getByName('Configurations')
+                if settings.getCellRangeByName('W1').getString() != 'BET_R_COMPACT_V1':
+                    raise RuntimeError('Compact workbook metadata is missing')
+                metadata = json.loads(settings.getCellRangeByName('W2').getString())
+                sheet = document.Sheets.getByName('Config Results')
+                cursor = sheet.createCursor()
+                cursor.gotoEndOfUsedArea(False)
+                last = cursor.RangeAddress.EndRow
+                for name in metadata['ledgerNames']:
+                    mapping = metadata['maps'][name]
+                    output[name] = inspect(sheet, mapping['col'], 31, last)
+                comparison = inspect(sheet, 0, 12, metadata['count'] + 3)
+                comparison['values'] = comparison['values'][3:]
+                output['Comparison'] = comparison
+                output['Config Results'] = inspect(sheet, 0, 12, last)
+                output['sheetNames'] = list(document.Sheets.getElementNames())
+            else:
+                for sheet in document.Sheets:
+                    if sheet.Name in ['Guide', 'Rounds', 'Scenarios', 'Rules', 'Overrides', 'Ladders']:
+                        continue
+                    cursor = sheet.createCursor()
+                    cursor.gotoEndOfUsedArea(False)
+                    output[sheet.Name] = inspect(sheet, 0, 12 if sheet.Name == 'Comparison' else 31, cursor.RangeAddress.EndRow)
             pathlib.Path(args.output).write_text(json.dumps(output))
             if args.save:
                 document.store()
-            print('CALC_RECALCULATED ' + str(sum(len(s['errors']) for s in output.values())) + ' errors')
+            print('CALC_RECALCULATED ' + str(sum(len(s['errors']) for s in output.values() if isinstance(s, dict))) + ' errors')
         finally:
             if document is not None:
                 document.close(True)

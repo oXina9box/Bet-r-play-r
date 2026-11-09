@@ -25,7 +25,7 @@ function editable(cell, choices) {
   if(choices)cell.dataValidation={type:'list',allowBlank:false,formulae:[`"${choices.map(v=>typeof v==='boolean'?String(v).toUpperCase():v).join(',')}"`],showErrorMessage:true,error:'Choose a listed value.'};
 }
 
-function createWorkbook({game,rounds=[],scenarios,rules=[],overrides=[],capacity,ruleSlots=12,source='Awaiting history'}) {
+function createLegacyWorkbook({game,rounds=[],scenarios,rules=[],overrides=[],capacity,ruleSlots=12,source='Awaiting history'}) {
   if(!GAME_META[game])throw new Error('Unknown game');
   if(!Number.isInteger(ruleSlots)||ruleSlots<1||ruleSlots>128)throw new Error('Rule slots must be 1–128 per scenario');
   const configs=scenarios||presets(defaultScenario,game);
@@ -165,6 +165,7 @@ function createWorkbook({game,rounds=[],scenarios,rules=[],overrides=[],capacity
 }
 
 function readInputs(wb,game) {
+  if(wb.getWorksheet('Configurations'))wb=require('./compact').expandWorkbook(wb);
   const sheet=wb.getWorksheet('Scenarios');if(!sheet)throw new Error('Not a betting test workbook: missing Scenarios');
   const inputRows=new Map();
   for(let row=3;row<=sheet.rowCount;row++)inputRows.set(String(text(sheet.getCell(row,1))),row);
@@ -214,7 +215,7 @@ function readInputs(wb,game) {
   return {scenarios:updated,rules,overrides};
 }
 
-function cacheResults(wb,snapshots){
+function cacheLegacyResults(wb,snapshots){
   const cache=(cell,result)=>{if(cell.formula)cell.value={formula:cell.formula,result};};
   for(const [index,{config,result}] of snapshots.entries()){
     const sheet=wb.getWorksheet(config.id);
@@ -234,4 +235,19 @@ function cacheResults(wb,snapshots){
     for(const [column,value] of Object.entries(values))cache(row.getCell(Number(column)),value);
   }
 }
+function createWorkbook(options) {
+  const legacy=createLegacyWorkbook(options);
+  const compact=require('./compact').compactWorkbook(legacy);
+  Object.defineProperty(compact,'_legacy',{value:legacy});
+  return compact;
+}
+
+function cacheResults(wb,snapshots) {
+  const legacy=wb._legacy;
+  if(!legacy)throw new Error('Cache results immediately after creating the workbook.');
+  cacheLegacyResults(legacy,snapshots);
+  const model=require('./compact').compactWorkbook(legacy).model;
+  wb.model={...model,worksheets:model.worksheets.map(sheet=>({...sheet,mergeCells:sheet.merges}))};
+}
+
 module.exports={createWorkbook,readInputs,text,cacheResults};

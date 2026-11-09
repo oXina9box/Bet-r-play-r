@@ -12,6 +12,7 @@ const {presets,ROW}=require('./schema');
 const ExcelJS=require('exceljs');
 const {GAME_META}=require('./history');
 const {readInputs,text}=require('./workbook');
+const {mappedCell,expandWorkbook,getLayout}=require('./compact');
 const execute=promisify(execFile);
 
 function fixtures(game){
@@ -45,8 +46,10 @@ async function verify({directory,keep=false}={}){
       const workbook=createWorkbook({game,rounds,scenarios:configs,rules,overrides,capacity:rounds.length+1,ruleSlots:2});
       const file=path.join(dir,`${game}.xlsx`),output=path.join(dir,`${game}.json`);
       await workbook.xlsx.writeFile(file);
-      await execute('python3',[path.join(__dirname,'verify-calc.py'),file,'--output',output],{timeout:180000,maxBuffer:1024*1024});
+      await execute('/usr/bin/python3',[path.join(__dirname,'verify-calc.py'),file,'--output',output],{timeout:180000,maxBuffer:1024*1024});
       const actual=JSON.parse(await fs.readFile(output,'utf8'));
+      assert.deepEqual(actual.sheetNames,['Results','Configurations','Config Results']);
+      assert.deepEqual(actual['Config Results'].errors,[],`${game} visible results errors`);
       assert.deepEqual(actual.Comparison.errors,[],`${game} comparison errors`);
       for(const config of configs){
         const expected=simulate(rounds,config,rules.filter(r=>r.scenario===config.id),overrides.filter(o=>o.scenario===config.id));
@@ -67,9 +70,14 @@ async function verify({directory,keep=false}={}){
         assert.equal(Math.round(row[9]*100),expected.summary.drawdown);
       }
       if(game==='kickoff'){
-        await execute('python3',[path.join(__dirname,'verify-calc.py'),file,'--output',output,'--set',`Scenarios!B${ROW.unit}=2`],{timeout:180000});
+        await execute('/usr/bin/python3',[path.join(__dirname,'verify-calc.py'),file,'--output',output,'--set',`${mappedCell(workbook,'Scenarios',`B${ROW.unit}`).worksheet.name}!${mappedCell(workbook,'Scenarios',`B${ROW.unit}`).address}=2`],{timeout:180000});
         const edited=JSON.parse(await fs.readFile(output,'utf8'));
         assert.equal(edited.S1.values[2][22],2.6,'Changing unit inside Calc recalculates without JS regeneration');
+        const detail=getLayout(workbook).detail;
+        assert.equal(edited['Config Results'].values[detail.firstRow-1][7],2.6,'Visible round detail reflects settings edit');
+        await execute('/usr/bin/python3',[path.join(__dirname,'verify-calc.py'),file,'--output',output,'--set',`Config Results!B${detail.selectorRow}="S2"`],{timeout:180000});
+        const selected=JSON.parse(await fs.readFile(output,'utf8'));
+        assert.deepEqual(selected['Config Results'].values.slice(detail.firstRow-1,detail.firstRow-1+rounds.length).map(row=>row[7]),selected.S2.values.slice(2,2+rounds.length).map(row=>row[22]),'Configuration selector updates every visible round');
       }
       console.log(`${game}: Calc / independent simulator match`);
     }
@@ -84,13 +92,15 @@ async function verifyGenerated(directory=path.resolve('bet tests')){
     for(const game of Object.keys(GAME_META)){
       const name=GAME_META[game].file.replace('_Results.xlsx','_Tests');
       const wb=new ExcelJS.Workbook();await wb.xlsx.readFile(path.join(directory,`${name}.xlsx`));
-      const inputs=readInputs(wb,game),history=wb.getWorksheet('Rounds'),rounds=[];
+      const inputs=readInputs(wb,game),history=expandWorkbook(wb).getWorksheet('Rounds'),rounds=[];
       for(let i=2;i<=history.rowCount;i++){
         const values=Array.from({length:7},(_,n)=>text(history.getCell(i,n+1)));
         if(values[0])rounds.push({key:String(values[0]),timestamp:Number(values[1]),session:String(values[2]),outcome:String(values[3]),lossAll:values[4]===true||values[4]===1,raw:String(values[5]),roundId:String(values[6])});
       }
       const output=path.join(temp,`${game}.json`);
-      await execute('python3',[path.join(__dirname,'verify-calc.py'),path.join(directory,`${name}.ods`),'--output',output],{timeout:300000,maxBuffer:1024*1024});
+      const ods=path.join(directory,`${name}.ods`);
+      const target=await fs.access(ods).then(()=>ods,()=>path.join(directory,`${name}.xlsx`));
+      await execute('/usr/bin/python3',[path.join(__dirname,'verify-calc.py'),target,'--output',output],{timeout:300000,maxBuffer:1024*1024});
       const actual=JSON.parse(await fs.readFile(output,'utf8'));
       for(const config of inputs.scenarios){
         const expected=simulate(rounds,config,inputs.rules.filter(r=>r.scenario===config.id),inputs.overrides.filter(o=>o.scenario===config.id));
@@ -103,7 +113,7 @@ async function verifyGenerated(directory=path.resolve('bet tests')){
           checked++;
         }
       }
-      console.log(`${name}: generated ODS reconciled`);
+      console.log(`${name}: generated workbook reconciled`);
     }
     console.log(`GENERATED_CALC_VERIFIED ${checked} real-history rows`);
     return checked;
