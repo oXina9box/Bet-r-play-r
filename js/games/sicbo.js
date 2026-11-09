@@ -67,7 +67,7 @@
       for (let i = 3; i <= 18; i++) if (totals[i] > totals[hotT]) hotT = i;
       for (let i = 1; i <= 6; i++) if (faces[i] > faces[hotF]) hotF = i;
       const streakTxt = curStreak ? `${this.sides[curSide].short}×${curStreak} <small>max ${maxSide ? this.sides[maxSide].short : ''}${maxStreak}</small>` : '–';
-      const hotTxt = rows.length ? `Σ${hotT}<small>(${totals[hotT]})</small> · ⚃${hotF}<small>(${faces[hotF]})</small>` : '–';
+      const hotTxt = rows.length ? `Σ${hotT}<small>(${totals[hotT]})</small> · Die ${hotF}<small>(${faces[hotF]})</small>` : '–';
       const markers = `<div class="game-markers">
         <div class="marker"><label>Streak</label><b>${streakTxt}</b></div>
         <div class="marker ${sinceTriple >= 36 ? 'warn' : ''}"><label>Triple Gap</label><b>${sinceTriple}r <small>${triplePct}%</small></b></div>

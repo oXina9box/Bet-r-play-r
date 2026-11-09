@@ -660,16 +660,16 @@
     const shieldStake = step >= 5 ? 2 : 1;
     let shieldMessage = '';
     if (shieldRecommended) {
-      shieldMessage = `🛡️ TRIPLE SHIELD: Bet ${shieldStake}u on Any Triple (30:1) to hedge your Step ${step + 1} Big/Small bet.`;
+      shieldMessage = `TRIPLE SHIELD: Bet ${shieldStake}u on Any Triple (30:1) to hedge your Step ${step + 1} Big/Small bet.`;
     }
 
     let message = '';
     if (urgent) {
-      message = `🚨 CRITICAL RISK (Step ${step + 1}): Historical gap threshold reached (${rollsSince} rolls since last triple${pairClustering ? ' with ' + pairCount + ' pairs in last 5 rolls' : ''}). A triple will immediately bust your set at maximum stake. Strongly recommend skipping this roll.`;
+      message = `CRITICAL RISK (Step ${step + 1}): Historical gap threshold reached (${rollsSince} rolls since last triple${pairClustering ? ' with ' + pairCount + ' pairs in last 5 rolls' : ''}). A triple will immediately bust your set at maximum stake. Strongly recommend skipping this roll.`;
     } else if (gapOverdue) {
-      message = `⚠️ TRIPLE OVERDUE: Historical gap threshold reached (${rollsSince} rolls since last triple vs avg 36). Suggest skipping this bet or hedging with triple shield.`;
+      message = `TRIPLE OVERDUE: Historical gap threshold reached (${rollsSince} rolls since last triple vs avg 36). Suggest skipping this bet or hedging with triple shield.`;
     } else {
-      message = `⚠️ TRIPLE RISK: Historical gap threshold reached (${rollsSince} rolls since last triple${pairClustering ? ' with frequent pairs detected' : ''}). Suggest skipping this bet or hedging with triple shield.`;
+      message = `TRIPLE RISK: Historical gap threshold reached (${rollsSince} rolls since last triple${pairClustering ? ' with frequent pairs detected' : ''}). Suggest skipping this bet or hedging with triple shield.`;
     }
 
     return {
@@ -714,11 +714,11 @@
     const action = streakLen === 4 ? 'skip' : (streakLen === 5 ? 'bet' : 'watch');
     let message = '';
     if (streakLen === 4) {
-      message = `🐉 DRAGON ALERT (4 straight ${streakSide}s): Anti-streak rule recommends SKIPPING Roll 5. If 5 resets, bet next factor.`;
+      message = `DRAGON ALERT (4 straight ${streakSide}s): Anti-streak rule recommends SKIPPING Roll 5. If 5 resets, bet next factor.`;
     } else if (streakLen === 5) {
-      message = `🐉 DRAGON ALERT (5 straight ${streakSide}s): Anti-streak rule recommends BETTING Roll 6 on ${antiSide}.`;
+      message = `DRAGON ALERT (5 straight ${streakSide}s): Anti-streak rule recommends BETTING Roll 6 on ${antiSide}.`;
     } else {
-      message = `🐉 EXTENDED DRAGON (${streakLen} straight ${streakSide}s): Anti-streak caution on ${streakSide}.`;
+      message = `EXTENDED DRAGON (${streakLen} straight ${streakSide}s): Anti-streak caution on ${streakSide}.`;
     }
     return {
       side: streakSide,

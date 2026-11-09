@@ -5,10 +5,12 @@ const path = require('node:path');
 const { randomUUID, createHash } = require('node:crypto');
 const { validate } = require('./js/data');
 const { decodeImages, createOCR } = require('./ocr');
+const { syncGame } = require('./scripts/live-results');
 const PORT = 47615;
 const ASSETS = {
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/index.html': ['index.html', 'text/html; charset=utf-8'],
+  '/tokens.css': ['tokens.css', 'text/css; charset=utf-8'],
   '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
   ...Object.fromEntries(['data', 'app', 'history', 'engine', 'voice', 'vision', 'capture', 'sicbo-regions', 'sicbo-consensus', 'sicbo-recovery', 'screen', 'games/sicbo', 'games/teenpatti', 'games/baccarat', 'games/kickoff']
     .map(name => [`/js/${name}.js`, [`js/${name}.js`, 'text/javascript; charset=utf-8']])),
@@ -26,8 +28,8 @@ function write(file, body) {
   finally { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); }
 }
 
-function createServer({ dataDir = path.join(__dirname, 'data'), maxBodyBytes = 10 * 1024 * 1024, requestLimit = 1200, ocr = createOCR() } = {}) {
-  let recognizing = false;
+function createServer({ dataDir = path.join(__dirname, 'data'), resultsDir = path.join(__dirname, 'live results'), maxBodyBytes = 10 * 1024 * 1024, requestLimit = 1200, ocr = createOCR() } = {}) {
+  let recognizing = false, resultsQueue = Promise.resolve();
   const file = path.join(dataDir, 'betrplayr.json');
   const backups = path.join(dataDir, 'backups');
   const readData = () => fs.existsSync(file) ? JSON.stringify(validate(JSON.parse(fs.readFileSync(file, 'utf8')))) : 'null';
@@ -68,6 +70,18 @@ function createServer({ dataDir = path.join(__dirname, 'data'), maxBodyBytes = 1
     req.on('end', async () => {
       if (res.writableEnded) return;
       const text = Buffer.concat(chunks).toString('utf8');
+      if (req.url === '/session/end') {
+        let payload;
+        try {
+          payload = JSON.parse(text);
+          if (!payload || !['sicbo', 'kickoff', 'teenpatti'].includes(payload.game) || !Array.isArray(payload.entries) || !payload.entries.length) throw new Error();
+        } catch { return reply(res, 400, 'Invalid session results'); }
+        // The writer validates each result; serializing requests prevents lost updates.
+        const update = resultsQueue.then(() => syncGame(payload.game, payload.entries, { outputDir: resultsDir }));
+        resultsQueue = update.catch(() => {});
+        try { return reply(res, 200, JSON.stringify(await update), 'application/json'); }
+        catch { return reply(res, 500, 'Unable to sync session results'); }
+      }
       if (req.url !== '/ocr') return persist(req, res, req.url, text);
       let images;
       try { images = decodeImages(text); } catch { return reply(res, 400, 'Invalid OCR images'); }
@@ -98,7 +112,7 @@ function createServer({ dataDir = path.join(__dirname, 'data'), maxBodyBytes = 1
         return reply(res, 200, body, 'application/json', { ETag: tag(body) });
       } catch { return reply(res, 500, 'Unable to read data'); }
     }
-    if (req.method === 'POST' && ['/data', '/snapshot', '/ocr'].includes(req.url)) return receive(req, res);
+    if (req.method === 'POST' && ['/data', '/snapshot', '/ocr', '/session/end'].includes(req.url)) return receive(req, res);
     if (req.method === 'GET' && Object.hasOwn(ASSETS, req.url)) {
       const [asset, type] = ASSETS[req.url];
       try { return reply(res, 200, fs.readFileSync(path.join(__dirname, asset)), type); }

@@ -39,6 +39,10 @@ async function main() {
     const scriptMatches = [...page.body.matchAll(/<script\s+src="([^"]+)"/g)].map(m => '/' + m[1]);
     const linkMatches = [...page.body.matchAll(/<link\s+[^>]*href="([^"]+)"/g)].map(m => '/' + m[1]);
     assert.ok(scriptMatches.includes('/js/games/baccarat.js'), 'index.html includes baccarat.js');
+    assert.ok(linkMatches.indexOf('/tokens.css') >= 0 && linkMatches.indexOf('/tokens.css') < linkMatches.indexOf('/styles.css'), 'tokens load before styles');
+    const tokens = await request('/tokens.css');
+    assert.equal(tokens.status, 200);
+    assert.match(tokens.headers['content-type'], /^text\/css\b/);
     for (const asset of [...linkMatches, ...scriptMatches]) {
       const res = await request(asset);
       assert.equal(res.status, 200, `Asset ${asset} status must be 200`);
