@@ -10,6 +10,7 @@ const PORT = 47615;
 const ASSETS = {
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/index.html': ['index.html', 'text/html; charset=utf-8'],
+  '/tokens.css': ['tokens.css', 'text/css; charset=utf-8'],
   '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
   ...Object.fromEntries(['data', 'app', 'history', 'engine', 'voice', 'vision', 'capture', 'sicbo-regions', 'sicbo-consensus', 'sicbo-recovery', 'screen', 'games/sicbo', 'games/teenpatti', 'games/baccarat', 'games/kickoff']
     .map(name => [`/js/${name}.js`, [`js/${name}.js`, 'text/javascript; charset=utf-8']])),

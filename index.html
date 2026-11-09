@@ -3,17 +3,19 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0e1116" />
   <title>Bet-R Play-R</title>
+  <link rel="stylesheet" href="tokens.css" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <header class="topbar">
     <div class="brand">Bet-R <span>Play-R</span></div>
     <div class="pickers">
-      <select id="site" title="Site"></select>
-      <button id="addSite" class="ghost" title="Add site">+</button>
-      <input id="newSite" class="site-input" placeholder="Site name, Enter" hidden />
-      <div id="games" class="seg"></div>
+      <select id="site" title="Site" aria-label="Casino site"></select>
+      <button id="addSite" class="ghost" title="Add site" aria-label="Add casino site">+</button>
+      <input id="newSite" class="site-input" placeholder="Site name, Enter" aria-label="New casino site name" autocomplete="off" hidden />
+      <div id="games" class="seg" role="group" aria-label="Game selector"></div>
     </div>
     <div class="session">
       <span id="saveStatus" class="save-status"></span>
@@ -110,7 +112,7 @@
         <div id="pending" class="pending"></div>
         <div id="pad"></div>
         <div class="entry-actions">
-          <button id="voiceBtn" class="act voice-btn" title="Enable voice entry in Options, then hold Space to speak"><span class="mic-icon">🎙️</span> Hold Space</button>
+          <button id="voiceBtn" class="act voice-btn" title="Enable voice entry in Options, then hold Space to speak"><svg class="mic-icon" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><rect x="5" y="1.5" width="6" height="8.5" rx="3"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2M5.5 14.5h5"/></svg> Hold Space</button>
           <button id="noBet" class="act nobet-btn" title="Toggle No Bet: records this roll without risking money (shortcut: X)">No Bet <span class="kbd">X</span></button>
           <button id="scoreHit" class="act" hidden aria-pressed="false" title="Mark the latest roll as a score hit">Score hit <span class="kbd">0</span></button>
           <button id="undo" class="act">Undo <span class="kbd">⌫</span></button>
@@ -169,17 +171,17 @@
       <div class="card settings">
         <div class="settings-head">
           <h3>Settings</h3>
-          <button id="maxPlay" class="max-play-btn" title="Apply the empirically proven best strategy for this game">⚡ Max Play</button>
+          <button id="maxPlay" class="max-play-btn" title="Apply the empirically proven best strategy for this game">Max Play</button>
         </div>
         <div id="teenPattiModeRow" class="row"><label>Teen Patti Mode</label><div id="teenPattiModeSeg" class="seg"></div></div>
         <div class="row"><label>Group</label><div id="groupSeg" class="seg"></div><span class="muted" id="groupHint"></span></div>
         <div class="row"><label>Progression</label><div id="progSeg" class="seg"></div></div>
         <div id="fibBankRow" class="row"><label>Bank Reset</label><div id="fibBankSeg" class="seg"></div></div>
         <div class="row">
-          <label>Base unit</label><input id="unit" type="number" min="0" step="0.01" />
-          <label>Payout</label><input id="payout" type="number" min="0" step="0.01" title="Win pays this × stake (1 = even money)" />
+          <label for="unit">Base unit</label><input id="unit" type="number" min="0" step="0.01" inputmode="decimal" autocomplete="off" />
+          <label for="payout">Payout</label><input id="payout" type="number" min="0" step="0.01" title="Win pays this × stake (1 = even money)" inputmode="decimal" autocomplete="off" />
         </div>
-        <div class="row"><label>Target profit</label><input id="targetProfit" type="number" min="0" step="0.5" placeholder="0 = off" title="Session profit target in dollars" /><span class="muted" id="targetHint"></span></div>
+        <div class="row"><label for="targetProfit">Target profit</label><input id="targetProfit" type="number" min="0" step="0.5" placeholder="0 = off" title="Session profit target in dollars" inputmode="decimal" autocomplete="off" /><span class="muted" id="targetHint"></span></div>
         <div class="row"><label>Wait after bust</label><div id="waitSeg" class="seg"></div></div>
         <div class="row"><label>Wait after win</label><div id="waitWinSeg" class="seg"></div></div>
         <div class="row"><label>Delay after factor</label><div id="waitBetSeg" class="seg"></div></div>
@@ -194,7 +196,7 @@
     </div>
   </div>
 
-  <div id="toast" class="toast"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="js/engine.js"></script>
   <script src="js/games/sicbo.js"></script>

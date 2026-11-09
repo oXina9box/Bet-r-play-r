@@ -17,15 +17,15 @@
  * Fast Keypad Card Entry:
  * Step 1: Press Rank (A, 2..9, 0/t/10, J, Q, K)
  * Step 2: Press Suit Number:
- *   1 = Hearts (♥)
- *   2 = Spades (♠)
- *   3 = Clubs (♣)
- *   4 = Diamonds (♦)
+ *   1 = Hearts
+ *   2 = Spades
+ *   3 = Clubs
+ *   4 = Diamonds
  * Direct letter suits (h, s, c, d) and full codes (e.g. As, 9d) are also supported.
  */
 (function (root) {
   const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
-  const SUITS = { h: '♥', d: '♦', s: '♠', c: '♣' };
+  const SUITS = { h: '\u2665', d: '\u2666', s: '\u2660', c: '\u2663' };
   const NUMERIC_SUITS = { '1': 'h', '2': 's', '3': 'c', '4': 'd' };
   const RANK_KEYS = {
     a: 'A',
@@ -373,7 +373,7 @@
           return `<div class="slot card filled ${suitCls(c)}"><span class="deal-num">#${dealNum}</span>${cardLabel(c)}</div>`;
         }
         if (isActive && p.active && p.active.rank) {
-          return `<div class="slot card active rank-pending"><span class="deal-num">#${dealNum}</span><span class="active-rank">${p.active.rank}</span><span class="suit-hints"><span class="red">1♥</span> 2♠ 3♣ <span class="red">4♦</span></span></div>`;
+          return `<div class="slot card active rank-pending"><span class="deal-num">#${dealNum}</span><span class="active-rank">${p.active.rank}</span><span class="suit-hints"><span class="red">1\u2665</span> 2\u2660 3\u2663 <span class="red">4\u2666</span></span></div>`;
         }
         return `<div class="slot card ${isActive ? 'active' : ''}"><span class="deal-num">#${dealNum}</span><small>${isActive ? 'deal' : ''}</small></div>`;
       };
@@ -438,14 +438,14 @@
         return `<button class="key rank" data-key="r:${k}">${r}${r === '10' ? '<span class="kbd">0</span>' : ''}</button>`;
       }).join('');
       const suits = [
-        { k: '1', s: '♥', cls: 'red' },
-        { k: '2', s: '♠', cls: '' },
-        { k: '3', s: '♣', cls: '' },
-        { k: '4', s: '♦', cls: 'red' },
+        { k: '1', s: '\u2665', cls: 'red' },
+        { k: '2', s: '\u2660', cls: '' },
+        { k: '3', s: '\u2663', cls: '' },
+        { k: '4', s: '\u2666', cls: 'red' },
       ].map((it) => `<button class="key suit ${it.cls}" data-key="${it.k}">${it.s}<span class="kbd">${it.k}</span></button>`).join('');
 
       return `<div class="pad card-pad">
-        <div class="multitap-hint">Fast Entry: <b>[Rank]</b> then suit: <b>1=♥</b> · <b>2=♠</b> · <b>3=♣</b> · <b>4=♦</b> &nbsp;<small class="muted">(e.g. 92=9♠, 84=8♦, 01=10♥, A2=A♠ · or use Mic 🎙️)</small></div>
+        <div class="multitap-hint">Fast Entry: <b>[Rank]</b> then suit: <b>1=\u2665</b> · <b>2=\u2660</b> · <b>3=\u2663</b> · <b>4=\u2666</b> &nbsp;<small class="muted">(e.g. 92=9\u2660, 84=8\u2666, 01=10\u2665, A2=A\u2660 · or hold Space for voice)</small></div>
         <div class="ranks">${ranks}</div>
         <div class="suits">${suits}</div>
         <div class="quick"><span>Quick:</span>

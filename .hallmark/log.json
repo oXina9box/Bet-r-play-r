@@ -1,0 +1,11 @@
+[
+  {
+    "date": "2026-11-08",
+    "macrostructure": "Workbench (app)",
+    "theme": "modern-minimal / technical; existing dark casino-workbench palette",
+    "enrichment": "none",
+    "brief": "Formalize existing Bet-R Play-R palette and CSS roles as OKLCH design tokens; retain legacy aliases and document responsive, motion, accessibility, and export guidance.",
+    "artifacts": ["design.md", "tokens.css", ".hallmark/preflight.json"],
+    "verification": "Not run: build, tests, lint, formatters, contrast audit, and browser visual checks."
+  }
+]

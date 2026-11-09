@@ -1,0 +1,44 @@
+{
+  "status": "pending-review",
+  "project": "Bet-R Play-R",
+  "date": "2026-11-08",
+  "source": "existing app styles and approved UI cleanup plan",
+  "reference_status": "external references inferred, not viewed",
+  "contrast": {
+    "status": "measured-original-hex-only",
+    "roles": {
+      "text": "#e6edf3",
+      "bg": "#0e1116",
+      "surface": "#161b22",
+      "primary": "#f0883e",
+      "accent": "#3fb8ff",
+      "border": "#2a313c",
+      "on-primary": "#0e1116"
+    },
+    "matrix": [
+      {"pair": "text/bg", "ratio": 16.00, "classification": "text-safe"},
+      {"pair": "text/on-primary", "ratio": 16.00, "classification": "text-safe"},
+      {"pair": "text/surface", "ratio": 14.64, "classification": "text-safe"},
+      {"pair": "text/border", "ratio": 11.09, "classification": "text-safe"},
+      {"pair": "bg/accent", "ratio": 8.57, "classification": "text-safe"},
+      {"pair": "accent/on-primary", "ratio": 8.57, "classification": "text-safe"},
+      {"pair": "surface/accent", "ratio": 7.83, "classification": "text-safe"},
+      {"pair": "bg/primary", "ratio": 7.47, "classification": "text-safe"},
+      {"pair": "primary/on-primary", "ratio": 7.47, "classification": "text-safe"},
+      {"pair": "surface/primary", "ratio": 6.83, "classification": "text-safe"},
+      {"pair": "accent/border", "ratio": 5.93, "classification": "text-safe"},
+      {"pair": "primary/border", "ratio": 5.18, "classification": "text-safe"},
+      {"pair": "text/primary", "ratio": 2.14, "classification": "decorative"},
+      {"pair": "text/accent", "ratio": 1.87, "classification": "decorative"},
+      {"pair": "bg/border", "ratio": 1.44, "classification": "decorative"},
+      {"pair": "border/on-primary", "ratio": 1.44, "classification": "decorative"},
+      {"pair": "surface/border", "ratio": 1.32, "classification": "decorative"},
+      {"pair": "primary/accent", "ratio": 1.15, "classification": "decorative"},
+      {"pair": "bg/surface", "ratio": 1.09, "classification": "decorative"},
+      {"pair": "surface/on-primary", "ratio": 1.09, "classification": "decorative"},
+      {"pair": "bg/on-primary", "ratio": 1.00, "classification": "decorative"}
+    ],
+    "planned_oklch_matrix": "not measured; do not infer equivalence to hex matrix"
+  },
+  "profile_promotion": "none"
+}

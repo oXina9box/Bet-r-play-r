@@ -1,0 +1,110 @@
+/* Hallmark · macrostructure: Workbench · tone: modern-minimal technical · anchor hue: orange */
+:root {
+  /* Core workbench surfaces and text. */
+  --color-paper: oklch(17.6746% 0.011438 260.6352);
+  --color-paper-2: oklch(22.0223% 0.0157 256.8163);
+  --color-paper-3: oklch(25.4249% 0.01919 258.3605);
+  --color-ink: oklch(94.2539% 0.01105 243.6566);
+  --color-ink-2: oklch(66.2473% 0.018141 250.9217);
+  --color-rule: oklch(31.1189% 0.022091 259.3751);
+  --color-rule-strong: oklch(41.3152% 0.019707 254.0557);
+  --color-rule-hover: oklch(45.6971% 0.022674 255.6333);
+  --color-rule-neutral: oklch(51.0278% 0 0);
+  --color-accent: oklch(72.7255% 0.153394 52.8325);
+  --color-accent-ink: var(--color-paper);
+  --color-side-b: oklch(74.709% 0.146328 239.3388);
+  --color-side-b-ink: var(--color-paper);
+  --color-win: oklch(69.5081% 0.180928 145.6213);
+  --color-loss: oklch(66.5118% 0.204594 26.9596);
+  --color-warn: oklch(71.9551% 0.140145 79.915);
+  --color-focus: var(--color-side-b);
+  --color-black: oklch(0% 0 0);
+  --color-white: oklch(100% 0 0);
+  --color-canvas-bg: oklch(14.9231% 0.009297 263.9667);
+
+  /* Existing side and status treatments. */
+  --color-side-a-tint: oklch(72.7255% 0.153394 52.8325 / 0.14);
+  --color-side-a-chip: oklch(72.7255% 0.153394 52.8325 / 0.18);
+  --color-side-a-border: oklch(72.7255% 0.153394 52.8325 / 0.55);
+  --color-side-b-tint: oklch(74.709% 0.146328 239.3388 / 0.14);
+  --color-side-b-chip: oklch(74.709% 0.146328 239.3388 / 0.16);
+  --color-side-b-border: oklch(74.709% 0.146328 239.3388 / 0.55);
+  --color-warn-tint: oklch(71.9551% 0.140145 79.915 / 0.14);
+  --color-warn-border: oklch(71.9551% 0.140145 79.915 / 0.55);
+  --color-win-tint: oklch(69.5081% 0.180928 145.6213 / 0.14);
+  --color-win-border: oklch(69.5081% 0.180928 145.6213 / 0.55);
+  --color-loss-tint: oklch(66.5118% 0.204594 26.9596 / 0.15);
+  --color-loss-border: oklch(66.5118% 0.204594 26.9596 / 0.55);
+  --color-overlay-warn: oklch(20% 0.04 78 / 0.95);
+  --color-overlay-urgent: oklch(18% 0.06 25 / 0.96);
+  --color-backdrop: oklch(0% 0 0 / 0.65);
+  --color-surface-wash: oklch(100% 0 0 / 0.05);
+  --color-surface-wash-subtle: oklch(100% 0 0 / 0.03);
+
+  /* Distinct roles in alerts, voice, recovery, ladder and draw UI. */
+  --color-info: oklch(62.3083% 0.188015 259.8145);
+  --color-info-text: oklch(80.9069% 0.095598 251.8128);
+  --color-positive: oklch(72.2746% 0.192007 149.5793);
+  --color-positive-text: oklch(87.1163% 0.136267 154.4491);
+  --color-caution: oklch(79.5243% 0.161668 86.0468);
+  --color-caution-text: oklch(90.5243% 0.165683 98.1108);
+  --color-urgent: oklch(63.6834% 0.207849 25.3313);
+  --color-urgent-text: oklch(80.769% 0.103486 19.5706);
+  --color-overlay-text: oklch(86.8981% 0.019848 252.8943);
+  --color-overlay-rule: oklch(44.5533% 0.037447 257.2808);
+  --color-overlay-muted: oklch(71.0672% 0.035114 256.7878);
+  --color-overlay-hover: oklch(27.9495% 0.036848 260.031);
+  --color-card-red: oklch(71.1607% 0.181221 22.8389);
+  --color-voice-listening: oklch(73.4499% 0.162605 25.7837);
+  --color-voice-transcript-base: oklch(64.5618% 0.18763 257.4454);
+  --color-voice-transcript: oklch(71.5252% 0.15181 253.3061);
+  --color-recovery-surface: oklch(38.2204% 0.071325 72.3534);
+  --color-recovery: oklch(84.2204% 0.142318 76.9427);
+  --color-recovery-error: oklch(76.1933% 0.141542 24.034);
+  --color-special: oklch(79.0445% 0.138608 85.2368);
+  --color-special-text: oklch(90.9129% 0.117417 90.2485);
+  --color-special-high: oklch(79.0553% 0.120862 24.4534);
+  --color-active-green: oklch(62.2209% 0.166138 146.2209);
+  --color-ladder: oklch(57.7436% 0.20909 273.8504);
+  --color-ladder-text: oklch(69.4513% 0.161788 277.0452);
+  --color-ladder-flow: oklch(80.2342% 0.10084 278.8985);
+  --color-draw-rule: oklch(58.899% 0.024393 265.6438);
+  --color-draw-surface: oklch(26.5505% 0.02546 268.2777);
+  --color-draw-text: oklch(93.1193% 0.008365 271.3246);
+  --color-draw-play: oklch(78.8032% 0.144294 160.7802);
+  --color-draw-play-surface: oklch(31.2429% 0.050132 168.0377);
+  --color-draw-play-text: oklch(93.5618% 0.069115 163.4634);
+
+  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-display: var(--font-body);
+  --font-mono: ui-monospace, 'SFMono-Regular', Consolas, monospace;
+  --space-3xs: 2px;
+  --space-2xs: 4px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 20px;
+  --space-xl: 24px;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-balanced: cubic-bezier(0.45, 0, 0.55, 1);
+  --dur-fast: 120ms;
+  --dur-short: 180ms;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* Existing stylesheet and plugin compatibility. */
+  --bg: var(--color-paper);
+  --panel: var(--color-paper-2);
+  --panel2: var(--color-paper-3);
+  --line: var(--color-rule);
+  --text: var(--color-ink);
+  --fg: var(--color-ink);
+  --muted: var(--color-ink-2);
+  --a: var(--color-accent);
+  --b: var(--color-side-b);
+  --win: var(--color-win);
+  --loss: var(--color-loss);
+  --warn: var(--color-warn);
+  --radius: var(--radius-lg);
+}

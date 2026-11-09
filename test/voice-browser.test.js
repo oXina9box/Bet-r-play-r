@@ -50,8 +50,12 @@ test('hold Space voice entry records each game only on release', async () => {
       await page.locator(`#games [data-v="${game}"]`).click();
       await page.evaluate(text => { window.voiceWords = text; }, words);
       await page.keyboard.down('Space');
+      assert.equal(await page.locator('#voiceBtn svg.mic-icon').count(), 1, 'microphone remains visible while listening');
+      assert.match(await page.locator('#voiceBtn').innerText(), /Listening/);
       assert.equal(await page.evaluate(id => JSON.parse(localStorage.getItem('betrplayr.v1')).books[`shuff:${id}`]?.entries.length || 0, game), 0);
       await page.keyboard.up('Space');
+      assert.equal(await page.locator('#voiceBtn svg.mic-icon').count(), 1, 'microphone remains visible after listening');
+      assert.match(await page.locator('#voiceBtn').innerText(), /Hold Space/);
       await page.waitForFunction(id => JSON.parse(localStorage.getItem('betrplayr.v1')).books[`shuff:${id}`].entries.length === 1, game);
       assert.deepEqual(await page.evaluate(id => JSON.parse(localStorage.getItem('betrplayr.v1')).books[`shuff:${id}`].entries[0].raw, game), expected);
     }

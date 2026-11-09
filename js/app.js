@@ -349,7 +349,7 @@
     scoreButton.disabled = !lastRoll;
     scoreButton.setAttribute?.('aria-pressed', String(!!lastRoll?.scoreHit));
     scoreButton.classList.toggle('armed', !!lastRoll?.scoreHit);
-    scoreButton.innerHTML = `${lastRoll?.scoreHit ? '✓ Score hit' : 'Score hit'} <span class="kbd">0</span>`;
+    scoreButton.innerHTML = `${lastRoll?.scoreHit ? '\u2713 Score hit' : 'Score hit'} <span class="kbd">0</span>`;
     renderStrip();
     renderSettings();
     renderStats();
@@ -391,7 +391,7 @@
     if (nx.recovery) {
       const rec = nx.recovery;
       const profit = rec.profitPerWin == null ? `${signed(rec.profitMin)} to ${signed(rec.profitMax)} per winning set` : `${signed(rec.profitPerWin)} per winning set`;
-      recBanner = `<div class="recovery-banner">⚡ RECOVERY MODE · SET ${rec.currentSet} OF ${rec.totalSets} (${profit})</div>`;
+      recBanner = `<div class="recovery-banner">RECOVERY MODE · SET ${rec.currentSet} OF ${rec.totalSets} (${profit})</div>`;
     }
 
     let alertBanner = '';
@@ -405,7 +405,7 @@
       const signal = g.drawSignal(book().entries, last || null);
       const evidence = signal.evidence;
       const contexts = signal.patterns.filter(p => p.active);
-      const patternLine = contexts.map(p => `${p.label}: ${p.draws}/${p.matches}${p.play ? ' ✓' : ''}`).join(' · ');
+      const patternLine = contexts.map(p => `${p.label}: ${p.draws}/${p.matches}${p.play ? ' \u2713' : ''}`).join(' · ');
       drawBanner = `<div id="drawSignal" class="draw-signal ${signal.play ? 'play' : 'wait'}" role="status"><strong>${signal.play ? 'PLAY DRAW' : 'WAIT DRAW'}</strong><span>${escapeHTML(signal.reason)}</span><small>${escapeHTML(evidence.label)} · Draws: ${evidence.draws}/${evidence.matches} matches vs ${evidence.otherDraws}/${evidence.others} other contexts · All saved history · Historical signal</small>${patternLine ? `<small>${escapeHTML(patternLine)}</small>` : ''}</div>`;
     }
     const b = book();
@@ -421,7 +421,7 @@
       const signU = diffU > 0 ? `-${diffU.toFixed(1)}u` : `+${Math.abs(diffU).toFixed(1)}u`;
       targetBadge = `
         <div class="target-badge ${reached ? 'achieved' : 'needed'}">
-          <span class="target-title">🎯 Target: ${fmt(targetDol)} (${targetU.toFixed(1)}u)</span>
+          <span class="target-title">Target: ${fmt(targetDol)} (${targetU.toFixed(1)}u)</span>
           <span class="target-progress">${reached ? 'Goal Achieved!' : 'Needed:'} <b>${fmt(Math.max(0, diffDol))}</b> (${Math.max(0, diffU).toFixed(1)}u)</span>
           <span class="target-diff">[<b>${signDol}</b> / <b>${signU}</b>]</span>
         </div>
@@ -439,12 +439,12 @@
       tripleOverlay = `
         <div id="tripleAlertOverlay" class="triple-overlay ${tripleRisk.urgent ? 'urgent' : 'warning'}">
           <div class="triple-overlay-card">
-            <div class="triple-overlay-badge">${tripleRisk.urgent ? '🚨 CRITICAL STEP 5 ALERT' : '⚠️ TRIPLE RISK DETECTED'}</div>
+            <div class="triple-overlay-badge">${tripleRisk.urgent ? 'CRITICAL STEP 5 ALERT' : 'TRIPLE RISK DETECTED'}</div>
             <div class="triple-overlay-title">${tripleRisk.urgent ? 'HIGH STAKE AT RISK ON STEP 5' : 'HISTORICAL GAP THRESHOLD REACHED'}</div>
             <div class="triple-overlay-body">${escapeHTML(tripleRisk.message)}</div>
             ${shieldNotice}
             <div class="triple-overlay-actions">
-              <button id="tripleOverlaySkip" class="triple-skip-btn ${tripleRisk.urgent ? 'urgent' : ''}">${noBetArmed ? '✓ Bet Skipped (Armed)' : (tripleRisk.urgent ? '🚨 STRONGLY URGED: SKIP THIS BET' : 'Skip This Bet (One-Time)')}</button>
+              <button id="tripleOverlaySkip" class="triple-skip-btn ${tripleRisk.urgent ? 'urgent' : ''}">${noBetArmed ? 'Bet Skipped (Armed)' : (tripleRisk.urgent ? 'STRONGLY URGED: SKIP THIS BET' : 'Skip This Bet (One-Time)')}</button>
               <button id="tripleOverlayDismiss" class="triple-dismiss-btn">Dismiss</button>
             </div>
           </div>
@@ -463,12 +463,11 @@
     let ladderBadge = '';
     if (nx.ladder) {
       const l = nx.ladder;
-      const icon = l.isClimber ? '🧗' : '🪜';
       const name = l.isClimber ? 'Fib Climber' : 'Fib Ladder';
       const bankText = l.bankTarget > 0 ? ` · Bank: <b>${l.bankProfit}/${l.bankTarget}u</b>` : '';
       ladderBadge = `
         <div class="ladder-badge">
-          <div><b>${icon} ${name} Step ${l.step}</b> <span>(${l.mult}x stake)</span>${bankText}</div>
+          <div><b>${name} Step ${l.step}</b> <span>(${l.mult}x stake)</span>${bankText}</div>
           <div class="ladder-flow">Win: <b>${l.dropMult}x</b> · Loss: <b>${l.climbMult}x</b></div>
         </div>
       `;
@@ -586,7 +585,7 @@
     const g = game();
     const c = g.chip(r.raw, r.o);
     const sideCls = r.side === 'A' ? 'a' : r.side === 'B' ? 'b' : 't';
-    const res = r.noBet ? '<i class="res nb">Ø</i>' : r.result === 'win' ? '<i class="res win">✓</i>' : r.result === 'loss' ? '<i class="res loss">✗</i>' : r.push ? '<i class="res push">P</i>' : '';
+    const res = r.noBet ? '<i class="res nb">Ø</i>' : r.result === 'win' ? '<i class="res win">\u2713</i>' : r.result === 'loss' ? '<i class="res loss">\u2717</i>' : r.push ? '<i class="res push">P</i>' : '';
     const role = r.role === 'factor' ? '<i class="role">F</i>' : r.role === 'factor-wait' ? '<i class="role cd">W</i>' : r.role === 'factor-break' ? '<i class="role cd">↻</i>' : r.role === 'cooldown' ? '<i class="role cd">CD</i>' : '';
     const end = r.setEnd === 'bust' ? ' bust' : r.setEnd === 'won' ? ' won' : '';
     const as = r.push && r.effSide ? ` as ${g.sides[r.effSide].label}` : '';
@@ -596,7 +595,7 @@
     const recText = r.recovery ? ` [Recovery ${r.recovery.currentSet}/${r.recovery.totalSets}] ` : '';
     const scoreText = r.scoreHit ? ' [SCORE HIT] ' : '';
     const tip = `${scoreText}${nbText}${recText}` + (r.push ? `Tie, played${as || ' as nothing (no prior winner)'} · ` : '') + (r.role === 'factor' ? `Factor · fading ${r.pattern}` : r.role === 'factor-wait' ? `Delayed bet wait (${r.delayLeft} remaining)` : r.role === 'factor-break' ? 'Pattern broke during delay; sequence reset' : r.role === 'cooldown' ? `Cooldown after ${r.cooldownReason || 'bust'} (${r.cooldownLeft} remaining)` : r.bet ? `Bet ${g.sides[r.bet.side].label} ${fmt(r.bet.amount)} → ${r.result}` : '') + ' · double-click to toggle No Bet';
-    return `<div class="chip ${sideCls}${r.lossAll ? ' special' : ''}${end}${r.noBet ? ' no-bet' : ''}" data-entry-idx="${r.entryIdx}" title="${escapeHTML(tip)}">${role}${res}<b>${escapeHTML(c.main)}</b><small>${escapeHTML(c.sub)}${r.scoreHit ? ' · ★ SCORE' : ''}</small>${c.flag ? `<i class="flag">${escapeHTML(c.flag)}</i>` : ''}</div>`;
+    return `<div class="chip ${sideCls}${r.lossAll ? ' special' : ''}${end}${r.noBet ? ' no-bet' : ''}" data-entry-idx="${r.entryIdx}" title="${escapeHTML(tip)}">${role}${res}<b>${escapeHTML(c.main)}</b><small>${escapeHTML(c.sub)}${r.scoreHit ? ' · \u2605 SCORE' : ''}</small>${c.flag ? `<i class="flag">${escapeHTML(c.flag)}</i>` : ''}</div>`;
   }
 
 
@@ -649,7 +648,7 @@
                   (cfg.recovery || 0) === preset.cfg.recovery &&
                   (cfg.waitBust || 0) === preset.cfg.waitBust;
     btn.classList.toggle('active', isMax);
-    btn.innerHTML = isMax ? '✓ Max Play Active' : '⚡ Max Play';
+    btn.innerHTML = isMax ? 'Max Play Active' : 'Max Play';
     btn.title = isMax ? `Preset active: ${preset.summary}` : `Apply preset for ${preset.name}: ${preset.summary}`;
   }
 
@@ -662,7 +661,7 @@
     Object.assign(b.cfg, preset.cfg);
     save();
     render();
-    toast(`⚡ Max Play Applied for ${preset.name}: ${preset.summary}`);
+    toast(`Max Play Applied for ${preset.name}: ${preset.summary}`);
   }
 
   function renderSettings() {
@@ -753,12 +752,11 @@
     if (cfg.prog === 'fib_ladder' || cfg.prog === 'fib_climber') {
       const isClimber = cfg.prog === 'fib_climber';
       const drop = cfg.fibDrop != null ? cfg.fibDrop : (isClimber ? 1 : 2);
-      const icon = isClimber ? '🧗' : '🪜';
       const name = isClimber ? 'Fib Climber' : 'Fib Ladder';
       const bankNotice = cfg.fibBank > 0 ? ` · Bank profit reset at <b>+${cfg.fibBank}u</b>` : '';
       el.innerHTML = `
         <div class="ladder-badge" style="margin-top:6px; margin-bottom:6px;">
-          <div><b>${icon} Continuous ${name} Active</b></div>
+          <div><b>Continuous ${name} Active</b></div>
           <div class="ladder-flow">Climbs on loss (+1) · Drops ${drop} on win${bankNotice} · Recovery is not guaranteed</div>
         </div>
       `;
@@ -767,7 +765,7 @@
     if (cfg.prog === 'fib') {
       el.innerHTML = `
         <div class="ladder-badge" style="margin-top:6px; margin-bottom:6px;">
-          <div><b>🐚 Fibonacci Active</b></div>
+          <div><b>Fibonacci Active</b></div>
           <div class="ladder-flow">Self-recovering progression · Extra recovery sets disabled</div>
         </div>
       `;
@@ -815,8 +813,8 @@
   }
 
   function seqLabel(k, nBets) {
-    if (k === 'fib_ladder') return '🪜 Fib Ladder';
-    if (k === 'fib_climber') return '🧗 Fib Climber';
+    if (k === 'fib_ladder') return 'Fib Ladder';
+    if (k === 'fib_climber') return 'Fib Climber';
     const progObj = PROGRESSIONS[k] || PROGRESSIONS.double;
     return Array.from({ length: nBets }, (_, i) => progObj.mult(i) + 'x').join(' ');
   }
@@ -1180,7 +1178,8 @@
     const btn = $('voiceBtn');
     if (btn) {
       btn.classList.toggle('listening', listening);
-      btn.textContent = listening ? 'Listening — release Space' : 'Hold Space';
+      const icon = btn.querySelector('.mic-icon');
+      btn.innerHTML = `${icon ? icon.outerHTML : ''}${icon ? ' ' : ''}${listening ? 'Listening — release Space' : 'Hold Space'}`;
     }
   }
   function showVoiceTranscript(msg) {
