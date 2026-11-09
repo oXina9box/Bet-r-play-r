@@ -7,13 +7,16 @@
     "test": "node --test test/*.test.js",
     "test:e2e": "node test/server.test.js && node test/browser.test.js",
     "audit:data": "node scripts/audit-data.js",
-    "generate:tracker": "node scripts/generate-tracker.js"
+    "generate:tracker": "node scripts/generate-tracker.js",
+    "sync:live": "node scripts/sync-live-results.js",
+    "generate:tests": "node scripts/bet-tests/cli.js",
+    "sync:tests": "node scripts/bet-tests/cli.js",
+    "test:betting": "node test/bet-tests-engine.test.js && node test/bet-tests-history.test.js && node test/bet-tests-workbook.test.js",
+    "verify:tests": "node scripts/bet-tests/verify.js"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",
-    "tesseract.js": "^7.0.0"
-  },
-  "devDependencies": {
+    "tesseract.js": "^7.0.0",
     "exceljs": "^4.4.0"
   }
 }

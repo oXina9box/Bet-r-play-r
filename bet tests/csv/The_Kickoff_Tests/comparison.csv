@@ -1,0 +1,6 @@
+"Scenario","Name","Net dollars","P1 ending dollars","P2 ending dollars","Bankroll ROI","Wagering yield","Complete","Stop round"
+"S1","Flat","-13","87","0","-0.13","-0.1015625","true",""
+"S2","Martingale","179.9","279.9","0","1.799","0.2204656862745098","true",""
+"S3","Fibonacci","-31.8","68.2","0","-0.318","-0.040926640926640924","false","121"
+"S4","Win Press","23.1","123.1","0","0.231","0.08587360594795539","true",""
+"S5","Draw Protection","-4.1","95.9","0","-0.041","-0.013576158940397352","true",""

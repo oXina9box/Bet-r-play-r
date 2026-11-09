@@ -1,0 +1,306 @@
+{
+  "1": {
+    "tested": 16920,
+    "affordable": 5704,
+    "unaffordable": 11216,
+    "top": [
+      {
+        "pattern": {
+          "engine": "swap1",
+          "ladder": "double_win",
+          "cap": 16,
+          "draw": "cold",
+          "trigger": 3,
+          "draw_ladder": "linear",
+          "draw_cap": 0,
+          "drop": 1,
+          "owner": "P1"
+        },
+        "net": 46980,
+        "end": [
+          56980
+        ],
+        "complete": true,
+        "stop_round": null,
+        "staked": 1063,
+        "low": 8750,
+        "player_low": [
+          8750
+        ],
+        "drawdown": 26950,
+        "max_bet": 42,
+        "cross": false,
+        "rows": []
+      },
+      {
+        "pattern": {
+          "engine": "swap1",
+          "ladder": "gentle_win",
+          "cap": 12,
+          "draw": "cold",
+          "trigger": 3,
+          "draw_ladder": "linear",
+          "draw_cap": 0,
+          "drop": 1,
+          "owner": "P1"
+        },
+        "net": 44800,
+        "end": [
+          54800
+        ],
+        "complete": true,
+        "stop_round": null,
+        "staked": 1025,
+        "low": 7430,
+        "player_low": [
+          7430
+        ],
+        "drawdown": 27170,
+        "max_bet": 38,
+        "cross": false,
+        "rows": []
+      },
+      {
+        "pattern": {
+          "engine": "swap1",
+          "ladder": "partial_win",
+          "cap": 8,
+          "draw": "cold",
+          "trigger": 3,
+          "draw_ladder": "linear",
+          "draw_cap": 0,
+          "drop": 1,
+          "owner": "P1"
+        },
+        "net": 43320,
+        "end": [
+          53320
+        ],
+        "complete": true,
+        "stop_round": null,
+        "staked": 1003,
+        "low": 6200,
+        "player_low": [
+          6200
+        ],
+        "drawdown": 27200,
+        "max_bet": 34,
+        "cross": false,
+        "rows": []
+      },
+      {
+        "pattern": {
+          "engine": "swap1",
+          "ladder": "double_win",
+          "cap": 8,
+          "draw": "cold",
+          "trigger": 3,
+          "draw_ladder": "linear",
+          "draw_cap": 0,
+          "drop": 1,
+          "owner": "P1"
+        },
+        "net": 42360,
+        "end": [
+          52360
+        ],
+        "complete": true,
+        "stop_round": null,
+        "staked": 1008,
+        "low": 5130,
+        "player_low": [
+          5130
+        ],
+        "drawdown": 26950,
+        "max_bet": 34,
+        "cross": false,
+        "rows": []
+      },
+      {
+        "pattern": {
+          "engine": "swap1",
+          "ladder": "double_win",
+          "cap": 4,
+          "draw": "cold",
+          "trigger": 3,
+          "draw_ladder": "linear",
+          "draw_cap": 0,
+          "drop": 1,
+          "owner": "P1"
+        },
+        "net": 40570,
+        "end": [
+          50570
+        ],
+        "complete": true,
+        "stop_round": null,
+        "staked": 973,
+        "low": 4420,
+        "player_low": [
+          4420
+        ],
+        "drawdown": 27160,
+        "max_bet": 34,
+        "cross": false,
+        "rows": []
+      }
+    ]
+  },
+  "2": {
+    "tested": 101040,
+    "affordable": 44956,
+    "unaffordable": 56084,
+    "top": [
+      {
+        "pattern": {
+          "engine": "swap1",
+          "ladder": "double_win",
+          "cap": 16,
+          "draw": "cold",
+          "trigger": 3,
+          "draw_ladder": "linear",
+          "draw_cap": 0,
+          "drop": 1,
+          "owner": "split"
+        },
+        "net": 46980,
+        "end": [
+          32030,
+          34950
+        ],
+        "complete": true,
+        "stop_round": null,
+        "staked": 1063,
+        "low": 18750,
+        "player_low": [
+          10000,
+          7660
+        ],
+        "drawdown": 26950,
+        "max_bet": 42,
+        "cross": false,
+        "rows": []
+      },
+      {
+        "pattern": {
+          "engine": "cover2",
+          "ladder": "double_win",
+          "cap": 16,
+          "draw": "cold",
+          "trigger": 3,
+          "draw_ladder": "linear",
+          "draw_cap": 0,
+          "drop": 1,
+          "owner": "P1"
+        },
+        "net": 46550,
+        "end": [
+          52560,
+          13990
+        ],
+        "complete": true,
+        "stop_round": null,
+        "staked": 1111,
+        "low": 18640,
+        "player_low": [
+          7800,
+          8990
+        ],
+        "drawdown": 26800,
+        "max_bet": 43,
+        "cross": true,
+        "rows": []
+      },
+      {
+        "pattern": {
+          "engine": "cover4",
+          "ladder": "double_win",
+          "cap": 16,
+          "draw": "cold",
+          "trigger": 3,
+          "draw_ladder": "linear",
+          "draw_cap": 0,
+          "drop": 1,
+          "owner": "P1"
+        },
+        "net": 46130,
+        "end": [
+          51990,
+          14140
+        ],
+        "complete": true,
+        "stop_round": null,
+        "staked": 1083,
+        "low": 18450,
+        "player_low": [
+          7420,
+          9260
+        ],
+        "drawdown": 26990,
+        "max_bet": 43,
+        "cross": true,
+        "rows": []
+      },
+      {
+        "pattern": {
+          "engine": "momentum",
+          "ladder": "double_win",
+          "cap": 16,
+          "draw": "cold",
+          "trigger": 3,
+          "draw_ladder": "linear",
+          "draw_cap": 0,
+          "drop": 1,
+          "owner": "split"
+        },
+        "net": 45960,
+        "end": [
+          31010,
+          34950
+        ],
+        "complete": true,
+        "stop_round": null,
+        "staked": 1133,
+        "low": 18740,
+        "player_low": [
+          10000,
+          7660
+        ],
+        "drawdown": 26510,
+        "max_bet": 42,
+        "cross": true,
+        "rows": []
+      },
+      {
+        "pattern": {
+          "engine": "dual",
+          "ladder": "double_win",
+          "cap": 16,
+          "draw": "cold",
+          "trigger": 3,
+          "draw_ladder": "linear",
+          "draw_cap": 0,
+          "drop": 1,
+          "owner": "P1"
+        },
+        "net": 45700,
+        "end": [
+          53130,
+          12570
+        ],
+        "complete": true,
+        "stop_round": null,
+        "staked": 1315,
+        "low": 17820,
+        "player_low": [
+          7890,
+          8470
+        ],
+        "drawdown": 25730,
+        "max_bet": 42,
+        "cross": true,
+        "rows": []
+      }
+    ]
+  }
+}

@@ -1,0 +1,31 @@
+[
+  {
+    "gate": "G1",
+    "command": [
+      "python3",
+      "analysis/kickoff-ranking/test_rank.py"
+    ],
+    "cwd": "/home/ox/.codex/worktrees/33e2/Bet-R Play-R",
+    "shell": "/usr/bin/bash",
+    "exit_status": 0,
+    "expected": "RULE_CHECKS_PASSED",
+    "matched": true,
+    "output_sha256": "c533ee51e74b741ac6f45715ee488c6938e8912538e4d622ac0ef07629144342",
+    "utc": "2026-11-08T14:56:18.006952+00:00"
+  },
+  {
+    "gate": "G2",
+    "command": [
+      "python3",
+      "analysis/kickoff-ranking/rank.py",
+      "--verify"
+    ],
+    "cwd": "/home/ox/.codex/worktrees/33e2/Bet-R Play-R",
+    "shell": "/usr/bin/bash",
+    "exit_status": 0,
+    "expected": "VERIFIED",
+    "matched": true,
+    "output_sha256": "67f80de325e714ca31fbf6ff8643f04e83be7ec40a37e901b261eb7c08bd3f8b",
+    "utc": "2026-11-08T14:56:18.120511+00:00"
+  }
+]
