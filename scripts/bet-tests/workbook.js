@@ -25,7 +25,7 @@ function editable(cell, choices) {
   if(choices)cell.dataValidation={type:'list',allowBlank:false,formulae:[`"${choices.map(v=>typeof v==='boolean'?String(v).toUpperCase():v).join(',')}"`],showErrorMessage:true,error:'Choose a listed value.'};
 }
 
-function createLegacyWorkbook({game,rounds=[],scenarios,rules=[],overrides=[],capacity,ruleSlots=12,source='Awaiting history'}) {
+function createLegacyWorkbook({game,rounds=[],scenarios,rules=[],overrides=[],savedReviews=[],capacity,ruleSlots=12,source='Awaiting history'}) {
   if(!GAME_META[game])throw new Error('Unknown game');
   if(!Number.isInteger(ruleSlots)||ruleSlots<1||ruleSlots>128)throw new Error('Rule slots must be 1–128 per scenario');
   const configs=scenarios||presets(defaultScenario,game);
@@ -34,6 +34,7 @@ function createLegacyWorkbook({game,rounds=[],scenarios,rules=[],overrides=[],ca
   const size=Math.max(capacity||Math.max(200,rounds.length+50),rounds.length);
   if(!Number.isInteger(size)||size<1||size>20000)throw new Error('Capacity must be 1–20000 rounds');
   const wb=new ExcelJS.Workbook();
+  wb.savedReviews=savedReviews;
   wb.creator='Bet-R Play-R';wb.calcProperties={fullCalcOnLoad:true,forceFullCalc:true};
   const guide=wb.addWorksheet('Guide');
   header(guide,[`${GAME_META[game].name} — betting tests`,'Instructions']);
@@ -129,7 +130,7 @@ function createLegacyWorkbook({game,rounds=[],scenarios,rules=[],overrides=[],ca
     }
   }
   const comparison=wb.addWorksheet('Comparison');
-  header(comparison,['Scenario','Name','Net ($)','P1 ending ($)','P2 ending ($)','Bankroll ROI','Wagering yield','Total wagered ($)','Lowest team cash ($)','Max drawdown ($)','Largest bet ($)','Status']);
+  header(comparison,['Scenario','Name','Active','Net ($)','P1 ending ($)','P2 ending ($)','Bankroll ROI','Wagering yield','Total wagered ($)','Lowest team cash ($)','P1 lowest ($)','P2 lowest ($)','Max drawdown ($)','Largest bet ($)','Draw net ($)','Cross-bets?','Status','Players']);
   const metadata={};
   configs.forEach((c,i)=>{
     const ws=wb.addWorksheet(c.id);
@@ -153,18 +154,24 @@ function createLegacyWorkbook({game,rounds=[],scenarios,rules=[],overrides=[],ca
     const sheetName=`'${c.id.replaceAll("'","''")}'`;
     const ref=field=>`${sheetName}!${metadata[c.id].columns[field]}${last}`;
     const start=`(Scenarios!$${column}$${ROW.bankroll1}+IF(Scenarios!$${column}$${ROW.players}=2,Scenarios!$${column}$${ROW.bankroll2},0))`;
-    const vals={3:`${ref('Running')}/100`,4:`${ref('P1 Cash')}/100`,5:`${ref('P2 Cash')}/100`,
-      6:`IFERROR(${ref('Running')}/100/${start},0)`,7:`IFERROR(SUM(${sheetName}!W3:W${last})/SUM(${sheetName}!U3:U${last}),0)`,
-      8:`SUM(${sheetName}!U3:U${last})`,9:`${ref('Lowest')}/100`,10:`${ref('Max Drawdown')}/100`,11:`${ref('Largest Bet')}/100`,
-      12:rounds.length?`IF(COUNTIF(${sheetName}!G3:G${last},"Setup incomplete")>0,"Setup incomplete",IF(${ref('stopNext')}<>"",${ref('stopNext')},"Complete"))`:'"Awaiting history"'};
+    const col=metadata[c.id].columns;
+    const vals={3:`IF(OR(Scenarios!$${column}$${ROW.active}=TRUE,UPPER(Scenarios!$${column}$${ROW.active})="TRUE"),TRUE,FALSE)`,
+      4:`${ref('Running')}/100`,5:`${ref('P1 Cash')}/100`,6:`${ref('P2 Cash')}/100`,
+      7:`IFERROR(${ref('Running')}/100/${start},0)`,8:`IFERROR(SUM(${sheetName}!W3:W${last})/SUM(${sheetName}!U3:U${last}),0)`,
+      9:`SUM(${sheetName}!U3:U${last})`,10:`${ref('Lowest')}/100`,11:`${ref('P1 Low')}/100`,12:`${ref('P2 Low')}/100`,
+      13:`${ref('Max Drawdown')}/100`,14:`${ref('Largest Bet')}/100`,15:`SUM(${sheetName}!${col['D Net']}3:${col['D Net']}${last})/100`,
+      16:`IF(SUM(${sheetName}!${col['Cross Bet']}3:${col['Cross Bet']}${last})>0,"Yes","No")`,
+      17:rounds.length?`IF(COUNTIF(${sheetName}!G3:G${last},"Setup incomplete")>0,"Setup incomplete",IF(${ref('stopNext')}<>"",${ref('stopNext')},"Complete"))`:'"Awaiting history"',
+      18:`Scenarios!$${column}$${ROW.players}`};
     for(const [col,formula] of Object.entries(vals))cr.getCell(Number(col)).value={formula};
-    cr.eachCell((cell,n)=>{if(n>=3&&n<=11)cell.numFmt=n===6||n===7?'0.00%':'$#,##0.00;[Red]-$#,##0.00';});
+    cr.eachCell((cell,n)=>{if(n>=4&&n<=15)cell.numFmt=n===7||n===8?'0.00%':'$#,##0.00;[Red]-$#,##0.00';});
   });
   guide.addRow(['Ledger cash columns','Bankroll/return/net/drawdown columns display dollars. Hidden recurrence uses integer cents. Bets use units.']);
   return wb;
 }
 
 function readInputs(wb,game) {
+  const savedReviews=wb.getWorksheet('Configurations')?require('./compact').getLayout(wb).savedReviews||[]:wb.savedReviews||[];
   if(wb.getWorksheet('Configurations'))wb=require('./compact').expandWorkbook(wb);
   const sheet=wb.getWorksheet('Scenarios');if(!sheet)throw new Error('Not a betting test workbook: missing Scenarios');
   const inputRows=new Map();
@@ -212,7 +219,7 @@ function readInputs(wb,game) {
     if(!scenario&&!key)continue;
     LANES.forEach((lane,i)=>{const units=text(row.getCell(i+3)),step=text(row.getCell(i+6));if(units!=='')overrides.push({scenario,key,lane,units:Number(units),nextStep:step===''?null:Number(step)});});
   }
-  return {scenarios:updated,rules,overrides};
+  return {scenarios:updated,rules,overrides,savedReviews};
 }
 
 function cacheLegacyResults(wb,snapshots){
@@ -230,15 +237,17 @@ function cacheLegacyResults(wb,snapshots){
       for(const [column,value] of Object.entries(values))cache(row.getCell(Number(column)),value);
     }
     const s=result.summary,row=wb.getWorksheet('Comparison').getRow(index+2);
-    const values={3:s.net/100,4:s.ending[0]/100,5:s.ending[1]/100,6:s.bankrollROI,7:s.yield,8:s.staked/100,9:s.lowest/100,10:s.drawdown/100,11:s.largestBet/100,
-      12:result.rows.length===0?'Awaiting history':result.rows.some(r=>r.status==='Setup incomplete')?'Setup incomplete':s.complete?'Complete':`Stopped round ${s.stopRound}`};
+    const values={3:!!config.active,4:s.net/100,5:s.ending[0]/100,6:s.ending[1]/100,7:s.bankrollROI,8:s.yield,9:s.staked/100,10:s.lowest/100,
+      11:s.playerLowest[0]/100,12:s.playerLowest[1]/100,13:s.drawdown/100,14:s.largestBet/100,15:s.drawNet/100,16:s.crossBets?'Yes':'No',
+      17:result.rows.length===0?'Awaiting history':result.rows.some(r=>r.status==='Setup incomplete')?'Setup incomplete':s.complete?'Complete':`Stopped round ${s.stopRound}`,18:config.players};
     for(const [column,value] of Object.entries(values))cache(row.getCell(Number(column)),value);
   }
 }
 function createWorkbook(options) {
   const legacy=createLegacyWorkbook(options);
+  if(options.snapshots)cacheLegacyResults(legacy,options.snapshots);
   const compact=require('./compact').compactWorkbook(legacy);
-  Object.defineProperty(compact,'_legacy',{value:legacy});
+  if(!options.snapshots)Object.defineProperty(compact,'_legacy',{value:legacy});
   return compact;
 }
 

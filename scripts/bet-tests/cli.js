@@ -8,11 +8,11 @@ const {promisify}=require('node:util');
 const {pathToFileURL}=require('node:url');
 const ExcelJS=require('exceljs');
 const {GAME_META,loadHistory}=require('./history');
-const {createWorkbook,readInputs,cacheResults}=require('./workbook');
+const {createWorkbook,readInputs}=require('./workbook');
 const {expandWorkbook}=require('./compact');
 const {simulate}=require('./engine');
 const {defaultScenario}=require('./engine');
-const {presets}=require('./schema');
+const {presets,templateScenario}=require('./schema');
 const {ledger,serialize}=require('./csv');
 const execute=promisify(execFile);
 
@@ -27,7 +27,7 @@ async function convertFile(input,format,directory){
   }finally{await fs.rm(profile,{recursive:true,force:true});}
 }
 
-async function generate({game,sourceDir,sourceFile,outputDir=path.resolve('bet tests'),capacity,convert=true,refresh=true,ruleSlots=12}={}){
+async function generate({game,sourceDir,sourceFile,outputDir=path.resolve('bet tests'),capacity,convert=true,refresh=true,ruleSlots=12,store=false,slot}={}){
   if(!Object.hasOwn(GAME_META,game))throw new Error(`Unknown game: ${game}`);
   if(capacity!==undefined&&(!Number.isInteger(capacity)||capacity<1||capacity>20000))throw new Error('Capacity must be 1–20000 rounds');
   await fs.mkdir(outputDir,{recursive:true});
@@ -48,7 +48,36 @@ async function generate({game,sourceDir,sourceFile,outputDir=path.resolve('bet t
     const history=await loadHistory(game,{sourceDir:sourceDir||path.resolve('live results'),sourceFile:sourceFile||(!sourceDir&&previousSource?previousSource:undefined)});
     if(previousRounds>0&&history.rounds.length===0)
       throw new Error(`History refresh returned no rounds. Existing workbook preserved; check source ${history.source||previousSource}.`);
-    const scenarios=inputs.scenarios||presets(defaultScenario,game);
+    const defaults=presets(defaultScenario,game);
+    const scenarios=inputs.scenarios||defaults;
+    if(inputs.scenarios) for(const preset of defaults.slice(5)) if(!scenarios.some(c=>c.id===preset.id)) scenarios.push(preset);
+    inputs.scenarios=scenarios;
+    inputs.rules ||= [];inputs.overrides ||= [];inputs.savedReviews ||= [];
+    if(!scenarios.some(c=>c.active))scenarios[0].active=true;
+    if(slot&&!store)throw new Error('--slot requires --store');
+    if(slot&&!scenarios.some(c=>c.id===slot))throw new Error(`Unknown scenario ${slot}`);
+    const flagged=scenarios.filter(c=>c.lockStore);
+    const targets=scenarios.filter(c=>c.lockStore||(store&&(slot?c.id===slot:!flagged.length&&c.active)));
+    const stagedArchives=[];
+    for(const target of targets){
+      const rules=inputs.rules.filter(r=>r.scenario===target.id);
+      const overrides=inputs.overrides.filter(o=>o.scenario===target.id);
+      const result=simulate(history.rounds,target,rules,overrides);
+      const stamp=Date.now(),archiveName=`${name}_${target.id}_${stamp}.xlsx`;
+      const archive=createWorkbook({game,rounds:history.rounds,scenarios:[target],rules,overrides,capacity,ruleSlots,source:history.source||history.status,snapshots:[{config:target,result}]});
+      for(const sheet of archive.worksheets){
+        sheet.eachRow({includeEmpty:false},row=>row.eachCell({includeEmpty:false},cell=>{cell.protection={locked:true};}));
+        sheet.sheetProtection={sheet:true,selectLockedCells:true,selectUnlockedCells:true};
+      }
+      const staged=path.join(stage,archiveName);await archive.xlsx.writeFile(staged);
+      stagedArchives.push([staged,archiveName]);
+      if(convert){try{const converted=await convertFile(staged,'ods',stage);stagedArchives.push([converted,path.basename(converted)]);}catch(error){if(error.code!=='ENOENT')throw error;}}
+      inputs.savedReviews.push({lockedAt:new Date(stamp).toISOString(),game,source:history.source||history.status,config:structuredClone(target),rules,overrides,summary:result.summary,rows:result.rows,archiveFile:archiveName});
+      inputs.rules=inputs.rules.filter(r=>r.scenario!==target.id);
+      inputs.overrides=inputs.overrides.filter(o=>o.scenario!==target.id);
+      const idx=scenarios.indexOf(target);scenarios[idx]=templateScenario(defaultScenario,game,idx+1);
+    }
+    if(!scenarios.some(c=>c.active))scenarios[0].active=true;
     const ids=new Set((scenarios||[]).map(c=>c.id));
     for(const row of [...(inputs.rules||[]),...(inputs.overrides||[])])if(!ids.has(row.scenario))throw new Error(`Unknown scenario ${row.scenario} in rules/overrides. Existing workbook preserved.`);
     const snapshots=[];
@@ -57,11 +86,11 @@ async function generate({game,sourceDir,sourceFile,outputDir=path.resolve('bet t
       const overrides=(inputs.overrides||[]).filter(o=>o.scenario===config.id);
       snapshots.push({config,result:simulate(history.rounds,config,rules,overrides)});
     }
-    const workbook=createWorkbook({game,rounds:history.rounds,...inputs,capacity,ruleSlots,source:history.source||history.status});
-    cacheResults(workbook,snapshots);
+    const workbook=createWorkbook({game,rounds:history.rounds,...inputs,capacity,ruleSlots,source:history.source||history.status,snapshots});
     const stagedXlsx=path.join(stage,`${name}.xlsx`);await workbook.xlsx.writeFile(stagedXlsx);
     let stagedOds;
-    if(convert)stagedOds=await convertFile(stagedXlsx,'ods',stage);
+    if(convert){try{stagedOds=await convertFile(stagedXlsx,'ods',stage);}catch(error){if(error.code!=='ENOENT')throw error;}}
+    if(stagedArchives.length){const savedDir=path.join(outputDir,'saved');await fs.mkdir(savedDir,{recursive:true});for(const [temporary,archiveName] of stagedArchives){const destination=path.join(savedDir,archiveName);if(await exists(destination))throw new Error(`Archive already exists: ${destination}`);await fs.rename(temporary,destination);}}
     const stamp=`${Date.now()}`;
     for(const [temporary,destination] of [[stagedXlsx,xlsx],...(stagedOds?[[stagedOds,ods]]:[])]){
       if(await exists(destination))await fs.copyFile(destination,`${destination}.backup-${stamp}`);
@@ -84,8 +113,9 @@ function argumentsOf(argv){
   for(let i=0;i<argv.length;i++){
     const flag=argv[i];
     if(flag==='--no-convert')options.convert=false;
+    else if(flag==='--store')options.store=true;
     else if(flag==='--help')options.help=true;
-    else if(['--game','--source-dir','--source','--output-dir','--capacity','--rule-slots'].includes(flag)){
+    else if(['--game','--source-dir','--source','--output-dir','--capacity','--rule-slots','--slot'].includes(flag)){
       const value=argv[++i];if(value===undefined||value.startsWith('--'))throw new Error(`Missing value: ${flag}`);
       const key={'--source-dir':'sourceDir','--source':'sourceFile','--output-dir':'outputDir','--rule-slots':'ruleSlots'}[flag]||flag.slice(2);
       options[key]=['capacity','ruleSlots'].includes(key)?Number(value):value;
@@ -95,7 +125,7 @@ function argumentsOf(argv){
 }
 async function main(argv=process.argv.slice(2)){
   const options=argumentsOf(argv);
-  if(options.help){console.log('Usage: npm run generate:tests -- [--game kickoff|sicbo|teenpatti|baccarat] [--source-dir "live results"] [--source master.csv|master.xlsx|backup.json] [--output-dir "bet tests"] [--capacity 500] [--rule-slots 12]');return;}
+  if(options.help){console.log('Usage: npm run generate:tests -- [--game kickoff|sicbo|teenpatti|baccarat] [--source-dir "live results"] [--source master.csv|master.xlsx|backup.json] [--output-dir "bet tests"] [--capacity 500] [--rule-slots 12] [--store] [--slot S6] [--no-convert]');return;}
   if(options.sourceFile&&!options.game)throw new Error('--source requires --game');
   for(const game of options.game?[options.game]:Object.keys(GAME_META)){
     const result=await generate({...options,game});console.log(`${GAME_META[game].name}: ${result.rounds} rounds; ${result.status}; ${result.ods||result.xlsx}`);

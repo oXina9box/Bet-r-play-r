@@ -65,9 +65,9 @@ async function verify({directory,keep=false}={}){
           total++;
         }
         const row=actual.Comparison.values[configs.indexOf(config)+1];
-        assert.equal(Math.round(row[2]*100),expected.summary.net);
-        assert.equal(Math.round(row[7]*100),expected.summary.staked);
-        assert.equal(Math.round(row[9]*100),expected.summary.drawdown);
+        assert.equal(Math.round(row[3]*100),expected.summary.net);
+        assert.equal(Math.round(row[8]*100),expected.summary.staked);
+        assert.equal(Math.round(row[12]*100),expected.summary.drawdown);
       }
       if(game==='kickoff'){
         await execute('/usr/bin/python3',[path.join(__dirname,'verify-calc.py'),file,'--output',output,'--set',`${mappedCell(workbook,'Scenarios',`B${ROW.unit}`).worksheet.name}!${mappedCell(workbook,'Scenarios',`B${ROW.unit}`).address}=2`],{timeout:180000});
@@ -98,8 +98,7 @@ async function verifyGenerated(directory=path.resolve('bet tests')){
         if(values[0])rounds.push({key:String(values[0]),timestamp:Number(values[1]),session:String(values[2]),outcome:String(values[3]),lossAll:values[4]===true||values[4]===1,raw:String(values[5]),roundId:String(values[6])});
       }
       const output=path.join(temp,`${game}.json`);
-      const ods=path.join(directory,`${name}.ods`);
-      const target=await fs.access(ods).then(()=>ods,()=>path.join(directory,`${name}.xlsx`));
+      const target=path.join(directory,`${name}.xlsx`);
       await execute('/usr/bin/python3',[path.join(__dirname,'verify-calc.py'),target,'--output',output],{timeout:300000,maxBuffer:1024*1024});
       const actual=JSON.parse(await fs.readFile(output,'utf8'));
       for(const config of inputs.scenarios){

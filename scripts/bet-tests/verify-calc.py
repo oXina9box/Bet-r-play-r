@@ -77,9 +77,14 @@ def main():
 
             if document.Sheets.hasByName('Configurations'):
                 settings = document.Sheets.getByName('Configurations')
-                if settings.getCellRangeByName('W1').getString() != 'BET_R_COMPACT_V1':
+                column = 'Z' if settings.getCellRangeByName('Z1').getString() == 'BET_R_COMPACT_V1' else 'W'
+                if settings.getCellRangeByName(column + '1').getString() != 'BET_R_COMPACT_V1':
                     raise RuntimeError('Compact workbook metadata is missing')
-                metadata = json.loads(settings.getCellRangeByName('W2').getString())
+                data = settings.getCellRangeByName(column + '2').getString()
+                if data.startswith('BET_R_PARTS:'):
+                    data = ''.join(settings.getCellRangeByName(column + str(i + 3)).getString()
+                                   for i in range(int(data[12:])))
+                metadata = json.loads(data)
                 sheet = document.Sheets.getByName('Config Results')
                 cursor = sheet.createCursor()
                 cursor.gotoEndOfUsedArea(False)
@@ -87,7 +92,7 @@ def main():
                 for name in metadata['ledgerNames']:
                     mapping = metadata['maps'][name]
                     output[name] = inspect(sheet, mapping['col'], 31, last)
-                comparison = inspect(sheet, 0, 12, metadata['count'] + 3)
+                comparison = inspect(sheet, 0, 18, metadata['count'] + 3)
                 comparison['values'] = comparison['values'][3:]
                 output['Comparison'] = comparison
                 output['Config Results'] = inspect(sheet, 0, 12, last)

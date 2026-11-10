@@ -11,7 +11,7 @@ const VISIBLE = ['Round','Key','Timestamp','Session','Details','Outcome','Status
   'Auto A','Auto B','Auto D','Bet A','Bet B','Bet D','P1 Draw','P2 Draw','P1 Before','P2 Before',
   'Staked','Returned','Net','Running','P1 Cash','P2 Cash','Peak','Lowest','Drawdown','Max Drawdown','Largest Bet'];
 const MONEY=VISIBLE.slice(18);
-const STATE = ['selected','setup','setupEnums','invalid','leader','nextLeader','stopNext','overrideCount','requestedA','requestedB','requestedD','protectionNeed','protectionCapHit'];
+const STATE = ['selected','setup','setupEnums','invalid','leader','nextLeader','stopNext','overrideCount','requestedA','requestedB','requestedD','protectionNeed','protectionCapHit','lastColor','outcomeRun','leaderLosses','nonDrawGap','drawActive','drawWinPaused','Cross Bet','D Gross','D Staked','D Net','P1 Low','P2 Low'];
 for (const lane of LANES) {
   STATE.push(...['step','manual','paused','entryStep','entryManual','entryPaused','actionStep','actionManual','actionPaused','stakeStep','stakeManual','stakePaused',
     'entryRule','stakeRule','afterRule','override','overrideStep','rawUnits','capUnits','result','nextStep','nextManual','nextPaused',
@@ -35,26 +35,17 @@ function buildLedger(ws, { scenarioColumn, ruleRows, ladderRanges, capacity, his
     const hrow=row-1;
     const active=here('selected');
     const dollarsToCents=expr=>`ROUND((${expr})*100,0)`;
-    const counter=(source,metric,post)=>{
-      const lane=source.slice(-1);
-      const kind=source.startsWith('observed')?'observed':'bet';
-      if(metric==='stake') return post?here(`${lane}_${kind}Stake`):prev(`${lane}_${kind}Stake`);
-      if(metric==='step') return post?here(`${lane}_stakeStep`):prev(`${lane}_nextStep`);
-      const key=`${lane}_${kind}${metric[0].toUpperCase()+metric.slice(1)}`;
-      return post?here(key):prev(key);
-    };
     const condition=(rr,offset,post)=>{
       const field=letter=>`Rules!$${letter}$${rr}`;
       const letters=offset===0?['G','H','I','J','K']:['L','M','N','O','P'];
       const [source,metric,op,value,timing]=letters.map(field);
-      const countOptions=[];
-      for(const s of ['observedA','observedB','observedD','betA','betB','betD']) {
-        let expression='0';
-        for(const m of ['wins','losses','pushes','stake','step'].reverse()) expression=iff(`${metric}=${quote(m)}`,counter(s,m,post),expression);
-        countOptions.push([`${source}=${quote(s)}`,expression]);
-      }
-      let actual='0';
-      for(const [test,value] of countOptions.reverse()) actual=iff(test,value,actual);
+      const sources=['observedA','observedB','observedD','betA','betB','betD'];
+      const sourceIndex=`MATCH(${source},{"observedA","observedB","observedD","betA","betB","betD"},0)`;
+      const metricIndex=`MATCH(${metric},{"wins","losses","pushes","stake"},0)`;
+      const starts=sources.map(s=>names.indexOf(`${s.at(-1)}_${s.startsWith('observed')?'observed':'bet'}Wins`)+1).join(',');
+      const steps=['A','B','D'].map(lane=>names.indexOf(`${lane}_${post?'stakeStep':'nextStep'}`)+1).join(',');
+      const index=iff(`${metric}="step"`,`CHOOSE(MATCH(RIGHT(${source},1),{"A","B","D"},0),${steps})`,`CHOOSE(${sourceIndex},${starts})+${metricIndex}-1`);
+      const actual=!post&&row===3?'0':`INDEX($A${post?row:row-1}:$${col[names.at(-1)]}${post?row:row-1},1,${index})`;
       const threshold=`(${value}-${iff(both(`${timing}="entering"`,any(`${metric}="wins"`,`${metric}="losses"`,`${metric}="pushes"`)),1,0)})`;
       let allowed='""';
       for(const [operator,signs] of [['>=','23'],['=','2'],['<=','12'],['>','3'],['<','1']]) allowed=iff(`${op}=${quote(operator)}`,quote(signs),allowed);
@@ -80,7 +71,7 @@ function buildLedger(ws, { scenarioColumn, ruleRows, ladderRanges, capacity, his
     const ladder=(lane,step)=>{
       const range=ladderRanges[lane];
       const custom=`IFERROR(INDEX(${range},MIN(${step}+1,COUNT(${range}))),0)`;
-      return `${lc(lane,'initial')}*${iff(`${lc(lane,'ladder')}="double"`,`2^${step}`,iff(`${lc(lane,'ladder')}="linear"`,`${step}+1`,iff(`${lc(lane,'ladder')}="fib"`,`ROUND(((1+SQRT(5))/2)^(${step}+1)/SQRT(5),0)`,iff(`${lc(lane,'ladder')}="custom"`,custom,1))))}`;
+      return `${lc(lane,'initial')}*${iff(`${lc(lane,'ladder')}="double"`,`2^${step}`,iff(`${lc(lane,'ladder')}="linear"`,`${step}+1`,iff(`${lc(lane,'ladder')}="fib"`,`ROUND(((1+SQRT(5))/2)^(${step}+1)/SQRT(5),0)`,iff(`${lc(lane,'ladder')}="gentle"`,`CHOOSE(MIN(${step}+1,5),1,2,3,6,12)`,iff(`${lc(lane,'ladder')}="partial"`,`CHOOSE(MIN(${step}+1,5),1,2,3,5,8)`,iff(`${lc(lane,'ladder')}="custom"`,custom,1))))))}`;
     };
     const effective=(lane,step,manual)=>iff(`${manual}>=0`,manual,ladder(lane,step));
     put(row,'Round',`ROW()-2`);
@@ -90,7 +81,7 @@ function buildLedger(ws, { scenarioColumn, ruleRows, ladderRanges, capacity, his
     put(row,'leader',prev('nextLeader',cfg('startSide')));
     put(row,'P1 Before',prev('P1 Cash',dollarsToCents(cfg('bankroll1'))));
     put(row,'P2 Before',prev('P2 Cash',iff(`${cfg('players')}=2`,dollarsToCents(cfg('bankroll2')),0)));
-    const setupTerms=[truth(cfg('confirmed')),`${cfg('unit')}>=0.01`,`${cfg('increment')}>0`,`ABS(${cfg('unit')}*100-ROUND(${cfg('unit')}*100,0))<0.000001`,`ABS(${cfg('unit')}*${cfg('increment')}*100-ROUND(${cfg('unit')}*${cfg('increment')}*100,0))<0.000001`,`${cfg('unit')}*${cfg('increment')}>=0.01`,`${cfg('bankroll1')}>=0`,`${cfg('bankroll2')}>=0`,any(`${cfg('players')}=1`,`${cfg('players')}=2`),`NOT(AND(${cfg('players')}=1,${cfg('sideMode')}="dual"))`,`NOT(AND(${cfg('players')}=1,${cfg('drawOwner')}<>"P1"))`,`${cfg('protectPercent')}>=0`,`${cfg('protectPercent')}<=100`,iff(`${cfg('drawMode')}="protection"`,both(`${cfg('oddsD')}>1`,`${cfg('commissionD')}<100`),'TRUE')];
+    const setupTerms=[truth(cfg('confirmed')),`${cfg('unit')}>=0.01`,`${cfg('increment')}>0`,`ABS(${cfg('unit')}*100-ROUND(${cfg('unit')}*100,0))<0.000001`,`ABS(${cfg('unit')}*${cfg('increment')}*100-ROUND(${cfg('unit')}*${cfg('increment')}*100,0))<0.000001`,`${cfg('unit')}*${cfg('increment')}>=0.01`,`${cfg('bankroll1')}>=0`,`${cfg('bankroll2')}>=0`,any(`${cfg('players')}=1`,`${cfg('players')}=2`),`NOT(AND(${cfg('players')}=1,OR(${['dual','cover2','cover4','cover_quarter','momentum'].map(x=>`${cfg('sideMode')}="${x}"`).join(',')})))`,`NOT(AND(${cfg('players')}=1,${cfg('drawOwner')}<>"P1"))`,`${cfg('drawTrigger')}>=1`,`${cfg('drawTrigger')}=INT(${cfg('drawTrigger')})`,`${cfg('protectPercent')}>=0`,`${cfg('protectPercent')}<=100`,iff(`${cfg('drawMode')}="protection"`,both(`${cfg('oddsD')}>1`,`${cfg('commissionD')}<100`),'TRUE')];
     for(const lane of LANES) setupTerms.push(`${lc(lane,'initial')}>0`,`${lc(lane,'cap')}>=0`,any(`${lc(lane,'cap')}=0`,`${lc(lane,'cap')}>=CEILING(${lc(lane,'initial')},${cfg('increment')})`),`${cfg(`commission${lane}`)}>=0`,`${cfg(`commission${lane}`)}<=100`,iff(lane==='D'?`${cfg('drawMode')}<>"off"`:truth(lc(lane,'enabled')),`${cfg(`odds${lane}`)}>=1`,'TRUE'));
     for(const lane of LANES){
       const range=ladderRanges[lane],first=range.split(':')[0];
@@ -98,22 +89,22 @@ function buildLedger(ws, { scenarioColumn, ruleRows, ladderRanges, capacity, his
       for(const result of ['win','loss','push'])setupTerms.push(`${lc(lane,`${result}Value`)}>=0`,iff(any(`${lc(lane,`${result}Action`)}="up"`,`${lc(lane,`${result}Action`)}="down"`),`${lc(lane,`${result}Value`)}=INT(${lc(lane,`${result}Value`)})`,'TRUE'));
     }
     const allowed=(ref,values)=>any(...values.map(value=>`${ref}=${quote(value)}`));
-    const enums=[allowed(cfg('startSide'),['A','B']),allowed(cfg('sideMode'),['fixed','swap1','swap2','dual']),allowed(cfg('drawMode'),['off','fixed','progression','protection']),allowed(cfg('drawOwner'),['P1','P2','split'])];
+    const enums=[allowed(cfg('startSide'),['A','B']),allowed(cfg('sideMode'),['fixed','swap1','swap2','dual','trend2','cover2','cover4','cover_quarter','momentum']),allowed(cfg('drawMode'),['off','fixed','progression','protection','high','streak','cold','gap']),allowed(cfg('drawOwner'),['P1','P2','split'])];
     for(const lane of LANES){
-      enums.push(allowed(lc(lane,'ladder'),['flat','double','linear','fib','custom']),allowed(lc(lane,'capAction'),['repeat','reset','pause']));
+      enums.push(allowed(lc(lane,'ladder'),['flat','double','linear','fib','gentle','partial','custom']),allowed(lc(lane,'capAction'),['repeat','reset','pause']));
       for(const result of ['win','loss','push'])enums.push(allowed(lc(lane,`${result}Action`),['enter','hold','reset','up','down','multiply','add','set','pause']));
       for(const field of ['enabled','startPaused','winPause','lossPause','pushPause'])enums.push(any(`${lc(lane,field)}=TRUE`,`${lc(lane,field)}=FALSE`,`UPPER(${lc(lane,field)})="TRUE"`,`UPPER(${lc(lane,field)})="FALSE"`));
     }
-    put(row,'setupEnums',`IFERROR(${both(...enums)},FALSE)`);
+    put(row,'setupEnums',row===3?`IFERROR(${both(...enums)},FALSE)`:`$${col.setupEnums}$3`);
     setupTerms.push(here('setupEnums'),`${cfg('startRound')}>=1`,`${cfg('startRound')}=INT(${cfg('startRound')})`,`${cfg('endRound')}>=0`,`${cfg('endRound')}=INT(${cfg('endRound')})`,any(`${cfg('endRound')}=0`,`${cfg('endRound')}>=${cfg('startRound')}`),`${cfg('drawThreshold')}>=0`,`${cfg('profitTarget')}>=0`,`${cfg('lossLimit')}>=0`);
-    for(const field of ['players','bankroll1','bankroll2','unit','increment','startRound','endRound','drawThreshold','protectPercent','profitTarget','lossLimit','oddsA','oddsB','oddsD','commissionA','commissionB','commissionD'])setupTerms.push(`ISNUMBER(${cfg(field)})`);
+    for(const field of ['players','bankroll1','bankroll2','unit','increment','startRound','endRound','drawTrigger','drawThreshold','protectPercent','profitTarget','lossLimit','oddsA','oddsB','oddsD','commissionA','commissionB','commissionD'])setupTerms.push(`ISNUMBER(${cfg(field)})`);
     setupTerms.push(...ruleRows.map(rr=>`Rules!$S$${rr}=TRUE`));
-    put(row,'setup',`IFERROR(${both(...setupTerms)},FALSE)`);
+    put(row,'setup',row===3?`IFERROR(${both(...setupTerms)},FALSE)`:`$${col.setup}$3`);
     const desired={};
     for(const lane of LANES) {
       put(row,`${lane}_step`,prev(`${lane}_nextStep`,'0'));
       put(row,`${lane}_manual`,prev(`${lane}_nextManual`,'-1'));
-      put(row,`${lane}_paused`,prev(`${lane}_nextPaused`,truth(lc(lane,'startPaused'))));
+      put(row,`${lane}_paused`,lane==='D'?iff(both(any(`${cfg('drawMode')}="cold"`,`${cfg('drawMode')}="gap"`),`${prev('drawWinPaused')}=TRUE`,`${iff(`${cfg('drawMode')}="cold"`,prev('leaderLosses'),prev('nonDrawGap'))}>=${cfg('drawTrigger')}`),0,prev(`${lane}_nextPaused`,truth(lc(lane,'startPaused')))):prev(`${lane}_nextPaused`,truth(lc(lane,'startPaused'))));
       for(const phase of ['entry','stake','after']) put(row,`${lane}_${phase}Rule`,selectedRule(lane,phase));
       const step=here(`${lane}_step`),manual=here(`${lane}_manual`),paused=here(`${lane}_paused`);
       const ea=ruleField(lane,'entry','Q','"hold"'),ev=ruleField(lane,'entry','R','0');
@@ -137,12 +128,16 @@ function buildLedger(ws, { scenarioColumn, ruleRows, ladderRanges, capacity, his
       const stepCount=`COUNTIFS(Overrides!$A$2:$A$10001,${id},Overrides!$B$2:$B$10001,${here('Key')},Overrides!$${scol}$2:$${scol}$10001,">=0",Overrides!$${scol}$2:$${scol}$10001,"<>")`;
       put(row,`${lane}_overrideStep`,iff(`${stepCount}=0`,-1,`SUMIFS(Overrides!$${scol}$2:$${scol}$10001,Overrides!$A$2:$A$10001,${id},Overrides!$B$2:$B$10001,${here('Key')})`));
       let eligible=both(truth(lc(lane,'enabled')),`${here(`${lane}_stakePaused`)}=FALSE`);
-      if(lane!=='D') eligible=both(eligible,any(iff(`${cfg('players')}=1`,`${here('leader')}=${quote(lane)}`,iff(any(`${cfg('sideMode')}="swap1"`,`${cfg('sideMode')}="swap2"`),`${here('leader')}=${quote(lane)}`,'TRUE')),both(`${here(`${lane}_entryRule`)}>0`,`${ruleField(lane,'entry','Q','"hold"')}="enter"`)));
+      if(lane!=='D') eligible=both(eligible,any(iff(`${cfg('sideMode')}="trend2"`,both(`${prev('outcomeRun')}>=2`,`${prev('lastColor','""')}=${quote(lane)}`),iff(any(`${cfg('sideMode')}="fixed"`,`${cfg('sideMode')}="dual"`),iff(`${cfg('players')}=2`,'TRUE',`${here('leader')}=${quote(lane)}`),`${here('leader')}=${quote(lane)}`)),both(`${here(`${lane}_entryRule`)}>0`,`${ruleField(lane,'entry','Q','"hold"')}="enter"`)));
       else eligible=both(eligible,`${cfg('drawMode')}<>"off"`);
       desired[lane]=iff(eligible,`CEILING(${here(`${lane}_capUnits`)},${cfg('increment')})`,0);
     }
     for(const lane of ['A','B']) {
-      put(row,`Auto ${lane}`,iff(active,desired[lane],0));
+      const opp=lane==='A'?'B':'A';
+      const cover=both(any(`${cfg('sideMode')}="cover2"`,`${cfg('sideMode')}="cover4"`,`${cfg('sideMode')}="cover_quarter"`,`${cfg('sideMode')}="momentum"`),`${here('leader')}=${quote(opp)}`,truth(lc(lane,'enabled')),`${here(`${lane}_stakePaused`)}=FALSE`);
+      const main=`CEILING(${here(`${opp}_capUnits`)},${cfg('increment')})`;
+      const coverUnits=iff(`${cfg('sideMode')}="momentum"`,iff(`${quote(lane)}="A"`,`CEILING(${lc(lane,'initial')},${cfg('increment')})`,0),iff(`${main}>=${iff(`${cfg('sideMode')}="cover4"`,4,2)}`,`CEILING(${iff(`${cfg('sideMode')}="cover_quarter"`,`MAX(1,ROUNDUP(${main}/4,0))`,lc(lane,'initial'))},${cfg('increment')})`,0));
+      put(row,`Auto ${lane}`,iff(active,iff(cover,coverUnits,desired[lane]),0));
       // Requested bets are separated from affordable settled bets to avoid circular cash checks.
       desired[lane]=iff(`${here(`${lane}_override`)}>=0`,here(`${lane}_override`),here(`Auto ${lane}`));
       put(row,`requested${lane}`,desired[lane]);desired[lane]=here(`requested${lane}`);
@@ -161,7 +156,11 @@ function buildLedger(ws, { scenarioColumn, ruleRows, ladderRanges, capacity, his
     const cappedProtection=value=>iff(both(`${lc('D','cap')}>0`,`${value}>${lc('D','cap')}`),iff(`${lc('D','capAction')}="repeat"`,`FLOOR(${lc('D','cap')},${cfg('increment')})`,iff(`${lc('D','capAction')}="reset"`,`CEILING(${lc('D','initial')},${cfg('increment')})`,0)),value);
     const autoExposure=`(${here('Auto A')}+${here('Auto B')})`;
     const autoProtection=iff(`MAX(${here('Auto A')},${here('Auto B')})>=${cfg('drawThreshold')}`,`IFERROR(CEILING(${autoExposure}*${cfg('protectPercent')}/100/${dEffective},${cfg('increment')}),0)`,0);
-    const autoDraw=iff(`${cfg('drawMode')}="protection"`,iff(both(truth(lc('D','enabled')),`(${oldPaused})=FALSE`),cappedProtection(autoProtection),0),iff(`${cfg('drawMode')}="fixed"`,iff(both(truth(lc('D','enabled')),`${here('D_stakePaused')}=FALSE`),`CEILING(${lc('D','initial')},${cfg('increment')})`,0),desired.D));
+    const triggered=iff(`${cfg('drawMode')}="cold"`,prev('leaderLosses'),prev('nonDrawGap'));
+    const streakStep=`MAX(0,${prev('outcomeRun')}-(${cfg('drawTrigger')}-1))`;
+    const streakUnits=`CEILING(${ladder('D',streakStep)},${cfg('increment')})`;
+    const newDraw=iff(`${cfg('drawMode')}="high"`,iff(`MAX(${here('Auto A')},${here('Auto B')})>=${cfg('drawThreshold')}`,`CEILING(${lc('D','initial')},${cfg('increment')})`,0),iff(`${cfg('drawMode')}="streak"`,iff(`${prev('outcomeRun')}>=${cfg('drawTrigger')}-1`,cappedProtection(streakUnits),0),iff(any(`${cfg('drawMode')}="cold"`,`${cfg('drawMode')}="gap"`),iff(any(`${prev('drawActive')}=TRUE`,`${triggered}>=${cfg('drawTrigger')}`),desired.D,0),desired.D)));
+    const autoDraw=iff(`${cfg('drawMode')}="protection"`,iff(both(truth(lc('D','enabled')),`(${oldPaused})=FALSE`),cappedProtection(autoProtection),0),iff(`${cfg('drawMode')}="fixed"`,iff(both(truth(lc('D','enabled')),`${here('D_stakePaused')}=FALSE`),`CEILING(${lc('D','initial')},${cfg('increment')})`,0),iff(both(truth(lc('D','enabled')),`${here('D_stakePaused')}=FALSE`),newDraw,0)));
     put(row,'Auto D',iff(active,autoDraw,0));
     const actualProtection=iff(both(truth(lc('D','enabled')),`(${oldPaused})=FALSE`),cappedProtection(protection),0);
     desired.D=iff(`${here('D_override')}>=0`,here('D_override'),iff(`${cfg('drawMode')}="protection"`,actualProtection,here('Auto D')));
@@ -201,6 +200,12 @@ function buildLedger(ws, { scenarioColumn, ruleRows, ladderRanges, capacity, his
     const drawReturn2=`((${gross.D})-${drawReturn1})`;
     put(row,'P1 Cash',`${here('P1 Before')}+${iff(`${cfg('players')}=1`,here('Net'),`${gross.A}+${drawReturn1}-${dollarsToCents(`(${here('Bet A')}+${here('P1 Draw')})*${cfg('unit')}`)}`)}`);
     put(row,'P2 Cash',`${here('P2 Before')}+${iff(`${cfg('players')}=1`,0,`${gross.B}+${drawReturn2}-${dollarsToCents(`(${here('Bet B')}+${here('P2 Draw')})*${cfg('unit')}`)}`)}`);
+    put(row,'Cross Bet',iff(both(`${here('Bet A')}>0`,`${here('Bet B')}>0`),1,0));
+    put(row,'D Staked',dollarsToCents(`${here('Bet D')}*${cfg('unit')}`));
+    put(row,'D Gross',gross.D);
+    put(row,'D Net',`${here('D Gross')}-${here('D Staked')}`);
+    put(row,'P1 Low',`MIN(${prev('P1 Low',dollarsToCents(cfg('bankroll1')))},${here('P1 Cash')})`);
+    put(row,'P2 Low',`MIN(${prev('P2 Low',iff(`${cfg('players')}=2`,dollarsToCents(cfg('bankroll2')),0))},${here('P2 Cash')})`);
     const total=`(${here('P1 Cash')}+${here('P2 Cash')})`;
     const initialTotal=dollarsToCents(`(${cfg('bankroll1')}+${iff(`${cfg('players')}=2`,cfg('bankroll2'),0)})`);
     put(row,'Running',`${total}-${initialTotal}`);
@@ -211,9 +216,19 @@ function buildLedger(ws, { scenarioColumn, ruleRows, ladderRanges, capacity, his
     put(row,'Largest Bet',`MAX(${prev('Largest Bet')},ROUND(MAX(${here('Bet A')},${here('Bet B')},${here('Bet D')})*${cfg('unit')}*100,0))`);
     const target=any(both(`${cfg('profitTarget')}>0`,`${here('Running')}>=${dollarsToCents(cfg('profitTarget'))}`),both(`${cfg('lossLimit')}>0`,`${here('Running')}<=-${dollarsToCents(cfg('lossLimit'))}`));
     put(row,'stopNext',iff(any(`${here('Status')}="Invalid bet"`,`${here('Status')}="Insufficient cash"`),here('Status'),iff(both(played,target),'"Target reached"',previousStop)));
-    const lossSwap=any(both(`${cfg('sideMode')}="swap1"`,`IF(${here('leader')}="A",${here('Bet A')},${here('Bet B')})>0`),both(`${cfg('sideMode')}="swap2"`,`IF(${here('leader')}="A",${here('Bet A')},${here('Bet B')})>=2`));
+    const leaderBet=`IF(${here('leader')}="A",${here('Bet A')},${here('Bet B')})`;
+    const lossSwap=any(both(any(...['swap1','cover2','cover4','cover_quarter','momentum'].map(x=>`${cfg('sideMode')}="${x}"`)),`${leaderBet}>=1`),both(`${cfg('sideMode')}="swap2"`,`${leaderBet}>=2`));
     const switched=both(played,`${here('Outcome')}<>"D"`,`${here('Outcome')}<>${here('leader')}`,lossSwap);
-    put(row,'nextLeader',iff(switched,here('Outcome'),here('leader')));
+    put(row,'nextLeader',iff(both(played,`${cfg('sideMode')}="dual"`,`${here('Outcome')}<>"D"`),here('Outcome'),iff(switched,here('Outcome'),here('leader'))));
+    const activeLeader=iff(both(`${cfg('sideMode')}="trend2"`,`${prev('outcomeRun')}>=2`),prev('lastColor','""'),here('leader'));
+    const activeBet=`IF(${activeLeader}="A",${here('Bet A')},${here('Bet B')})`;
+    const drawCycle=any(`${cfg('drawMode')}="cold"`,`${cfg('drawMode')}="gap"`);
+    put(row,'lastColor',iff(played,iff(`${here('Outcome')}="D"`,'""',here('Outcome')),prev('lastColor','""')));
+    put(row,'outcomeRun',iff(played,iff(`${here('Outcome')}="D"`,0,iff(`${here('Outcome')}=${prev('lastColor','""')}`,`${prev('outcomeRun')}+1`,1)),prev('outcomeRun')));
+    put(row,'nonDrawGap',iff(played,iff(`${here('Outcome')}="D"`,0,`${prev('nonDrawGap')}+1`),prev('nonDrawGap')));
+    put(row,'leaderLosses',iff(both(played,drawCycle,`${here('Bet D')}>0`,`${here('Outcome')}="D"`),0,iff(both(played,`${activeBet}>0`),iff(`IF(${activeLeader}="A",${here('A_result')},${here('B_result')})="win"`,0,iff(`IF(${activeLeader}="A",${here('A_result')},${here('B_result')})="loss"`,`${prev('leaderLosses')}+1`,prev('leaderLosses'))),prev('leaderLosses'))));
+    put(row,'drawActive',iff(both(played,drawCycle,`${here('Bet D')}>0`),`${here('Outcome')}<>"D"`,prev('drawActive')));
+    put(row,'drawWinPaused',iff(both(played,drawCycle,`${here('Bet D')}>0`,`${here('Outcome')}="D"`),truth(lc('D','winPause')),iff(both(played,drawCycle,`${prev('drawWinPaused')}=TRUE`,`${iff(`${cfg('drawMode')}="cold"`,prev('leaderLosses'),prev('nonDrawGap'))}>=${cfg('drawTrigger')}`),0,prev('drawWinPaused'))));
     for(const lane of LANES) {
       const settled=here(`${lane}_result`),bet=here(`Bet ${lane}`);
       for(const kind of ['observed','bet']) {
@@ -231,16 +246,18 @@ function buildLedger(ws, { scenarioColumn, ruleRows, ladderRanges, capacity, his
       const priorManual=iff(`${here(`${lane}_override`)}>=0`,bet,here(`${lane}_stakeManual`));
       const priorUnits=iff(`${here(`${lane}_override`)}>=0`,bet,`CEILING(${here(`${lane}_capUnits`)},${cfg('increment')})`);
       const next=action(aa,av,here(`${lane}_stakeStep`),priorManual,priorUnits,here(`${lane}_stakePaused`));
-      const reset=both(switched,`${here('nextLeader')}=${quote(lane)}`);
+      const trendReset=both(`${cfg('sideMode')}="trend2"`,`${prev('outcomeRun')}>=2`,`${activeBet}>0`,`${here('Outcome')}<>${activeLeader}`,lane==='D'?'FALSE':'TRUE');
+      const reset=any(both(switched,`${here('nextLeader')}=${quote(lane)}`),trendReset);
       const hasAfter=`${here(`${lane}_afterRule`)}>0`;
       const nextStep=iff(reset,0,iff(both(`${here(`${lane}_overrideStep`)}>=0`,`NOT(${hasAfter})`),here(`${lane}_overrideStep`),next.step));
       const nextManual=iff(reset,-1,iff(both(`${here(`${lane}_overrideStep`)}>=0`,`NOT(${hasAfter})`),-1,next.manual));
       const pauseFlag=iff(`${settled}="win"`,lc(lane,'winPause'),iff(`${settled}="push"`,lc(lane,'pushPause'),lc(lane,'lossPause')));
-      const nextPaused=iff(reset,0,iff(both(`NOT(${hasAfter})`,truth(pauseFlag)),1,next.paused));
+      const nextPaused=iff(both(switched,`${here('nextLeader')}=${quote(lane)}`),0,iff(both(`NOT(${hasAfter})`,truth(pauseFlag)),1,next.paused));
       // Entry/stake changes persist even when no wager is placed; settlement progression does not.
-      put(row,`${lane}_nextStep`,iff(both(played,any(`${bet}>0`,hasAfter,reset)),nextStep,iff(played,here(`${lane}_stakeStep`),here(`${lane}_step`))));
-      put(row,`${lane}_nextManual`,iff(both(played,any(`${bet}>0`,hasAfter,reset)),nextManual,iff(played,here(`${lane}_stakeManual`),here(`${lane}_manual`))));
-      put(row,`${lane}_nextPaused`,iff(both(played,any(`${bet}>0`,hasAfter,reset)),nextPaused,iff(played,here(`${lane}_stakePaused`),here(`${lane}_paused`))));
+      const advance=lane==='D'?`${bet}>0`:both(`${bet}>0`,any(`NOT(${any(...['cover2','cover4','cover_quarter','momentum'].map(x=>`${cfg('sideMode')}="${x}"`))})`,`${here('leader')}=${quote(lane)}`));
+      put(row,`${lane}_nextStep`,iff(both(played,any(advance,hasAfter,reset)),nextStep,iff(played,here(`${lane}_stakeStep`),here(`${lane}_step`))));
+      put(row,`${lane}_nextManual`,iff(both(played,any(advance,hasAfter,reset)),nextManual,iff(played,here(`${lane}_stakeManual`),here(`${lane}_manual`))));
+      put(row,`${lane}_nextPaused`,iff(both(played,any(advance,hasAfter,reset)),nextPaused,iff(played,here(`${lane}_stakePaused`),here(`${lane}_paused`))));
       const reason=iff(`${here(`${lane}_override`)}>=0`,'"Manual override"',iff(`${here(`${lane}_entryRule`)}>0`,`"Entry rule "&${ruleField(lane,'entry','B','""')}`,iff(`${here(`${lane}_stakeRule`)}>0`,`"Stake rule "&${ruleField(lane,'stake','B','""')}`,iff(`${here(`${lane}_stakePaused`)}=TRUE`,'"Paused; saved units "&CEILING('+here(`${lane}_capUnits`)+','+cfg('increment')+')',lane==='D'?iff(`${cfg('drawMode')}="protection"`,'"Draw protects current color exposure"','"Draw "&'+cfg('drawMode')):'"Color selection / ladder"'))));
       const afterReason=iff(hasAfter,`"; after rule "&${ruleField(lane,'after','B','""')}&": "&${aa}&" "&${av}`,'""');
       const capReason=iff(both(`${lc(lane,'cap')}>0`,`${here(`${lane}_rawUnits`)}>${lc(lane,'cap')}`),`"; cap "&${lc(lane,'capAction')}`,'""');

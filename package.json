@@ -11,7 +11,8 @@
     "sync:live": "node scripts/sync-live-results.js",
     "generate:tests": "node scripts/bet-tests/cli.js",
     "sync:tests": "node scripts/bet-tests/cli.js",
-    "test:betting": "node test/bet-tests-engine.test.js && node test/bet-tests-history.test.js && node test/bet-tests-workbook.test.js",
+    "store:tests": "node scripts/bet-tests/cli.js --store",
+    "test:betting": "node --test test/bet-tests-engine.test.js test/bet-tests-history.test.js test/bet-tests-workbook.test.js test/bet-tests-simple.test.js",
     "verify:tests": "node scripts/bet-tests/verify.js"
   },
   "dependencies": {

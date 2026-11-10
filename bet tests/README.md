@@ -3,12 +3,20 @@
 Each game has **three sheets**:
 
 1. **Results** — the imported game history.
-2. **Configurations** — edit the blue cells in a configuration column. Basics, stakes, progression, payouts and draw protection are together. Expand the advanced groups for pauses, pushes, conditional rules, custom ladders and manual overrides.
-3. **Config Results** — compare configurations at the top. Choose a configuration from the blue dropdown to see its round-by-round bets, profit and remaining cash below.
+2. **Configurations** — edit blue cells. Basics, stakes, progression, pauses, payouts and Draw triggers are visible. Live metrics update for each slot. Expand advanced groups for pushes, rules, custom ladders and overrides.
+3. **Config Results** — compare all slots, inspect the active strategy's settings and round-by-round ledger, and expand saved reviews.
 
 Open the `.xlsx` file in Excel or LibreOffice Calc. If you generate an `.ods` copy, use that in Calc. Changes to the blue controls recalculate the results automatically; no macros are needed. Dollar amounts and stake units are labelled separately. Hidden calculation columns keep the result page clean.
 
-Initial scenarios: Flat, Martingale, Fibonacci, Win Press, Draw Protection. These are editable examples, not recommendations or historical winners.
+Slots S1–S5 start as one-player Flat, Martingale, Fibonacci, Win Press and Draw Protection examples. Slots S6–S10 start as two-player Split Draw, Cover 2u+, Cover 4u+, Momentum Flip and Dual Ladders. These are editable historical examples, not recommendations or forecasts.
+
+Set **Active strategy** to TRUE on one slot. If several are TRUE, the leftmost wins; if none are TRUE, S1 is shown. The selector can also be edited manually.
+
+## Store a review
+
+Set **Lock & store result** to TRUE on each desired slot and run `npm run sync:tests`. Alternatively run `npm run store:tests -- --game kickoff --slot S6`; without `--slot`, the active slot is stored when no slots are flagged. An explicit slot is stored alongside any flagged slots. Close the workbook before running either command.
+
+Each stored strategy receives a protected snapshot in `bet tests/saved/` and a frozen review on **Config Results**. Its slot resets to a flat ready template; its active rules and overrides are removed. Other slots remain unchanged. Sheet protection prevents accidental edits, not deliberate changes by someone who unprotects the workbook.
 
 ## Create and refresh
 
@@ -38,11 +46,12 @@ Use `--capacity 1000` for additional prepared formula rows, or `--rule-slots 24`
 
 - **Unit:** dollar value of one unit. **Increment:** minimum stake increment in units. Starting bankrolls are dollars.
 - **Players:** one player may bet only one color plus Draw. Two players: P1 owns A, P2 owns B, either or both can fund Draw. No transfers or borrowing.
-- **Color selection:** `fixed` keeps the selected side for one player, enables both sides for two; `dual` requires two; `swap1` switches after a placed opposite-color loss; `swap2` switches after a loss of at least two units.
-- **Ladder:** `double` plus after-loss `up 1` / after-win `reset` is Martingale. `double` plus after-win `up 1` / after-loss `reset` presses wins.
+- **Color selection:** `fixed`, `swap1`, `swap2`, `dual`, `trend2`, `cover2`, `cover4`, `cover_quarter` and `momentum`. Cover, momentum and dual require two players; cover places an opposite-side wager when the leader reaches its threshold.
+- **Ladder:** `double`, `linear`, `fib`, `gentle` (1,2,3,6,12), `partial` (1,2,3,5,8), flat or custom. After-win/loss controls determine movement.
 - **Fibonacci:** `1,1,2,3,5,8…`; after-loss `up 1`, after-win `down 2` is configurable. Custom values belong in **Configurations → Advanced: Ladders**, contiguous and positive; the final listed value repeats.
 - **Pause:** preserves ladder position. `winPause`/`lossPause`/`pushPause` pauses after applying that progression action. `enter` resumes; `reset` resumes at the starting stake.
 - **Caps:** before a scheduled bet exceeds the cap, repeat clamps, reset restarts, or pause sits out. Uncapped ladders have no hidden ceiling, but unsafe arithmetic stops the test.
+- **Draw modes:** `high` uses the color stake threshold; `streak` uses the preceding same-color run; `cold` uses consecutive leader losses; `gap` uses consecutive non-Draw outcomes. Trigger count and Draw win-pause control cycle entry.
 - **Targets:** profit/loss targets stop future wagering after a settled round; they may overshoot. Insufficient cash stops the entire scenario before that round is wagered.
 
 ## Rules and timing

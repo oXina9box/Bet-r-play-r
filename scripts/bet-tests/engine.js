@@ -19,8 +19,8 @@ const baseLane = () => ({ enabled:true, startPaused:false, initial:1, ladder:'fl
 function defaultScenario(game = 'kickoff') {
   if (!GAMES.includes(game)) fail('Unknown game');
   return { id:'flat',name:'Flat',game,players:1,bankroll1:100,bankroll2:100,unit:1,increment:1,
-    startRound:1,endRound:0,startSide:'A',sideMode:'fixed',drawOwner:'P1',drawMode:'off',
-    drawThreshold:4,protectPercent:100,profitTarget:0,lossLimit:0,
+    active:false,lockStore:false,startRound:1,endRound:0,startSide:'A',sideMode:'fixed',drawOwner:'P1',drawMode:'off',
+    drawTrigger:3,drawThreshold:4,protectPercent:100,profitTarget:0,lossLimit:0,
     oddsA:game==='kickoff'?2.3:0,oddsB:game==='kickoff'?2.3:0,oddsD:game==='kickoff'?5.8:0,
     commissionA:0,commissionB:0,commissionD:0,confirmed:game==='kickoff',
     lanes:{ A:baseLane(), B:baseLane(), D:{...baseLane(),enabled:false} } };
@@ -45,15 +45,18 @@ function validateScenario(c) {
   if (c.protectPercent>100) fail('protectPercent must not exceed 100');
   if (!Number.isInteger(c.startRound)||c.startRound<1||!Number.isInteger(c.endRound)||c.endRound<0||(c.endRound>0&&c.endRound<c.startRound)) fail('Invalid round range');
   if (!['A','B'].includes(c.startSide)) fail('Invalid startSide');
-  if (!['fixed','swap1','swap2','dual'].includes(c.sideMode)) fail('Invalid sideMode');
+  if (!['fixed','swap1','swap2','dual','trend2','cover2','cover4','cover_quarter','momentum'].includes(c.sideMode)) fail('Invalid sideMode');
   if (c.players===1&&c.sideMode==='dual') fail('dual requires two players');
+  if (c.players===1&&['cover2','cover4','cover_quarter','momentum'].includes(c.sideMode)) fail('This sideMode requires two players');
   if (!['P1','P2','split'].includes(c.drawOwner) || (c.players===1&&c.drawOwner!=='P1')) fail('Invalid Draw owner');
-  if (!['off','fixed','progression','protection'].includes(c.drawMode)) fail('Invalid Draw mode');
+  if (!['off','fixed','progression','protection','high','streak','cold','gap'].includes(c.drawMode)) fail('Invalid Draw mode');
+  for (const key of ['active','lockStore']) if (c[key]!==undefined&&typeof c[key]!=='boolean') fail(`Invalid ${key}`);
+  if (c.drawTrigger!==undefined&&(!Number.isInteger(c.drawTrigger)||c.drawTrigger<1)) fail('Invalid drawTrigger');
   for(const key of LANES){
     const l=c.lanes?.[key];
     if(!l||typeof l.enabled!=='boolean'||!finite(l.initial)||l.initial<=0) fail(`Invalid lane ${key}`);
     if(l.startPaused!==undefined&&typeof l.startPaused!=='boolean') fail('Invalid startPaused');
-    if(!['flat','double','linear','fib','custom'].includes(l.ladder)) fail('Invalid ladder');
+    if(!['flat','double','linear','fib','gentle','partial','custom'].includes(l.ladder)) fail('Invalid ladder');
     if(l.ladder==='custom') customValues(l);
     for(const result of ['win','loss','push']) {
       if(l[`${result}Pause`]!==undefined&&typeof l[`${result}Pause`]!=='boolean') fail('Invalid pause flag');
@@ -80,6 +83,8 @@ function ladderUnits(lane,step) {
   let multiple=1;
   if(lane.ladder==='double') multiple=2**step;
   if(lane.ladder==='linear') multiple=step+1;
+  if(lane.ladder==='gentle') multiple=[1,2,3,6,12][Math.min(step,4)];
+  if(lane.ladder==='partial') multiple=[1,2,3,5,8][Math.min(step,4)];
   if(lane.ladder==='custom') { const values=customValues(lane); multiple=values[Math.min(step,values.length-1)]; }
   if(lane.ladder==='fib') {
     if(step>77) fail('Arithmetic limit: Fibonacci ladder exhausted');
@@ -169,6 +174,8 @@ function simulate(rounds,c,rules=[],overrides=[]) {
   const initial=balances.reduce((a,b)=>a+b,0);
   let leader=c.startSide,totalStaked=0,largestBet=0,peak=initial,drawdown=0,lowest=initial;
   let playerLowest=[...balances],stop='',stopRound=null;
+  let lastColor='',outcomeRun=0,leaderLosses=0,nonDrawGap=0,drawActive=false,drawWinPaused=false;
+  let crossBets=false,drawStaked=0,drawReturned=0;
   const rows=[];
   const incomplete=!c.confirmed||LANES.some(k=>(k==='D'?c.drawMode!=='off':c.lanes[k].enabled)&&c[`odds${k}`]<1)
     ||(c.drawMode==='protection'&&(c.oddsD<=1||c.commissionD>=100));
@@ -183,13 +190,25 @@ function simulate(rounds,c,rules=[],overrides=[]) {
     const row={key:round.key,index,outcome:round.outcome,bets:{...empty},autoBets:{...empty},drawAlloc:[0,0],before,after:[...before],net:0,running:before.reduce((a,b)=>a+b,0)-initial,staked:0,returned:0,status:'Played',reasons,steps:{},nextSteps:{},counters:{}};
     if(stop||incomplete){row.status=stop||'Setup incomplete';row.counters=structuredClone(counters);rows.push(row);continue;}
     try{
+      const count=c.drawMode==='cold'?leaderLosses:nonDrawGap;
+      if(['cold','gap'].includes(c.drawMode)&&count>=(c.drawTrigger||3)&&drawWinPaused){states.D.paused=false;drawWinPaused=false;}
+      const activeLeader=c.sideMode==='trend2'&&outcomeRun>=2?lastColor:leader;
       applyPhase('entry'); applyPhase('stake');
       for(const k of LANES){states={...states,[k]:capState(states[k],c.lanes[k],c)};row.steps[k]=states[k].step;}
       for(const k of ['A','B']){
-        const active=c.players===2&&['fixed','dual'].includes(c.sideMode)?true:k===leader;
+        const active=c.sideMode==='trend2'?outcomeRun>=2&&k===activeLeader:
+          c.players===2&&['fixed','dual'].includes(c.sideMode)?true:k===leader;
         const entryRule=ordered.find(r=>r.lane===k&&r.phase==='entry'&&matchRule(r,counters));
         const entered=entryRule?.action==='enter';
         row.autoBets[k]=c.lanes[k].enabled&&!states[k].paused&&(active||entered)?stake(states[k],c.lanes[k],c):0;
+      }
+      if(['cover2','cover4','cover_quarter','momentum'].includes(c.sideMode)) {
+        const opp=leader==='A'?'B':'A', main=row.autoBets[leader];
+        if(c.lanes[opp].enabled&&!states[opp].paused) {
+          if(c.sideMode==='momentum') row.autoBets[opp]=leader==='B'?roundedUnits(c.lanes.A.initial,c):0;
+          else row.autoBets[opp]=main>=(c.sideMode==='cover4'?4:2)?
+            roundedUnits(c.sideMode==='cover_quarter'?Math.max(1,Math.ceil(main/4)):c.lanes[opp].initial,c):0;
+        }
       }
       if(c.drawMode!=='off'&&c.lanes.D.enabled&&!states.D.paused){
         if(c.drawMode==='protection'){
@@ -197,7 +216,12 @@ function simulate(rounds,c,rules=[],overrides=[]) {
           row.autoBets.D=Math.max(row.autoBets.A,row.autoBets.B)>=c.drawThreshold?roundedUnits(exposure*c.protectPercent/100/((c.oddsD-1)*(1-c.commissionD/100)),c):0;
           row.autoBets.D=protectionCap(row.autoBets.D,states.D,c.lanes.D,c).units;
           reasons.D=`Protection of ${exposure} units at ${c.protectPercent}%`;
-        }else row.autoBets.D=c.drawMode==='fixed'?roundedUnits(c.lanes.D.initial,c):stake(states.D,c.lanes.D,c);
+        }else if(c.drawMode==='fixed'||c.drawMode==='high') row.autoBets.D=c.drawMode==='fixed'||Math.max(row.autoBets.A,row.autoBets.B)>=c.drawThreshold?roundedUnits(c.lanes.D.initial,c):0;
+        else if(c.drawMode==='streak') {
+          if(outcomeRun>=(c.drawTrigger||3)-1){const streak=capState({step:outcomeRun-((c.drawTrigger||3)-1),explicit:null,paused:false},c.lanes.D,c);row.autoBets.D=streak.paused?0:stake(streak,c.lanes.D,c);}
+        } else if(['cold','gap'].includes(c.drawMode)) {
+          if(drawActive||count>=(c.drawTrigger||3)) row.autoBets.D=stake(states.D,c.lanes.D,c);
+        } else row.autoBets.D=stake(states.D,c.lanes.D,c);
       }
       row.bets={...row.autoBets};
       for(const k of LANES){
@@ -238,9 +262,10 @@ function simulate(rounds,c,rules=[],overrides=[]) {
           if(!Number.isSafeInteger(totalReturn))fail('Arithmetic limit: unsafe payout');
           const first=cash[k]?Math.round(totalReturn*allocations[k][0]/cash[k]):0;
           returns[0]+=first;returns[1]+=totalReturn-first;
+          if(k==='D'){drawStaked+=cash[k];drawReturned+=totalReturn;}
           counters={...counters,[`observed${k}`]:updatedCounter(counters[`observed${k}`],result,row.bets[k],states[k].step)};
-          if(cash[k]){
-            counters={...counters,[`bet${k}`]:updatedCounter(counters[`bet${k}`],result,row.bets[k],states[k].step)};
+          if(cash[k]) counters={...counters,[`bet${k}`]:updatedCounter(counters[`bet${k}`],result,row.bets[k],states[k].step)};
+          if(cash[k]&&(!['cover2','cover4','cover_quarter','momentum'].includes(c.sideMode)||k==='D'||k===leader)){
             const override=overrideMap.get(`${round.key}:${k}`);
             let next=override?{...states[k],explicit:row.bets[k]}:states[k];
             next=action(next,c.lanes[k][`${result}Action`],c.lanes[k][`${result}Value`],c.lanes[k],c);
@@ -258,6 +283,25 @@ function simulate(rounds,c,rules=[],overrides=[]) {
             reasons[k]=`${rule.id}: ${rule.action} ${rule.amount} next round`;
           }
         }
+        if(row.bets[activeLeader]>0){const result=laneResult(round,activeLeader,c.game);if(result==='win')leaderLosses=0;else if(result==='loss')leaderLosses++;}
+        if(['cold','gap'].includes(c.drawMode)&&row.bets.D>0){
+          if(round.outcome==='D'){drawActive=false;leaderLosses=0;drawWinPaused=!!c.lanes.D.winPause;}
+          else {
+            drawActive=true;
+            if(c.lanes.D.cap&&c.lanes.D.capAction==='repeat'&&stake(priorStates.D,c.lanes.D,c)>=c.lanes.D.cap) states.D=priorStates.D;
+          }
+        }
+        if(c.sideMode==='trend2'&&outcomeRun>=2&&row.bets[activeLeader]>0&&round.outcome!==activeLeader){
+          for(const k of ['A','B']) states[k]={...states[k],step:0,explicit:null};
+        }
+        if(['cover2','cover4','cover_quarter','momentum'].includes(c.sideMode)&&['A','B'].includes(round.outcome)&&round.outcome!==leader&&row.bets[leader]>=1){
+          leader=round.outcome;states[leader]={step:0,explicit:null,paused:false};
+        }
+        nonDrawGap=round.outcome==='D'?0:nonDrawGap+1;
+        outcomeRun=round.outcome==='D'?0:round.outcome===lastColor?outcomeRun+1:1;
+        lastColor=round.outcome==='D'?'':round.outcome;
+        crossBets ||= row.bets.A>0&&row.bets.B>0;
+        if(c.sideMode==='dual'&&['A','B'].includes(round.outcome)) leader=round.outcome;
         if(c.sideMode.startsWith('swap')&&['A','B'].includes(round.outcome)&&round.outcome!==leader){
           if((c.sideMode==='swap1'&&row.bets[leader]>0)||row.bets[leader]>=2){leader=round.outcome;states={...states,[leader]:{step:0,explicit:null,paused:false}};}
         }
@@ -282,6 +326,7 @@ function simulate(rounds,c,rules=[],overrides=[]) {
   }
   const net=balances[0]+balances[1]-initial;
   return {rows,summary:{net,ending:[...balances],lowest,playerLowest,drawdown,staked:totalStaked,largestBet,
+    crossBets,drawStaked,drawReturned,drawNet:drawReturned-drawStaked,
     complete:!incomplete&&(!stop||stopRound> (selected.at(-1)?selected.length+c.startRound-1:0)),stopRound,
     bankrollROI:initial?net/initial:0,yield:totalStaked?net/totalStaked:0}};
 }

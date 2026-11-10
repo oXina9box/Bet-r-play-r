@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 const ExcelJS=require('exceljs');
 const {createWorkbook,readInputs,cacheResults}=require('../scripts/bet-tests/workbook');
 const {defaultScenario,simulate}=require('../scripts/bet-tests/engine');
-const {presets}=require('../scripts/bet-tests/schema');
+const {presets,ROW}=require('../scripts/bet-tests/schema');
 const rounds=['A','B','D'].map((outcome,i)=>({key:`simple-${i}`,timestamp:1000+i,session:'original',outcome,lossAll:outcome==='D',raw:'quick',roundId:''}));
 
 test('three clean sheets preserve every scenario, rule, override and custom ladder through save',async()=>{
@@ -21,7 +21,7 @@ test('three clean sheets preserve every scenario, rule, override and custom ladd
   assert.ok(wb.getWorksheet('Config Results').getCell('B1').isMerged);
   const saved=new ExcelJS.Workbook();await saved.xlsx.load(await wb.xlsx.writeBuffer());
   const inputs=readInputs(saved,'kickoff');
-  assert.deepEqual(inputs,{scenarios,rules,overrides});
+  assert.deepEqual(inputs,{scenarios,rules,overrides,savedReviews:[]});
   const formulas=[];
   saved.eachSheet(s=>s.eachRow(row=>row.eachCell(cell=>{if(cell.formula)formulas.push(cell.formula);})));
   assert.ok(formulas.length>100);
@@ -32,17 +32,24 @@ test('ordinary controls stay visible while advanced options remain grouped and e
   const wb=createWorkbook({game:'kickoff',rounds,capacity:3});
   const {mappedCell,getLayout}=require('../scripts/bet-tests/compact');
   const settings=wb.getWorksheet('Configurations');
-  const basic=mappedCell(wb,'Scenarios','B6');
+  const basic=mappedCell(wb,'Scenarios',`B${ROW.bankroll1}`);
   assert.equal(basic.fill.fgColor.argb,'DCEEFF');
   assert.equal(settings.getRow(basic.row).hidden,false);
-  const paused=mappedCell(wb,'Scenarios','B28');
+  const paused=mappedCell(wb,'Scenarios',`B${ROW['A.startPaused']}`);
   assert.equal(paused.fill.fgColor.argb,'DCEEFF');
-  assert.equal(settings.getRow(paused.row).hidden,true);
+  assert.equal(settings.getRow(paused.row).hidden,false);
   const rule=mappedCell(wb,'Rules','C2');
   assert.equal(rule.dataValidation.type,'list');
   const layout=getLayout(wb);
   assert.ok(layout.maps.Overrides.row>layout.maps.Ladders.row);
   const dropdown=wb.getWorksheet('Config Results').getCell(layout.detail.selectorRow,2);
+  for(const key of ['active','lockStore','drawTrigger','A.startPaused','A.winPause','D.winPause']){
+    const cell=mappedCell(wb,'Scenarios',`B${ROW[key]}`);
+    assert.equal(settings.getRow(cell.row).hidden,false,key);
+  }
+  const metricRow=settings.getColumn(1).values.findIndex(v=>v==='Net ($)');
+  assert.match(settings.getCell(metricRow,2).formula,/Config Results/);
+  assert.equal(readInputs(wb,'kickoff').scenarios.length,10);
   assert.equal(dropdown.dataValidation.type,'list');
   basic.value=245;
   paused.value=true;

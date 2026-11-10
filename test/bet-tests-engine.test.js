@@ -164,3 +164,19 @@ test('trust boundaries reject invalid values',()=>{
   assert.throws(()=>laneResult({outcome:'A'},'X','kickoff'));
   assert.throws(()=>defaultScenario('unknown'));
 });
+
+test('ranked two-player presets reproduce historical replay', () => {
+  const { presets } = require('../scripts/bet-tests/schema');
+  const history = require('./fixtures/kickoff-history128.json');
+  assert.deepEqual(presets(defaultScenario, 'kickoff').slice(5).map(c => simulate(history, c).summary.net),
+    [46980, 46550, 46130, 45960, 45700]);
+});
+
+test('cold Draw trigger ignores pushed color wagers and respects start paused', () => {
+  const c=defaultScenario('baccarat');
+  Object.assign(c,{confirmed:true,oddsA:2,oddsB:2,oddsD:9,drawMode:'cold',drawTrigger:1});
+  c.lanes.D={...c.lanes.D,enabled:true,winPause:true};
+  assert.equal(simulate(rounds('DA'),c).rows[1].bets.D,0);
+  c.lanes.D.startPaused=true;
+  assert.equal(simulate(rounds('BBA'),c).rows[2].bets.D,0);
+});
