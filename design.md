@@ -40,7 +40,7 @@ Interactive controls should account for default, hover, focus-visible, active, d
 
 ## Responsive contract
 
-This is a narrow split-window workbench. Preserve existing DOM hooks, keyboard behavior, and game layouts; prioritize controls and core live state in compact view. Root horizontal overflow should be clipped, not hidden. Respect existing per-game viewport geometry; no responsive behavior is certified by this token/spec file. Verify layout at the project’s target window sizes in the application’s owning test suite.
+This is a narrow split-window workbench. Preserve existing DOM hooks, keyboard behavior, and game layouts; prioritize controls and core live state in compact view. `node test/browser.test.js --ui` checks the page, advice, statistics, Recorder, and Options for Sic Bo, Teen Patti, and Kickoff at 600×800, 522×828, 390×900, 650×900, 760×900, and 960×900. `node test/browser.test.js --sicbo-ui` also checks Sic Bo layout, keyboard entry, and controls at these sizes. Both use isolated temporary data and an existing Playwright installation.
 
 ## CSS usage
 

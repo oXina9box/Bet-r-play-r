@@ -114,6 +114,46 @@ async function checkOptionsUI(page) {
   await page.setViewportSize({ width: 1280, height: 720 });
 }
 
+async function checkPanelLayouts(page) {
+  const sizes = [[600, 800], [522, 828], [390, 900], [650, 900], [760, 900], [960, 900]];
+  for (const game of ['sicbo', 'teenpatti', 'kickoff']) {
+    await page.locator(`#games [data-v="${game}"]`).click();
+    for (const [width, height] of sizes) {
+      await page.setViewportSize({ width, height });
+      for (const [toggle, selector] of [['#recorderToggle', '#recorderMenu .recorder-panel'], ['#optionsToggle', '#optionsMenu']]) {
+        await page.locator(toggle).click();
+        const layout = await page.locator(selector).evaluate(el => {
+          const measure = node => {
+            const rect = node.getBoundingClientRect();
+            return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom,
+              width: rect.width, height: rect.height, clientWidth: node.clientWidth, clientHeight: node.clientHeight,
+              scrollWidth: node.scrollWidth, scrollHeight: node.scrollHeight };
+          };
+          return { panel: measure(el), page: measure(document.documentElement),
+            stats: measure(document.querySelector('.stats')), advice: measure(document.querySelector('#next')) };
+        });
+        const label = `${game} ${width}x${height} ${toggle}`;
+        const { panel } = layout;
+        assert.ok(panel.left >= 0 && panel.top >= 0 && panel.right <= width && panel.bottom <= height,
+          `${label} panel outside viewport: ${JSON.stringify(layout)}`);
+        assert.ok(panel.scrollWidth <= panel.clientWidth && panel.scrollHeight <= panel.clientHeight,
+          `${label} panel scrolls: ${JSON.stringify(layout)}`);
+        assert.ok(layout.page.scrollWidth <= width && layout.page.scrollHeight <= height,
+          `${label} page scrolls: ${JSON.stringify(layout)}`);
+        assert.ok(layout.stats.scrollWidth <= layout.stats.clientWidth && layout.stats.scrollHeight <= layout.stats.clientHeight,
+          `${label} statistics clipped: ${JSON.stringify(layout)}`);
+        assert.ok(layout.advice.scrollWidth <= layout.advice.clientWidth && layout.advice.scrollHeight <= layout.advice.clientHeight,
+          `${label} advice clipped: ${JSON.stringify(layout)}`);
+        if (toggle === '#optionsToggle') await page.keyboard.press('Escape');
+        else await page.locator(toggle).click();
+      }
+    }
+  }
+  await page.locator('#games [data-v="sicbo"]').click();
+  await page.setViewportSize({ width: 1280, height: 720 });
+  console.log('Recorder and Options layouts passed for three games at six viewports');
+}
+
 async function checkSicBoHistory(page, file) {
   const { createDefault } = require('../js/data');
   const seed = { ...createDefault(), savedAt: Date.now(), books: { 'shuff:sicbo': {
@@ -317,6 +357,7 @@ async function main() {
     await page.waitForFunction(() => document.querySelector('#site option') && !document.querySelector('main').inert);
     await page.waitForFunction(() => document.querySelector('#sessionInfo').textContent.includes('0 rolls'));
     await checkOptionsUI(page);
+    if (stage === 'ui') await checkPanelLayouts(page);
     if (!stage || ['ui', 'sicbo-ui', 'sicbo'].includes(stage)) {
       await require('./sicbo-ui')(page, file, waitFor, openOptions, fixture());
     }
