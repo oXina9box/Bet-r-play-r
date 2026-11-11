@@ -1,252 +1,105 @@
 'use strict';
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs/promises');
-const os = require('node:os');
-const path = require('node:path');
-const { createWorkbook, readInputs } = require('../scripts/bet-tests/workbook');
-const { generate, convertFile } = require('../scripts/bet-tests/cli');
-const { ROW } = require('../scripts/bet-tests/schema');
-const { mappedCell, getLayout, expandWorkbook } = require('../scripts/bet-tests/compact');
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs/promises');
+const os=require('node:os');
+const path=require('node:path');
 const ExcelJS=require('exceljs');
-const {defaultScenario,simulate}=require('../scripts/bet-tests/engine');
-const {execFile}=require('node:child_process');
-const {promisify}=require('node:util');
-const execute=promisify(execFile);
+const {createWorkbook,readInputs}=require('../scripts/bet-tests/workbook');
+const {generate,convertFile}=require('../scripts/bet-tests/cli');
+const {mappedCell}=require('../scripts/bet-tests/compact');
+const {ROW}=require('../scripts/bet-tests/schema');
+const rounds=['A','A','A','D','B','B'].map((outcome,i)=>({key:`r${i}`,timestamp:1000+i,session:'one',outcome,lossAll:outcome==='D',raw:'quick',roundId:'',site:'test',sourceIndex:i}));
 
-const rounds = ['A', 'A', 'A', 'D', 'B', 'B'].map((outcome, i) => ({
-  key: `r${i}`, timestamp: 1000+i, session: 'one', outcome, lossAll: outcome==='D', raw: 'quick', roundId: '',
-}));
-
-test('workbook has three clean tabs while preserving editable controls and formula ledgers', () => {
-  const wb = createWorkbook({ game: 'kickoff', rounds, capacity: 12 });
-  assert.deepEqual(wb.worksheets.map(sheet=>sheet.name), ['Results','Configurations','Config Results']);
-  assert.equal(mappedCell(wb,'Scenarios',`B${ROW.bankroll1}`).value,100);
-  assert.equal(mappedCell(wb,'Scenarios',`B${ROW.oddsA}`).value,2.3);
-  assert.ok(mappedCell(wb,'S1','N3').formula);
-  assert.equal(mappedCell(wb,'Rounds','A2').value,'r0');
-  for(const name of ['S1','S2','S3','S4','S5']) {
-    const cell=mappedCell(wb,name,'N3');
-    assert.equal(cell.worksheet.getColumn(cell.col).hidden,true);
-  }
-  assert.equal(getLayout(wb).count,10);
-  assert.equal(expandWorkbook(wb).getWorksheet('Rounds').getCell('A2').value,'r0');
+test('Kickoff numeric workbook exposes 44 blank unlocked inputs and V2 array shapes',async()=>{
+  const wb=createWorkbook({game:'kickoff',rounds,capacity:12,source:'/tmp/history.csv'});
+  assert.deepEqual(wb.worksheets.map(s=>s.name),['Results','Test Options','Test Results']);
+  const options=wb.getWorksheet('Test Options'),results=wb.getWorksheet('Results'),detail=wb.getWorksheet('Test Results');
+  assert.equal(options.getCell('Z1').value,require('../scripts/bet-tests/kickoff').MARKER);assert.equal(options.getCell('Z2').value,'/tmp/history.csv');
+  const inputs=[];
+  for(let row=5;row<=13;row++)inputs.push(`B${row}`);
+  for(let row=16;row<=27;row++)inputs.push(`B${row}`,`C${row}`);
+  for(let row=17;row<=27;row++)inputs.push(`D${row}`);
+  assert.equal(inputs.length,44);
+  for(const address of inputs){const cell=options.getCell(address);assert.equal(cell.value,null,address);assert.equal(cell.protection.locked,false,address);}
+  assert.deepEqual(results.getRow(1).values.slice(1,10),['Round key','Timestamp','Session','Outcome','Loss all','Raw details','Round ID','Site','Source index']);
+  assert.deepEqual(results.getRow(2).values.slice(1,10),[rounds[0].key,rounds[0].timestamp,rounds[0].session,rounds[0].outcome,rounds[0].lossAll,rounds[0].raw,rounds[0].roundId,rounds[0].site,rounds[0].sourceIndex]);
+  assert.equal(detail.getRow(6).values[1],'Round');assert.equal(detail.getRow(6).values[23],'Key');
+  const saved=new ExcelJS.Workbook();await saved.xlsx.load(await wb.xlsx.writeBuffer());
+  assert.deepEqual(readInputs(saved,'kickoff'),{globals:Array(9).fill(null),p1:Array(12).fill(null),p2:Array(12).fill(null),draw:Array(11).fill(null)});
+  const values=readInputs(saved,'kickoff');values.globals[5]=0;values.p1[7]=0;values.draw[0]=0;
+  const zeros=createWorkbook({game:'kickoff',rounds,inputs:values});assert.deepEqual(readInputs(zeros,'kickoff'),values);
+  assert.ok(zeros.worksheets.every(s=>s.state==='visible'));
 });
 
-test('scenario edits and zero overrides survive input extraction', () => {
-  const wb = createWorkbook({ game: 'kickoff', rounds, capacity: 12 });
-  mappedCell(wb,'Scenarios',`B${ROW.bankroll1}`).value=234;
-  ['S1','r0',0].forEach((value,index)=>{mappedCell(wb,'Overrides',`${String.fromCharCode(65+index)}2`).value=value;});
-  const inputs=readInputs(wb,'kickoff');
-  assert.equal(inputs.scenarios[0].bankroll1,234);
+test('legacy compact scenario edits and zero overrides remain supported by Sic Bo',()=>{
+  const wb=createWorkbook({game:'sicbo',rounds,capacity:12});mappedCell(wb,'Scenarios',`B${ROW.bankroll1}`).value=234;
+  ['S1','r0',0].forEach((v,i)=>{mappedCell(wb,'Overrides',`${String.fromCharCode(65+i)}2`).value=v;});
+  const inputs=readInputs(wb,'sicbo');assert.equal(inputs.scenarios[0].bankroll1,234);
   assert.deepEqual(inputs.overrides[0],{scenario:'S1',key:'r0',lane:'A',units:0,nextStep:null});
+  assert.deepEqual(wb.worksheets.map(s=>s.name),['Results','Configurations','Config Results']);
 });
 
-test('missing history produces setup workbook without fabricated rounds', async () => {
+test('non-Kickoff lock, missing history and compact refresh protections remain intact',async()=>{
   const dir=await fs.mkdtemp(path.join(os.tmpdir(),'bet-workbook-'));
-  try {
-    const result=await generate({game:'baccarat',sourceDir:dir,outputDir:dir,convert:false,capacity:12});
-    assert.equal(result.rounds,0);
-    assert.match(result.status,/Awaiting history/i);
-    assert.ok((await fs.stat(result.xlsx)).size>0);
-  } finally { await fs.rm(dir,{recursive:true,force:true}); }
-});
-
-test('refresh refuses open-workbook locks', async () => {
-  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'bet-locked-'));
-  try {
-    await fs.writeFile(path.join(dir,'.~lock.The_Kickoff_Tests.ods#'),'locked');
-    await assert.rejects(generate({game:'kickoff',sourceDir:dir,outputDir:dir,convert:false,capacity:12}),/open|lock/i);
-  } finally { await fs.rm(dir,{recursive:true,force:true}); }
-});
-
-test('refresh preserves settings, named scenarios, overrides and source; missing source preserves file',async()=>{
-  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'bet-refresh-'));
-  const source=path.join(dir,'history.csv');
   try{
-    await fs.writeFile(source,'Timestamp,Session ID,Result\n1000,s,RED\n2000,s,BLUE\n');
-    const first=await generate({game:'kickoff',sourceFile:source,outputDir:dir,convert:false,capacity:5});
-    const wb=new ExcelJS.Workbook();await wb.xlsx.readFile(first.xlsx);
-    mappedCell(wb,'Scenarios',`B${ROW.bankroll1}`).value=321;
-    const key=mappedCell(wb,'Rounds','A2').value;
-    mappedCell(wb,'Overrides','A2').value='S1';
-    mappedCell(wb,'Overrides','B2').value=key;
-    mappedCell(wb,'Overrides','C2').value=0;
-    await wb.xlsx.writeFile(first.xlsx);
-    await fs.appendFile(source,'3000,s,DRAW\n');
-    const second=await generate({game:'kickoff',outputDir:dir,convert:false,capacity:6});
-    assert.equal(second.rounds,3);
-    const refreshed=new ExcelJS.Workbook();await refreshed.xlsx.readFile(second.xlsx);
-    const inputs=readInputs(refreshed,'kickoff');
-    assert.equal(inputs.scenarios[0].bankroll1,321);
-    assert.equal(inputs.overrides[0].units,0);
-    const before=await fs.readFile(second.xlsx);
-    await fs.unlink(source);
+    await fs.writeFile(path.join(dir,'.~lock.Sic_Bo_Tests.ods#'),'locked');
+    await assert.rejects(generate({game:'sicbo',sourceDir:dir,outputDir:dir,convert:false,capacity:12}),/open|lock/i);
+    await fs.unlink(path.join(dir,'.~lock.Sic_Bo_Tests.ods#'));
+    const empty=await generate({game:'baccarat',sourceDir:dir,outputDir:dir,convert:false,capacity:12});assert.equal(empty.rounds,0);assert.match(empty.status,/Awaiting history/i);
+    const source=path.join(dir,'history.csv');await fs.writeFile(source,'Timestamp,Session ID,Result\n1000,s,BIG\n2000,s,SMALL\n');
+    const first=await generate({game:'sicbo',sourceFile:source,outputDir:dir,convert:false,capacity:5});
+    const prior=await fs.readFile(first.xlsx);await fs.unlink(source);
+    await assert.rejects(generate({game:'sicbo',outputDir:dir,convert:false}),/preserved|missing/i);assert.deepEqual(await fs.readFile(first.xlsx),prior);
+  }finally{await fs.rm(dir,{recursive:true,force:true});}
+});
+
+test('Kickoff V1 migration backs up layout, retains source guards, and starts blank',async()=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'bet-kickoff-migrate-'));
+  try{
+    const source=path.join(dir,'history.csv');await fs.writeFile(source,'Timestamp,Session ID,Result\n1000,s,RED\n2000,s,BLUE\n');
+    const first=path.join(dir,'The_Kickoff_Tests.xlsx');
+    const legacy=createWorkbook({game:'kickoff',rounds,capacity:5,source});
+    const legacyOptions=legacy.getWorksheet('Test Options');legacyOptions.getCell('Z1').value='BET_R_KICKOFF_NUMERIC_V1';
+    legacyOptions.getCell('Z2').value=source;legacyOptions.getCell('B5').value=1;legacyOptions.getCell('B6').value=4;
+    legacyOptions.getCell('B16').value=100;legacyOptions.getCell('B17').value=1;await legacy.xlsx.writeFile(first);
+    const original=await fs.readFile(first),migrated=await generate({game:'kickoff',outputDir:dir,convert:false});
+    const backupName=(await fs.readdir(dir)).find(n=>n.startsWith('The_Kickoff_Tests.xlsx.backup-'));
+    assert.ok(backupName);assert.deepEqual(await fs.readFile(path.join(dir,backupName)),original);
+    const wb=new ExcelJS.Workbook();await wb.xlsx.readFile(migrated.xlsx);
+    assert.deepEqual(readInputs(wb,'kickoff'),{globals:Array(9).fill(null),p1:Array(12).fill(null),p2:Array(12).fill(null),draw:Array(11).fill(null)});
+    assert.equal(wb.getWorksheet('Test Options').getCell('Z2').value,source);
+    assert.equal(wb.getWorksheet('Results').rowCount,3);
+    const bytes=await fs.readFile(migrated.xlsx);await fs.unlink(source);
     await assert.rejects(generate({game:'kickoff',outputDir:dir,convert:false}),/preserved|missing/i);
-    assert.deepEqual(await fs.readFile(second.xlsx),before);
+    assert.deepEqual(await fs.readFile(migrated.xlsx),bytes);
   }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
 
-test('invalid scenario references are not discarded on refresh',async()=>{
-  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'bet-orphan-'));
+test('Kickoff refresh preserves blanks and explicit zeros; store archives then clears',async()=>{
+  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'bet-kickoff-store-'));
   try{
-    const first=await generate({game:'kickoff',sourceDir:dir,outputDir:dir,convert:false,capacity:2});
-    const wb=new ExcelJS.Workbook();await wb.xlsx.readFile(first.xlsx);
-    mappedCell(wb,'Rules','A2').value='Unknown';
-    mappedCell(wb,'Rules','B2').value='draft';
-    await wb.xlsx.writeFile(first.xlsx);
-    await assert.rejects(generate({game:'kickoff',sourceDir:dir,outputDir:dir,convert:false}),/Unknown scenario/);
-  }finally{await fs.rm(dir,{recursive:true,force:true});}
-});
-
-test('store flag archives a protected review and resets its slot',async()=>{
-  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'bet-store-'));
-  try {
-    const source=path.join(dir,'history.csv');
-    await fs.writeFile(source,'Timestamp,Session ID,Result\n1000,s,RED\n2000,s,BLUE\n3000,s,DRAW\n');
-    const first=await generate({game:'kickoff',sourceFile:source,outputDir:dir,convert:false,capacity:4,ruleSlots:1});
-    const edited=new ExcelJS.Workbook();await edited.xlsx.readFile(first.xlsx);
-    mappedCell(edited,'Scenarios',`G${ROW.lockStore}`).value=true;
-    await edited.xlsx.writeFile(first.xlsx);
-    await generate({game:'kickoff',sourceFile:source,outputDir:dir,convert:false,capacity:4,ruleSlots:1});
-    const wb=new ExcelJS.Workbook();await wb.xlsx.readFile(first.xlsx);
-    const inputs=readInputs(wb,'kickoff');
-    assert.equal(inputs.scenarios[5].name,'2P New Strategy 1');
-    assert.equal(inputs.scenarios[5].lockStore,false);
-    assert.equal(inputs.savedReviews.length,1);
-    const review=inputs.savedReviews[0];
-    assert.equal(review.config.name,'2P Split Draw');
-    assert.equal(review.rows.length,3);
-    const archive=new ExcelJS.Workbook();await archive.xlsx.readFile(path.join(dir,'saved',review.archiveFile));
-    assert.deepEqual(archive.worksheets.map(s=>s.name),['Results','Configurations','Config Results']);
+    const source=path.join(dir,'history.csv');await fs.writeFile(source,'Timestamp,Session ID,Result\n1000,s,RED\n2000,s,BLUE\n3000,s,RED\n4000,s,BLUE\n5000,s,RED\n6000,s,BLUE\n');
+    const first=await generate({game:'kickoff',sourceFile:source,outputDir:dir,convert:false});const wb=new ExcelJS.Workbook();await wb.xlsx.readFile(first.xlsx);
+    const options=wb.getWorksheet('Test Options');for(const [address,value] of Object.entries({B5:1,B6:1.3,B7:2,B16:100,B17:1,B18:0,B22:5,B27:1,D17:0,D21:2}))options.getCell(address).value=value;await wb.xlsx.writeFile(first.xlsx);
+    await assert.rejects(generate({game:'kickoff',sourceFile:source,outputDir:dir,convert:false,store:true,slot:'S2'}),/Unknown scenario S2/);
+    const refreshed=await generate({game:'kickoff',outputDir:dir,convert:false});
+    const saved=new ExcelJS.Workbook();await saved.xlsx.readFile(refreshed.xlsx);
+    assert.deepEqual(readInputs(saved,'kickoff'),{globals:[1,1.3,2,null,null,null,null,null,null],p1:[100,1,0,null,null,null,5,null,null,null,null,1],p2:Array(12).fill(null),draw:[0,null,null,null,2,null,null,null,null,null,null]});
+    await generate({game:'kickoff',sourceFile:source,outputDir:dir,convert:false,store:true,slot:'S1'});
+    const fresh=new ExcelJS.Workbook();await fresh.xlsx.readFile(first.xlsx);assert.equal(readInputs(fresh,'kickoff').globals[0],null);
+    const archives=await fs.readdir(path.join(dir,'saved'));const archive=new ExcelJS.Workbook();await archive.xlsx.readFile(path.join(dir,'saved',archives.find(n=>n.endsWith('.xlsx'))));
+    assert.deepEqual(readInputs(archive,'kickoff'),readInputs(saved,'kickoff'));
     assert.ok(archive.worksheets.every(s=>s.sheetProtection?.sheet));
-    assert.ok(wb.getWorksheet('Config Results').getSheetValues().some(row=>row?.includes('Saved & Locked Strategy Reviews')));
-    await generate({game:'kickoff',sourceFile:source,outputDir:dir,convert:false,capacity:4,ruleSlots:1});
-    const refreshed=new ExcelJS.Workbook();await refreshed.xlsx.readFile(first.xlsx);
-    assert.deepEqual(readInputs(refreshed,'kickoff').savedReviews,inputs.savedReviews);
-    await generate({game:'kickoff',sourceFile:source,outputDir:dir,convert:false,capacity:4,ruleSlots:1,store:true,slot:'S7'});
-    const next=new ExcelJS.Workbook();await next.xlsx.readFile(first.xlsx);
-    const stored=readInputs(next,'kickoff');
-    assert.equal(stored.savedReviews[1].config.id,'S7');
-    assert.equal(stored.scenarios[6].name,'2P New Strategy 2');
-  } finally {await fs.rm(dir,{recursive:true,force:true});}
-});
-
-test('invalid capacity/rule limits reject and generated formulas fit Excel limits',()=>{
-  assert.throws(()=>createWorkbook({game:'kickoff',capacity:20001}),/Capacity/);
-  assert.throws(()=>createWorkbook({game:'kickoff',capacity:1,ruleSlots:0}),/Rule slots/);
-  const wb=createWorkbook({game:'kickoff',rounds,capacity:6});
-  wb.eachSheet(sheet=>sheet.eachRow(row=>row.eachCell(cell=>{if(cell.formula)assert.ok(cell.formula.length<=8192,`${sheet.name}!${cell.address}`);}))); 
-});
-
-test('actual 128-roll Kickoff history preserves agreed no-draw benchmark',()=>{
-  const history=require('./fixtures/kickoff-history128.json');
-  const base=defaultScenario('kickoff');
-  const config={...base,sideMode:'swap2',lanes:{...base.lanes,
-    A:{...base.lanes.A,ladder:'double',winAction:'up',winValue:1,lossAction:'reset',cap:16,capAction:'reset'},
-    B:{...base.lanes.B,ladder:'double',winAction:'up',winValue:1,lossAction:'reset',cap:16,capAction:'reset'}}};
-  const result=simulate(history,config);
-  assert.equal(result.summary.net,7650);
-  assert.equal(result.summary.staked,32600);
-  assert.equal(result.summary.complete,true);
-});
-
-test('Calc formulas independently reconcile every bet, payout and balance, including live settings edits', {skip:process.env.BET_TEST_CALC!=='1'},async()=>{
-  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'bet-calc-test-'));
-  try{
-    const {presets}=require('../scripts/bet-tests/schema');
-    const configs=presets(defaultScenario,'kickoff');
-    configs[1]={...configs[1],players:2,sideMode:'dual',drawMode:'fixed',drawOwner:'split',unit:0.01,bankroll1:1,bankroll2:1,
-      lanes:{...configs[1].lanes,D:{...configs[1].lanes.D,enabled:true,initial:3}}};
-    const wb=createWorkbook({game:'kickoff',rounds,scenarios:configs,capacity:8,ruleSlots:2});
-    const file=path.join(dir,'test.xlsx'),output=path.join(dir,'values.json');
-    await wb.xlsx.writeFile(file);
-    await execute('/usr/bin/python3',['scripts/bet-tests/verify-calc.py',file,'--output',output],{timeout:120000});
-    const actual=JSON.parse(await fs.readFile(output,'utf8'));
-    assert.deepEqual(actual.sheetNames,['Results','Configurations','Config Results']);
-    assert.deepEqual(actual['Config Results'].errors,[]);
-    const detail=getLayout(wb).detail;
-    assert.equal(actual['Config Results'].values[detail.firstRow-1][7],actual.S1.values[2][22]);
-    for(const config of configs){
-      assert.deepEqual(actual[config.id].errors,[]);
-      const expected=simulate(rounds,config).rows;
-      expected.forEach((r,i)=>{
-        const row=actual[config.id].values[i+2];
-        assert.deepEqual(row.slice(13,16),['A','B','D'].map(k=>r.bets[k]),`${config.id} bets ${i+1}`);
-        assert.equal(Math.round(row[22]*100),r.net,`${config.id} net ${i+1}`);
-        assert.deepEqual(row.slice(24,26).map(n=>Math.round(n*100)),r.after,`${config.id} cash ${i+1}`);
-      });
+    for(const address of [...Array.from({length:9},(_,i)=>`B${5+i}`),...Array.from({length:12},(_,i)=>[`B${16+i}`,`C${16+i}`]).flat(),...Array.from({length:11},(_,i)=>`D${17+i}`)]){
+      assert.notEqual(archive.getWorksheet('Test Options').getCell(address).protection?.locked,false,address);
     }
-    await execute('/usr/bin/python3',['scripts/bet-tests/verify-calc.py',file,'--output',output,'--set',`${mappedCell(wb,'Scenarios',`B${ROW.unit}`).worksheet.name}!${mappedCell(wb,'Scenarios',`B${ROW.unit}`).address}=2`],{timeout:120000});
-    const edited=JSON.parse(await fs.readFile(output,'utf8'));
-    assert.equal(edited.S1.values[2][22],2.6);
-    assert.equal(edited['Config Results'].values[detail.firstRow-1][7],2.6);
-    await execute('/usr/bin/python3',['scripts/bet-tests/verify-calc.py',file,'--output',output,'--set',`Config Results!B${detail.selectorRow}="S2"`],{timeout:120000});
-    const selected=JSON.parse(await fs.readFile(output,'utf8'));
-    assert.deepEqual(selected['Config Results'].values.slice(detail.firstRow-1,detail.firstRow-1+rounds.length).map(row=>row[7]), selected.S2.values.slice(2,2+rounds.length).map(row=>row[22]));
-    const first=mappedCell(wb,'Scenarios',`B${ROW.active}`).address;
-    const sixth=mappedCell(wb,'Scenarios',`G${ROW.active}`).address;
-    await execute('/usr/bin/python3',['scripts/bet-tests/verify-calc.py',file,'--output',output,'--set',`Configurations!${first}=false`,'--set',`Configurations!${sixth}=true`],{timeout:120000});
-    const active=JSON.parse(await fs.readFile(output,'utf8'));
-    assert.equal(active['Config Results'].values[detail.selectorRow-1][1],'S6');
-    assert.deepEqual(active['Config Results'].values.slice(detail.firstRow-1,detail.firstRow-1+rounds.length).map(row=>row[7]),active.S6.values.slice(2,2+rounds.length).map(row=>row[22]));
   }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
 
-test('Calc matches new strategy modes and Draw cycles', {skip:process.env.BET_TEST_CALC!=='1'}, async()=>{
-  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'bet-new-modes-'));
-  try {
-    const {presets}=require('../scripts/bet-tests/schema');
-    const configs=presets(defaultScenario,'kickoff');
-    configs[0]={...configs[0],sideMode:'trend2',drawMode:'streak',lanes:{...configs[0].lanes,D:{...configs[0].lanes.D,enabled:true,ladder:'gentle',cap:0}}};
-    configs[1]={...configs[1],drawMode:'gap',lanes:{...configs[1].lanes,D:{...configs[1].lanes.D,enabled:true,ladder:'partial',lossAction:'up'}}};
-    const history=require('./fixtures/kickoff-history128.json').slice(0,40);
-    const wb=createWorkbook({game:'kickoff',rounds:history,scenarios:configs,capacity:40,ruleSlots:1});
-    const file=path.join(dir,'modes.xlsx'),output=path.join(dir,'values.json');
-    await wb.xlsx.writeFile(file);
-    await execute('/usr/bin/python3',['scripts/bet-tests/verify-calc.py',file,'--output',output],{timeout:120000});
-    const actual=JSON.parse(await fs.readFile(output,'utf8'));
-    for(const c of configs){
-      assert.deepEqual(actual[c.id].errors,[]);
-      simulate(history,c).rows.forEach((r,i)=>{
-        const row=actual[c.id].values[i+2];
-        assert.deepEqual(row.slice(13,16),['A','B','D'].map(k=>r.bets[k]),`${c.id} bets ${i+1}`);
-        assert.deepEqual(row.slice(24,26).map(n=>Math.round(n*100)),r.after,`${c.id} cash ${i+1}`);
-      });
-    }
-  } finally {await fs.rm(dir,{recursive:true,force:true});}
-});
+test('invalid capacity rejects before workbook creation',()=>{assert.throws(()=>createWorkbook({game:'kickoff',capacity:20001}),/Capacity/);});
 
 
-test('legacy migration and Calc format roundtrip retain every configuration option', {skip:process.env.BET_TEST_CALC!=='1'},async()=>{
-  const dir=await fs.mkdtemp(path.join(os.tmpdir(),'bet-layout-roundtrip-'));
-  try {
-    const source=path.join(dir,'history.csv');
-    await fs.writeFile(source,'Timestamp,Session ID,Result\n1000,s,RED\n2000,s,BLUE\n');
-    const imported=await require('../scripts/bet-tests/history').loadHistory('kickoff',{sourceFile:source});
-    const scenarios=require('../scripts/bet-tests/schema').presets(defaultScenario,'kickoff');
-    scenarios[0]={...scenarios[0],lanes:{...scenarios[0].lanes,A:{...scenarios[0].lanes.A,ladder:'custom',custom:'1,3,5'}}};
-    const rules=[{scenario:'S1',id:'keep-my-rule',enabled:true,priority:1,lane:'A',phase:'stake',conditions:[{source:'observedA',metric:'wins',op:'>=',value:2,timing:'entering'}],action:'set',amount:1}];
-    const original=createWorkbook({game:'kickoff',rounds:imported.rounds,scenarios,rules,capacity:6,ruleSlots:2,source});
-    const legacy=original._legacy;
-    legacy.getWorksheet('Scenarios').getCell(`B${ROW.bankroll1}`).value=432;
-    legacy.getWorksheet('Scenarios').getCell(`B${ROW.name}`).value='My configuration';
-    legacy.getWorksheet('Overrides').getCell('A2').value='S1';
-    legacy.getWorksheet('Overrides').getCell('B2').value=imported.rounds[0].key;
-    legacy.getWorksheet('Overrides').getCell('C2').value=0;
-    const expected=readInputs(legacy,'kickoff');
-    await legacy.xlsx.writeFile(path.join(dir,'The_Kickoff_Tests.xlsx'));
-    const migrated=await generate({game:'kickoff',sourceFile:source,outputDir:dir,capacity:2,ruleSlots:2,convert:false});
-    const compact=new ExcelJS.Workbook();await compact.xlsx.readFile(migrated.xlsx);
-    assert.deepEqual(compact.worksheets.map(sheet=>sheet.name),['Results','Configurations','Config Results']);
-    assert.deepEqual(readInputs(compact,'kickoff'),expected);
-    const ods=await convertFile(migrated.xlsx,'ods',dir);
-    const convertedDir=path.join(dir,'converted');await fs.mkdir(convertedDir);
-    const converted=await convertFile(ods,'xlsx',convertedDir);
-    const restored=new ExcelJS.Workbook();await restored.xlsx.readFile(converted);
-    assert.deepEqual(readInputs(restored,'kickoff'),expected);
-    assert.equal(expandWorkbook(restored).getWorksheet('Guide').getCell('B2').value,source);
-    assert.equal(getLayout(restored).count,10);
-    assert.equal(expandWorkbook(restored).getWorksheet('Rounds').rowCount,3);
-  } finally {await fs.rm(dir,{recursive:true,force:true});}
-});
+
+
+

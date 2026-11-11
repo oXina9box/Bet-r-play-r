@@ -171,6 +171,8 @@ function createLegacyWorkbook({game,rounds=[],scenarios,rules=[],overrides=[],sa
 }
 
 function readInputs(wb,game) {
+  if(game==='kickoff'&&wb.getWorksheet('Test Options')?.getCell('Z1').value===require('./kickoff').MARKER)
+    return require('./kickoff').readKickoffInputs(wb);
   const savedReviews=wb.getWorksheet('Configurations')?require('./compact').getLayout(wb).savedReviews||[]:wb.savedReviews||[];
   if(wb.getWorksheet('Configurations'))wb=require('./compact').expandWorkbook(wb);
   const sheet=wb.getWorksheet('Scenarios');if(!sheet)throw new Error('Not a betting test workbook: missing Scenarios');
@@ -244,6 +246,7 @@ function cacheLegacyResults(wb,snapshots){
   }
 }
 function createWorkbook(options) {
+  if(options.game==='kickoff')return require('./kickoff').createKickoffWorkbook(options);
   const legacy=createLegacyWorkbook(options);
   if(options.snapshots)cacheLegacyResults(legacy,options.snapshots);
   const compact=require('./compact').compactWorkbook(legacy);

@@ -55,7 +55,9 @@ def main():
                 sheet, address = reference.split('!', 1)
                 value = json.loads(encoded)
                 cell = document.Sheets.getByName(sheet).getCellRangeByName(address)
-                if isinstance(value, bool):
+                if value is None:
+                    cell.clearContents(1023)
+                elif isinstance(value, bool):
                     cell.setFormula('=TRUE()' if value else '=FALSE()')
                 elif isinstance(value, (int, float)):
                     cell.setValue(value)
@@ -64,18 +66,31 @@ def main():
             document.calculateAll()
             output = {}
 
-            def inspect(sheet, start_col, width, last):
+            def inspect(sheet, start_col, width, last, error_end_col=None):
                 values = sheet.getCellRangeByPosition(start_col, 0, start_col + width - 1, last).getDataArray()
                 errors = []
                 for row in range(last + 1):
-                    for col in range(start_col, start_col + width):
+                    for col in range(start_col, (error_end_col if error_end_col is not None else start_col + width - 1) + 1):
                         cell = sheet.getCellByPosition(col, row)
                         error = cell.getError()
                         if error:
                             errors.append({'row': row+1, 'column': col+1, 'error': error, 'formula': cell.getFormula()})
                 return {'values': values, 'errors': errors}
 
-            if document.Sheets.hasByName('Configurations'):
+            if (document.Sheets.hasByName('Test Options') and
+                    document.Sheets.getByName('Test Options').getCellRangeByName('Z1').getString() == 'BET_R_KICKOFF_NUMERIC_V2'):
+                sheet = document.Sheets.getByName('Test Results')
+                cursor = sheet.createCursor()
+                cursor.gotoEndOfUsedArea(False)
+                output['Test Results'] = inspect(sheet, 0, 23, cursor.RangeAddress.EndRow,
+                                                  cursor.RangeAddress.EndColumn)
+                options = document.Sheets.getByName('Test Options')
+                cursor = options.createCursor()
+                cursor.gotoEndOfUsedArea(False)
+                output['Test Options'] = inspect(options, 0, 2, cursor.RangeAddress.EndRow,
+                                                 cursor.RangeAddress.EndColumn)
+                output['sheetNames'] = list(document.Sheets.getElementNames())
+            elif document.Sheets.hasByName('Configurations'):
                 settings = document.Sheets.getByName('Configurations')
                 column = 'Z' if settings.getCellRangeByName('Z1').getString() == 'BET_R_COMPACT_V1' else 'W'
                 if settings.getCellRangeByName(column + '1').getString() != 'BET_R_COMPACT_V1':
