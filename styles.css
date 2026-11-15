@@ -1171,3 +1171,17 @@ body[data-game] .insights { display: none; }
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
   button:active:not(:disabled):not([aria-disabled="true"]), .chip:hover, .max-play-btn:hover { transform: none; }
 }
+
+/* Compact bead plate overrides (beat older .history-pattern .chip / .strip grid rules on specificity + order) */
+.strip.bacc-scoreboard-wrap { display: flex !important; flex-direction: row !important; flex-wrap: wrap !important; align-content: flex-start; gap: 4px !important; padding: 2px !important; max-height: none; overflow-x: hidden !important; overflow-y: auto !important; }
+.strip .bacc-group { min-width: 0; padding: 3px 4px; gap: 2px; border-bottom-width: 1px; }
+.strip .bacc-group-header { font-size: 9px; gap: 6px; margin: 0; }
+.strip .bacc-group-header .badge { font-size: 7px; padding: 0 3px; }
+.strip .bacc-lane-label { display: none; }
+.strip .bacc-lane { gap: 2px; margin: 0; }
+.strip .bacc-lane .chip.bacc-bead { width: 16px; height: 16px; min-width: 16px; max-width: 16px; flex: 0 0 16px; padding: 0; border-width: 1px; font-size: 0; }
+.strip .bacc-lane .chip.bacc-bead b, .strip .bacc-lane .chip.bacc-bead small { display: none; }
+.strip .bacc-lane .chip.bacc-bead .res { position: static; background: none; font-size: 10px; line-height: 1; padding: 0; }
+.strip .bacc-lane .chip.bacc-bead .role { top: -4px; left: -3px; font-size: 6px; padding: 0 1px; }
+.strip .bacc-lane .chip.bacc-bead .flag { display: none; }
+.strip .bacc-lane .chip.bacc-bead:hover { transform: scale(1.4); }
