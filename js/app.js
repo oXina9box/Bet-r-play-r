@@ -493,11 +493,11 @@
            <div class="bet-side wait">Wait ${nx.left}</div>
            <div class="bet-amt"><span>sitting out ${nx.left} ${unitWord} before starting a new pattern</span></div>`;
     } else if (nx.phase === 'factor') {
-      const preview = nx.ifA && nx.ifB ? ` · If ${sideTag('A')}→${sideTag(nx.ifA)} / If ${sideTag('B')}→${sideTag(nx.ifB)}` : '';
+      const preview = nx.ifA && nx.ifB ? `<div class="pattern-if"><span>If ${sideTag('A')} → ${sideTag(nx.ifA)}</span><span>If ${sideTag('B')} → ${sideTag(nx.ifB)}</span></div>` : '';
       h = `<div class="phase">WAIT · NEXT SETS FACTOR</div>
            <div class="bet-side wait">No bet</div>
            <div class="bet-amt"><span>next ${g.entryName.toLowerCase()} sets the factor</span></div>
-           <div class="pattern">Pattern <b>${nx.pattern}</b> · ${nx.raw.map((s) => sideTag(s)).join('')}${preview}</div>`;
+           <div class="pattern pattern-row"><span class="pattern-label">Pattern</span><b>${nx.pattern}</b><span class="pattern-tags">${nx.raw.map((s) => sideTag(s)).join('')}</span></div>${preview}`;
     } else {
       const collected = nx.raw?.length ? `<div class="pattern">${nx.raw.map((s) => sideTag(s)).join('')} · ${nx.need - nx.have} more</div>` : '';
       h = `<div class="phase">COLLECTING · NO BET</div>
