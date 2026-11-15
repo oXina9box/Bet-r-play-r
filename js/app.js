@@ -6,6 +6,7 @@
   const DEFAULT_CFG = { n: 5, prog: 'double', unit: 1, payout: 1, waitBust: 0, waitWin: 1, waitBet: 0, recovery: 0, targetProfit: 0 };
   let manualBetAmount = null;
   let dismissedTripleRoll = null;
+  let urgentState = { key: '', secondsLeft: 10, timerId: null, expired: false, rollIndex: -1 };
   const $ = (id) => document.getElementById(id);
   const fmt = (x) => (Math.round(x * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const signed = (x) => (x > 0 ? '+' : x < 0 ? '−' : '') + fmt(Math.abs(x));
@@ -337,6 +338,10 @@
     view = compute();
     renderHeader();
     renderNext();
+    renderUrgentAlerts();
+    renderStandardMessages();
+    renderRollingTracker();
+    renderDeepPatterns();
     $('pending').innerHTML = game().pendingHTML(pending, book().cfg) + (noBetArmed ? '<span class="nobet-indicator">NO BET ARMED</span>' : '');
     const nbBtn = $('noBet');
     if (nbBtn) {
@@ -428,31 +433,7 @@
       `;
     }
 
-    let tripleOverlay = '';
-    const tripleRisk = (data.cur.game === 'sicbo' && (nx.phase === 'bet' || nx.phase === 'continue'))
-      ? Engine.detectTripleRisk('sicbo', view.rows, nx.step)
-      : null;
-    if (tripleRisk && tripleRisk.due && dismissedTripleRoll !== view.rows.length) {
-      const shieldNotice = tripleRisk.shieldRecommended
-        ? `<div class="triple-shield-badge">${escapeHTML(tripleRisk.shieldMessage)}</div>`
-        : '';
-      tripleOverlay = `
-        <div id="tripleAlertOverlay" class="triple-overlay ${tripleRisk.urgent ? 'urgent' : 'warning'}">
-          <div class="triple-overlay-card">
-            <div class="triple-overlay-badge">${tripleRisk.urgent ? 'CRITICAL STEP 5 ALERT' : 'TRIPLE RISK DETECTED'}</div>
-            <div class="triple-overlay-title">${tripleRisk.urgent ? 'HIGH STAKE AT RISK ON STEP 5' : 'HISTORICAL GAP THRESHOLD REACHED'}</div>
-            <div class="triple-overlay-body">${escapeHTML(tripleRisk.message)}</div>
-            ${shieldNotice}
-            <div class="triple-overlay-actions">
-              <button id="tripleOverlaySkip" class="triple-skip-btn ${tripleRisk.urgent ? 'urgent' : ''}">${noBetArmed ? 'Bet Skipped (Armed)' : (tripleRisk.urgent ? 'STRONGLY URGED: SKIP THIS BET' : 'Skip This Bet (One-Time)')}</button>
-              <button id="tripleOverlayDismiss" class="triple-dismiss-btn">Dismiss</button>
-            </div>
-          </div>
-        </div>
-      `;
-    }
 
-    if (tripleOverlay) alertBanner = '';
 
     let dragonBanner = '';
     const dragon = Engine.detectDragon ? Engine.detectDragon(view.rows) : null;
@@ -525,7 +506,7 @@
     }
     $('next').className = 'next ' + nx.phase + (nx.phase === 'bet' ? ' side-' + nx.side.toLowerCase() : '') + (nx.recovery ? ' recovery' : '');
     const skip = nx.phase === 'bet' ? `<button id="skipBetOnce" class="skip-bet ${noBetArmed ? 'armed' : ''}">${noBetArmed ? 'Cancel one-time skip' : 'Skip this bet once'}</button>` : '';
-    $('next').innerHTML = tripleOverlay + targetBadge + recBanner + drawBanner + alertBanner + dragonBanner + h + ladderBadge + lastLine + skip;
+    $('next').innerHTML = targetBadge + recBanner + drawBanner + alertBanner + dragonBanner + h + ladderBadge + lastLine + skip;
     $('skipBetOnce')?.addEventListener('click', toggleNoBet);
     $('betMinus')?.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -544,18 +525,327 @@
       manualBetAmount = null;
       render();
     });
-    $('tripleOverlaySkip')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (!noBetArmed) toggleNoBet();
-      dismissedTripleRoll = view.rows.length;
-      render();
-    });
-    $('tripleOverlayDismiss')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      dismissedTripleRoll = view.rows.length;
-      render();
-    });
     announceNext(last, nx, g);
+  }
+
+  function renderUrgentAlerts() {
+    const el = $('urgentAlertArea');
+    if (!el) return;
+
+    const nx = view.next;
+    const g = game();
+    const rows = view.rows;
+
+    let urgentAlert = null;
+
+    // 1. Sic Bo Triple Risk (critical on step >= 3 or gap threshold reached)
+    const tripleRisk = (data.cur.game === 'sicbo' && (nx.phase === 'bet' || nx.phase === 'continue'))
+      ? Engine.detectTripleRisk('sicbo', rows, nx.step)
+      : null;
+    if (tripleRisk && tripleRisk.due && dismissedTripleRoll !== rows.length) {
+      urgentAlert = {
+        key: `triple:${rows.length}:${nx.step}`,
+        type: tripleRisk.urgent ? 'critical' : 'warning',
+        badge: tripleRisk.urgent ? 'Critical Step 5 Alert' : 'Triple Risk Detected',
+        title: tripleRisk.urgent ? 'HIGH STAKE AT RISK ON STEP 5' : 'HISTORICAL GAP THRESHOLD REACHED',
+        body: escapeHTML(tripleRisk.message) + (tripleRisk.shieldRecommended ? ` · ${escapeHTML(tripleRisk.shieldMessage)}` : ''),
+        actionLabel: noBetArmed ? 'Bet Skipped (Armed)' : (tripleRisk.urgent ? 'Accept Skip Bet (One-Time)' : 'Accept Skip This Bet'),
+        onAccept: () => {
+          if (!noBetArmed) toggleNoBet();
+          dismissedTripleRoll = rows.length;
+        },
+      };
+    }
+
+    // 2. Dragon Alert (Streaks of 4 or 5) across all games
+    if (!urgentAlert) {
+      const dragon = Engine.detectDragon ? Engine.detectDragon(rows) : null;
+      if (dragon && (nx.phase === 'bet' || nx.phase === 'continue')) {
+        if (dragon.action === 'skip') {
+          urgentAlert = {
+            key: `dragon:skip:${rows.length}:${dragon.length}`,
+            type: 'warning',
+            badge: 'Dragon Alert · Streak of 4',
+            title: `STREAK OF 4 ${dragon.side}s DETECTED`,
+            body: escapeHTML(dragon.message),
+            actionLabel: noBetArmed ? 'Bet Skipped (Armed)' : 'Accept Skip Roll 5',
+            onAccept: () => {
+              if (!noBetArmed) toggleNoBet();
+            },
+          };
+        } else if (dragon.action === 'bet') {
+          urgentAlert = {
+            key: `dragon:bet:${rows.length}:${dragon.length}`,
+            type: 'warning',
+            badge: 'Dragon Alert · Streak of 5',
+            title: `STREAK OF 5 ${dragon.side}s · ANTI-STREAK SIGNAL`,
+            body: escapeHTML(dragon.message),
+            actionLabel: `Accept Anti-Streak Bet on ${g.sides[dragon.antiSide].label}`,
+            onAccept: () => {
+              toast(`Anti-streak bet on ${g.sides[dragon.antiSide].label} accepted.`);
+            },
+          };
+        }
+      }
+    }
+
+    // 3. Rolling Pattern Clash (when rolling confirmation is <= 20% match on high stakes)
+    if (!urgentAlert && nx.phase === 'bet') {
+      const rolling = Engine.analyzeRollingConfirmation ? Engine.analyzeRollingConfirmation(rows, nx, book().cfg) : null;
+      if (rolling && rolling.hasClash && rolling.discreteMatchPct <= 20) {
+        urgentAlert = {
+          key: `clash:${rows.length}:${nx.step}:${rolling.discreteMatchPct}`,
+          type: 'warning',
+          badge: 'Rolling Pattern Clash',
+          title: `ROLLING PATTERN CONTRADICTION (${rolling.discreteMatchPct}% MATCH)`,
+          body: escapeHTML(rolling.message),
+          actionLabel: noBetArmed ? 'Bet Skipped (Armed)' : 'Accept Skip Contradicted Bet',
+          onAccept: () => {
+            if (!noBetArmed) toggleNoBet();
+          },
+        };
+      }
+    }
+
+    if (!urgentAlert) {
+      if (urgentState.timerId) {
+        clearInterval(urgentState.timerId);
+        urgentState.timerId = null;
+      }
+      urgentState.key = '';
+      el.hidden = true;
+      el.innerHTML = '';
+      return;
+    }
+
+    // New alert signature
+    if (urgentState.key !== urgentAlert.key) {
+      if (urgentState.timerId) clearInterval(urgentState.timerId);
+      urgentState.key = urgentAlert.key;
+      urgentState.secondsLeft = 10;
+      urgentState.expired = false;
+      urgentState.rollIndex = rows.length;
+
+      urgentState.timerId = setInterval(() => {
+        urgentState.secondsLeft--;
+        if (urgentState.secondsLeft <= 0) {
+          clearInterval(urgentState.timerId);
+          urgentState.timerId = null;
+          urgentState.expired = true;
+          // Normal rules apply automatically as coded!
+          renderUrgentAlertContent(urgentAlert);
+        } else {
+          const badgeEl = $('urgentTimerBadge');
+          if (badgeEl) badgeEl.textContent = `${urgentState.secondsLeft}s`;
+        }
+      }, 1000);
+    }
+
+    el.hidden = false;
+    renderUrgentAlertContent(urgentAlert);
+  }
+
+  function renderUrgentAlertContent(alert) {
+    const el = $('urgentAlertArea');
+    if (!el) return;
+    el.className = `urgent-alert-area ${alert.type}${urgentState.expired ? ' expired' : ''}`;
+
+    const timerBadge = !urgentState.expired
+      ? `<span id="urgentTimerBadge" class="urgent-timer-badge">${urgentState.secondsLeft}s</span>`
+      : `<span class="urgent-status-note">Normal progression active</span>`;
+
+    const actionBtn = !urgentState.expired && alert.actionLabel
+      ? `<div class="urgent-alert-actions">
+           <button id="urgentAcceptBtn" class="urgent-accept-btn">${escapeHTML(alert.actionLabel)}</button>
+           <span class="urgent-status-note">Normal progression continues unless accepted within 10s.</span>
+         </div>`
+      : '';
+
+    el.innerHTML = `
+      <div class="urgent-alert-head">
+        <span class="urgent-alert-badge">${escapeHTML(alert.badge)}</span>
+        ${timerBadge}
+      </div>
+      <div class="urgent-alert-title">${escapeHTML(alert.title)}</div>
+      <div class="urgent-alert-body">${alert.body}</div>
+      ${actionBtn}
+    `;
+
+    $('urgentAcceptBtn')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (urgentState.timerId) {
+        clearInterval(urgentState.timerId);
+        urgentState.timerId = null;
+      }
+      urgentState.expired = true;
+      if (alert.onAccept) alert.onAccept();
+      render();
+    });
+  }
+
+  function renderStandardMessages() {
+    const el = $('standardMessageArea');
+    if (!el) return;
+    const g = game();
+    const rows = view.rows;
+    const b = book();
+    const items = [];
+
+    // Target profit progress
+    if (b.cfg.targetProfit > 0) {
+      const s = stats(rows);
+      const tDol = b.cfg.targetProfit;
+      const reached = s.net >= tDol;
+      const diff = Math.max(0, tDol - s.net);
+      items.push(`
+        <div class="standard-msg-item">
+          <span class="standard-msg-badge ${reached ? 'win' : 'info'}">Target</span>
+          <span>${reached ? 'Goal Achieved!' : `Target: ${fmt(tDol)} · Needed: ${fmt(diff)}`}</span>
+        </div>
+      `);
+    }
+
+    // Recovery mode
+    if (view.next && view.next.recovery) {
+      const rec = view.next.recovery;
+      const profit = rec.profitPerWin == null ? `${signed(rec.profitMin)} to ${signed(rec.profitMax)}` : `${signed(rec.profitPerWin)}`;
+      items.push(`
+        <div class="standard-msg-item">
+          <span class="standard-msg-badge warn">Recovery</span>
+          <span>Set ${rec.currentSet} of ${rec.totalSets} (${profit} per win)</span>
+        </div>
+      `);
+    }
+
+    // Special probability
+    const prob = Engine.specialProbability ? Engine.specialProbability(data.cur.game, rows) : null;
+    if (prob && prob.isOverdue) {
+      items.push(`
+        <div class="standard-msg-item">
+          <span class="standard-msg-badge warn">${escapeHTML(prob.label)}</span>
+          <span>${prob.rollsSince} rolls since last ${prob.type} (${prob.cumPct}% historical interval)</span>
+        </div>
+      `);
+    }
+
+    // Kickoff draw signal
+    if (g.id === 'kickoff') {
+      const last = rows[rows.length - 1];
+      const signal = g.drawSignal(book().entries, last || null);
+      if (signal) {
+        items.push(`
+          <div class="standard-msg-item">
+            <span class="standard-msg-badge ${signal.play ? 'win' : 'warn'}">Draw Signal</span>
+            <span>${signal.play ? 'PLAY DRAW' : 'WAIT DRAW'} · ${escapeHTML(signal.reason)}</span>
+          </div>
+        `);
+      }
+    }
+
+    // Deep Pattern note if strong
+    const deep = Engine.analyzeDeepPatterns ? Engine.analyzeDeepPatterns(rows) : null;
+    if (deep && deep.hasStrongFormation && deep.strongest) {
+      items.push(`
+        <div class="standard-msg-item">
+          <span class="standard-msg-badge info">Deep Pattern</span>
+          <span>${escapeHTML(deep.strongest.label)}: ${escapeHTML(deep.strongest.reason)}</span>
+        </div>
+      `);
+    }
+
+    el.innerHTML = items.join('') || `<div class="muted small">Session #${b.sessions.length} · ${rows.length} ${g.entryName.toLowerCase()}s recorded.</div>`;
+  }
+
+  function renderRollingTracker() {
+    const rollingEl = $('rollingTracker');
+    const badgeEl = $('rollingSignalBadge');
+    if (!rollingEl) return;
+    const g = game();
+    const rows = view.rows;
+    const next = view.next;
+    const rolling = Engine.analyzeRollingConfirmation ? Engine.analyzeRollingConfirmation(rows, next, book().cfg) : null;
+    if (!rolling) {
+      rollingEl.innerHTML = '<div class="muted small">Rolling tracker initializing...</div>';
+      return;
+    }
+
+    if (badgeEl) {
+      badgeEl.className = `rolling-signal-badge ${rolling.signalType}`;
+      badgeEl.textContent = `${rolling.discreteMatchPct}% MATCH (${rolling.normalizedWeighted}% WT)`;
+    }
+
+    const currentSideLabel = rolling.currentSide ? g.sides[rolling.currentSide].label : 'Waiting';
+    let rowsHtml = `
+      <tr class="current-row">
+        <td class="left-align">Current Setup</td>
+        <td>50%</td>
+        <td><b>${escapeHTML(currentSideLabel)}</b></td>
+        <td><span class="rolling-status-badge confirm">Active Bet</span></td>
+      </tr>
+    `;
+
+    for (const h of rolling.horizons) {
+      const projLabel = h.projectedSide ? g.sides[h.projectedSide].label : '–';
+      const statusCls = h.status === 'confirm' ? 'confirm' : (h.status === 'opposite' ? 'opposite' : 'collecting');
+      const statusText = h.status === 'confirm' ? '✓ Confirm' : (h.status === 'opposite' ? '✗ Opposite' : `Need ${h.needed || 0}`);
+      rowsHtml += `
+        <tr>
+          <td class="left-align">${h.length} Rolls</td>
+          <td>${h.weight}%</td>
+          <td>${escapeHTML(projLabel)}</td>
+          <td><span class="rolling-status-badge ${statusCls}">${statusText}</span></td>
+        </tr>
+      `;
+    }
+
+    rollingEl.innerHTML = `
+      <div class="muted small" style="margin-bottom: 4px;">${escapeHTML(rolling.message)}</div>
+      <table class="rolling-table">
+        <thead>
+          <tr>
+            <th class="left-align">Horizon</th>
+            <th>Weight</th>
+            <th>Projected</th>
+            <th>Signal</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    `;
+  }
+
+  function renderDeepPatterns() {
+    const deepEl = $('deepPatterns');
+    const badgeEl = $('deepPatternBadge');
+    if (!deepEl) return;
+    const rows = view.rows;
+    const deep = Engine.analyzeDeepPatterns ? Engine.analyzeDeepPatterns(rows) : null;
+    if (!deep) {
+      deepEl.innerHTML = '<div class="muted small">Deep pattern recognition initializing...</div>';
+      return;
+    }
+
+    if (badgeEl) {
+      badgeEl.className = `deep-pattern-badge ${deep.hasStrongFormation ? 'strong' : ''}`;
+      badgeEl.textContent = deep.hasStrongFormation ? `${deep.strongest.length}R Formation` : `${deep.count}/16 Rolls`;
+    }
+
+    if (!deep.formations || deep.formations.length === 0) {
+      deepEl.innerHTML = `<div class="muted small">Collecting deep history (lengths 8–16). ${deep.count} rolls analyzed so far.</div>`;
+      return;
+    }
+
+    const items = deep.formations.slice(0, 3).map(f => `
+      <div class="deep-formation-item ${f.urgent ? 'urgent' : (f.strength >= 90 ? 'strong' : '')}">
+        <div class="deep-formation-head">
+          <span>${escapeHTML(f.label)}</span>
+          <span>${f.strength}% Strength</span>
+        </div>
+        <div class="deep-formation-body">${escapeHTML(f.reason)}</div>
+      </div>
+    `).join('');
+
+    deepEl.innerHTML = items;
   }
 
   function announceNext(last, next, g) {
@@ -585,8 +875,8 @@
     const g = game();
     const c = g.chip(r.raw, r.o);
     const sideCls = r.side === 'A' ? 'a' : r.side === 'B' ? 'b' : 't';
-    const res = r.noBet ? '<i class="res nb">Ø</i>' : r.result === 'win' ? '<i class="res win">\u2713</i>' : r.result === 'loss' ? '<i class="res loss">\u2717</i>' : r.push ? '<i class="res push">P</i>' : '';
-    const role = r.role === 'factor' ? '<i class="role">F</i>' : r.role === 'factor-wait' ? '<i class="role cd">W</i>' : r.role === 'factor-break' ? '<i class="role cd">↻</i>' : r.role === 'cooldown' ? '<i class="role cd">CD</i>' : '';
+    const res = r.noBet ? '<i class="res bacc-bead-res nb">Ø</i>' : r.result === 'win' ? '<i class="res bacc-bead-res win">\u2713</i>' : r.result === 'loss' ? '<i class="res bacc-bead-res loss">\u2717</i>' : r.push ? '<i class="res bacc-bead-res push">P</i>' : '';
+    const role = r.role === 'factor' ? '<i class="role bacc-bead-role">F</i>' : r.role === 'factor-wait' ? '<i class="role bacc-bead-role cd">W</i>' : r.role === 'factor-break' ? '<i class="role bacc-bead-role cd">↻</i>' : r.role === 'cooldown' ? '<i class="role bacc-bead-role cd">CD</i>' : '';
     const end = r.setEnd === 'bust' ? ' bust' : r.setEnd === 'won' ? ' won' : '';
     const as = r.push && r.effSide ? ` as ${g.sides[r.effSide].label}` : '';
     if (r.push && r.effSide) c.sub = '→' + g.sides[r.effSide].short;
@@ -595,22 +885,39 @@
     const recText = r.recovery ? ` [Recovery ${r.recovery.currentSet}/${r.recovery.totalSets}] ` : '';
     const scoreText = r.scoreHit ? ' [SCORE HIT] ' : '';
     const tip = `${scoreText}${nbText}${recText}` + (r.push ? `Tie, played${as || ' as nothing (no prior winner)'} · ` : '') + (r.role === 'factor' ? `Factor · fading ${r.pattern}` : r.role === 'factor-wait' ? `Delayed bet wait (${r.delayLeft} remaining)` : r.role === 'factor-break' ? 'Pattern broke during delay; sequence reset' : r.role === 'cooldown' ? `Cooldown after ${r.cooldownReason || 'bust'} (${r.cooldownLeft} remaining)` : r.bet ? `Bet ${g.sides[r.bet.side].label} ${fmt(r.bet.amount)} → ${r.result}` : '') + ' · double-click to toggle No Bet';
-    return `<div class="chip ${sideCls}${r.lossAll ? ' special' : ''}${end}${r.noBet ? ' no-bet' : ''}" data-entry-idx="${r.entryIdx}" title="${escapeHTML(tip)}">${role}${res}<b>${escapeHTML(c.main)}</b><small>${escapeHTML(c.sub)}${r.scoreHit ? ' · \u2605 SCORE' : ''}</small>${c.flag ? `<i class="flag">${escapeHTML(c.flag)}</i>` : ''}</div>`;
+    return `<div class="chip bacc-bead ${sideCls}${r.lossAll ? ' special' : ''}${end}${r.noBet ? ' no-bet' : ''}" data-entry-idx="${r.entryIdx}" title="${escapeHTML(tip)}">${role}${res}<b>${escapeHTML(c.main)}</b><small>${escapeHTML(c.sub)}${r.scoreHit ? ' · \u2605 SCORE' : ''}</small>${c.flag ? `<i class="flag">${escapeHTML(c.flag)}</i>` : ''}</div>`;
   }
 
-
   function renderStrip() {
-    const groups = window.History.groupRows(view.rows).slice(-40).reverse();
+    const groups = window.History.groupRows(view.rows).slice(-50).reverse();
+    if (!groups.length) {
+      $('strip').innerHTML = '<div class="muted">No entries yet — start tapping.</div>';
+      return;
+    }
     $('strip').innerHTML = groups.map(group => {
+      const isWon = group.status === 'won';
+      const isBust = group.status === 'bust';
+      const statusCls = isWon ? 'won' : (isBust ? 'bust' : (group.status === 'active' ? 'active' : ''));
       const title = group.kind === 'set' ? `Set ${group.setNo} · Group ${group.size} · ${group.status}`
-        : group.kind === 'cooldown' ? 'Cooldown' : 'Collecting';
+        : (group.kind === 'cooldown' ? 'Cooldown' : 'Collecting');
+      const badge = group.kind === 'set' ? `<span class="badge ${statusCls}">${group.status}</span>` : '';
       const bottom = group.factor ? [group.factor, ...(group.waits || []), ...group.bets] : [];
-      return `<div class="history-group" data-size="${group.size || ''}" data-set="${group.setNo || ''}">
-        <div class="history-title">${escapeHTML(title)}</div>
-        <div class="history-pattern">${group.pattern.map(historyChip).join('')}</div>
-        ${bottom.length ? `<div class="history-label">Factor, waits &amp; played results</div><div class="history-played">${bottom.map(historyChip).join('')}</div>` : ''}
-      </div>`;
-    }).join('') || '<div class="muted">No entries yet — start tapping.</div>';
+
+      return `
+        <div class="history-group bacc-group ${statusCls}" data-size="${group.size || ''}" data-set="${group.setNo || ''}">
+          <div class="history-title bacc-group-header">
+            <span>${escapeHTML(title)}</span>
+            ${badge}
+          </div>
+          <div class="bacc-lane-label">Pattern</div>
+          <div class="history-pattern bacc-lane">${group.pattern.map(historyChip).join('')}</div>
+          ${bottom.length ? `
+            <div class="history-label bacc-lane-label">Factor, waits &amp; played results</div>
+            <div class="history-played bacc-lane">${bottom.map(historyChip).join('')}</div>
+          ` : ''}
+        </div>
+      `;
+    }).join('');
   }
 
   const MAX_PLAY_PRESETS = {
@@ -848,7 +1155,7 @@
 
   function renderStats() {
     seg($('scopeSeg'), [['session', 'Session'], ['today', 'Today'], ['all', 'All time']], scope, (v) => { scope = v; renderStats(); renderInsights(); });
-    seg($('bdSeg'), [['session', 'Session'], ['day', 'Day'], ['hour', 'Hour'], ['block', 'Per 50']], bdMode, (v) => { bdMode = v; renderStats(); });
+    seg($('bdSeg'), [['session', 'Session'], ['day', 'Day'], ['hour', 'Hour'], ['block', 'Per 50'], ['pattern', 'Patterns']], bdMode, (v) => { bdMode = v; renderStats(); });
     const g = game(), rows = scopeRows(), s = stats(rows);
     const pct = (a, b) => (b ? ((a / b) * 100).toFixed(1) + '%' : '–');
     const sideN = s.A + s.B;
@@ -884,6 +1191,32 @@
   }
 
   function renderBreakdown(rows) {
+    if (bdMode === 'pattern') {
+      const pStats = Engine.patternStats ? Engine.patternStats(rows) : { patterns: [], totalSets: 0 };
+      const curPat = view.next?.pattern || '';
+      let h = `<thead><tr><th style="text-align:left">Pattern</th><th>Size</th><th>Played</th><th>Won</th><th>Bust</th><th>Win%</th><th>Bust%</th><th>Won by Bet</th><th>Net</th></tr></thead><tbody>`;
+      if (!pStats.patterns.length) {
+        h += `<tr><td colspan="9" class="muted">No completed sets yet. Patterns and win/bust stats will appear as sets complete.</td></tr>`;
+      } else {
+        for (const p of pStats.patterns) {
+          const isCurrent = p.pattern === curPat;
+          const stepsStr = p.byStep.map((c, i) => c > 0 ? `B${i + 1}:${c}` : null).filter(Boolean).join(' ') || '–';
+          h += `<tr class="${isCurrent ? 'current-pattern' : ''}">
+            <td style="text-align:left"><b>${escapeHTML(p.pattern)}</b>${isCurrent ? ' <span class="badge active">NOW</span>' : ''}</td>
+            <td>${p.groupSize}</td>
+            <td>${p.played}</td>
+            <td class="win">${p.won}</td>
+            <td class="loss">${p.bust}</td>
+            <td>${p.winRate}%</td>
+            <td>${p.bustRate}%</td>
+            <td><small>${stepsStr}</small></td>
+            <td class="${p.net >= 0 ? 'win' : 'loss'}">${signed(p.net)}</td>
+          </tr>`;
+        }
+      }
+      $('breakdown').innerHTML = h + '</tbody>';
+      return;
+    }
     const groups = new Map();
     const key = {
       session: (r) => 'Session #' + r.sessionNo,

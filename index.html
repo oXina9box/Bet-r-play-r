@@ -99,6 +99,7 @@
   <main>
     <section class="left">
       <div class="advice-wrap">
+        <div id="urgentAlertArea" class="urgent-alert-area" hidden role="alert" aria-live="assertive"></div>
         <div id="next" class="next"></div>
 
         <section id="rollRecovery" hidden role="alert" aria-live="assertive">
@@ -121,12 +122,31 @@
       </div>
 
       <div class="strip-wrap">
-        <div class="strip-head"><h3>This session</h3><span class="muted">newest first</span></div>
-        <div id="strip" class="strip"></div>
+        <div class="strip-head"><h3>Scoreboard History</h3><span class="muted">baccarat bead plate</span></div>
+        <div id="strip" class="strip bacc-scoreboard-wrap"></div>
       </div>
     </section>
 
+    <section class="right">
+      <div class="card side-panel-card" id="rollingCard">
+        <div class="stats-head">
+          <h3>Rolling Pattern Tracker</h3>
+          <span id="rollingSignalBadge" class="rolling-signal-badge"></span>
+        </div>
+        <div id="rollingTracker" class="rolling-tracker-content"></div>
+      </div>
+
+      <div class="card side-panel-card" id="deepCard">
+        <div class="stats-head">
+          <h3>Deep Pattern Recognition (8–16)</h3>
+          <span id="deepPatternBadge" class="deep-pattern-badge"></span>
+        </div>
+        <div id="deepPatterns" class="deep-patterns-content"></div>
+      </div>
+    </section>
   </main>
+
+  <div id="standardMessageArea" class="standard-message-area" role="status" aria-live="polite"></div>
 
   <section class="strategy-sections" aria-label="Strategy analysis">
     <div class="card stats">

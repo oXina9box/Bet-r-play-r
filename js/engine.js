@@ -239,6 +239,11 @@
         if (win) {
           r.setEnd = 'won';
           r.setStep = set.step;
+          r.pattern = abstract(set.pattern);
+          r.rawPattern = set.pattern.slice();
+          r.factor = set.factor;
+          r.plan = set.plan.slice();
+          r.setCfg = Object.assign({}, set.cfg);
           if (!e.nb && recoveryState && recoveryState.setsLeft > 0) {
             recoveryState.setsLeft--;
             if (recoveryState.setsLeft <= 0) recoveryState = null;
@@ -729,7 +734,364 @@
     };
   }
 
-  const api = { PROGRESSIONS, FIB_SEQUENCE, GROUP_SIZES, opp, abstract, betPlan, run, stats, analyzeBusts, simulateDelays, recoveryOptions, specialProbability, detectTripleRisk, detectDragon };
+  /**
+   * Evaluates pattern storage and win/bust stats for all sets in rows.
+   */
+  function patternStats(rows) {
+    if (!rows || rows.length === 0) return { patterns: [], totalSets: 0, won: 0, bust: 0, winRate: 0, net: 0, units: 0 };
+    const factorMap = new Map();
+    for (const r of rows) {
+      if (r.role === 'factor' && r.setNo != null) {
+        factorMap.set(r.setNo, { pattern: r.pattern, factor: r.side, plan: r.plan, cfg: r.cfg });
+      }
+    }
+
+    const map = new Map();
+    let totalSets = 0, wonSets = 0, bustSets = 0, totalNet = 0, totalUnits = 0;
+
+    for (const r of rows) {
+      if ((r.setEnd === 'won' || r.setEnd === 'bust') && !r.continued) {
+        totalSets++;
+        if (r.setEnd === 'won') wonSets++;
+        else bustSets++;
+        totalNet += r.pnl || 0;
+        totalUnits += r.units || 0;
+
+        const patInfo = factorMap.get(r.setNo);
+        const patKey = r.pattern || patInfo?.pattern || 'UNKNOWN';
+        const groupSize = (r.setCfg && r.setCfg.n) || (r.cfg && r.cfg.n) || (r.rawPattern ? r.rawPattern.length : (patInfo?.cfg?.n || 5));
+        const rawPatternStr = r.rawPattern ? r.rawPattern.join('') : '';
+
+        let entry = map.get(patKey);
+        if (!entry) {
+          entry = {
+            pattern: patKey,
+            rawExamples: new Set(),
+            groupSize,
+            played: 0,
+            won: 0,
+            bust: 0,
+            byStep: [0, 0, 0, 0, 0, 0],
+            net: 0,
+            units: 0,
+            lastPlayed: r.t,
+            lastSession: r.sessionNo,
+          };
+          map.set(patKey, entry);
+        }
+        entry.played++;
+        if (rawPatternStr) entry.rawExamples.add(rawPatternStr);
+        if (r.setEnd === 'won') {
+          entry.won++;
+          const step = r.setStep != null ? r.setStep : 0;
+          while (entry.byStep.length <= step) entry.byStep.push(0);
+          entry.byStep[step]++;
+        } else {
+          entry.bust++;
+        }
+        entry.net += r.pnl || 0;
+        entry.units += r.units || 0;
+        if (r.t) entry.lastPlayed = Math.max(entry.lastPlayed || 0, r.t);
+      }
+    }
+
+    const patterns = Array.from(map.values()).map(p => {
+      const winRate = p.played > 0 ? (p.won / p.played) * 100 : 0;
+      const bustRate = p.played > 0 ? (p.bust / p.played) * 100 : 0;
+      return {
+        ...p,
+        rawExamples: Array.from(p.rawExamples),
+        winRate: Math.round(winRate * 10) / 10,
+        bustRate: Math.round(bustRate * 10) / 10,
+        net: Math.round(p.net * 100) / 100,
+        units: Math.round(p.units * 10) / 10,
+      };
+    }).sort((a, b) => b.played - a.played || b.net - a.net);
+
+    return {
+      patterns,
+      totalSets,
+      won: wonSets,
+      bust: bustSets,
+      winRate: totalSets > 0 ? Math.round((wonSets / totalSets) * 1000) / 10 : 0,
+      net: Math.round(totalNet * 100) / 100,
+      units: Math.round(totalUnits * 10) / 10,
+    };
+  }
+
+  /**
+   * Analyzes deep pattern recognition for sequence lengths 8, 9, 10, 11, 12, 13, 14, 15, 16.
+   * Identifies streaks, chops, periodic patterns, and historical recurrence.
+   */
+  function analyzeDeepPatterns(rows) {
+    if (!rows || rows.length === 0) return { formations: [], strongest: null, hasStrongFormation: false, count: 0 };
+    const sides = [];
+    for (const r of rows) {
+      const s = r.effSide || r.side;
+      if (s === 'A' || s === 'B') {
+        sides.push(s);
+      }
+    }
+    if (sides.length < 8) {
+      return { formations: [], strongest: null, hasStrongFormation: false, count: sides.length };
+    }
+
+    const formations = [];
+    const lengths = [8, 9, 10, 11, 12, 13, 14, 15, 16];
+
+    for (const L of lengths) {
+      if (sides.length < L) continue;
+      const window = sides.slice(-L);
+      const str = window.join('');
+
+      // 1. Streak / Dragon
+      const allA = window.every(s => s === 'A');
+      const allB = window.every(s => s === 'B');
+      if (allA || allB) {
+        const streakSide = allA ? 'A' : 'B';
+        const antiSide = opp(streakSide);
+        formations.push({
+          length: L,
+          type: 'streak',
+          label: `${L}-Roll Streak on ${streakSide}`,
+          pattern: str,
+          abstract: abstract(window),
+          strength: 95 + Math.min(5, (L - 8)),
+          projectedSide: antiSide,
+          reason: `Unbroken streak of ${L} ${streakSide}s. Anti-streak rule projects ${antiSide}.`,
+          urgent: L >= 10,
+        });
+      }
+
+      // 2. Chop / Alternating
+      let isChop = true;
+      for (let i = 1; i < L; i++) {
+        if (window[i] === window[i - 1]) { isChop = false; break; }
+      }
+      if (isChop) {
+        const lastSide = window[L - 1];
+        const nextChopSide = opp(lastSide);
+        formations.push({
+          length: L,
+          type: 'chop',
+          label: `${L}-Roll Alternating (Chop)`,
+          pattern: str,
+          abstract: abstract(window),
+          strength: 90 + Math.min(10, (L - 8)),
+          projectedSide: nextChopSide,
+          reason: `Clean ${L}-roll alternating pattern (${str}). Projects ${nextChopSide} on continuation.`,
+          urgent: L >= 10,
+        });
+      }
+
+      // 3. Periodic 2-2 Double Chop (AABBAABB...)
+      if (L >= 8 && L % 2 === 0) {
+        let isDoubleChop = true;
+        for (let i = 0; i < L; i++) {
+          const expected = (Math.floor(i / 2) % 2 === 0) ? window[0] : opp(window[0]);
+          if (window[i] !== expected) { isDoubleChop = false; break; }
+        }
+        if (isDoubleChop) {
+          const nextPeriodicSide = (Math.floor(L / 2) % 2 === 0) ? window[0] : opp(window[0]);
+          formations.push({
+            length: L,
+            type: 'periodic',
+            label: `${L}-Roll 2-2 Periodic Pattern`,
+            pattern: str,
+            abstract: abstract(window),
+            strength: 85 + Math.min(10, (L - 8)),
+            projectedSide: nextPeriodicSide,
+            reason: `Strict 2-2 double-chop formation (${str}). Projects ${nextPeriodicSide}.`,
+            urgent: false,
+          });
+        }
+      }
+
+      // 4. Historical Sequence Recurrence in past rolls
+      if (sides.length >= L + 5) {
+        const target = str;
+        let pastOccurrences = 0;
+        let nextA = 0, nextB = 0;
+        for (let i = 0; i <= sides.length - L - 1; i++) {
+          const sub = sides.slice(i, i + L).join('');
+          if (sub === target) {
+            pastOccurrences++;
+            const followedBy = sides[i + L];
+            if (followedBy === 'A') nextA++;
+            else if (followedBy === 'B') nextB++;
+          }
+        }
+        if (pastOccurrences >= 2) {
+          const totalFollowed = nextA + nextB;
+          const aPct = totalFollowed ? (nextA / totalFollowed) : 0;
+          const bPct = totalFollowed ? (nextB / totalFollowed) : 0;
+          const dominantPct = Math.max(aPct, bPct);
+          if (dominantPct >= 0.75) {
+            const domSide = aPct >= bPct ? 'A' : 'B';
+            formations.push({
+              length: L,
+              type: 'recurrence',
+              label: `Exact ${L}-Roll Historical Match (${pastOccurrences}x)`,
+              pattern: str,
+              abstract: abstract(window),
+              strength: Math.round(dominantPct * 100),
+              projectedSide: domSide,
+              reason: `Sequence ${str} appeared ${pastOccurrences} times in prior history; ${Math.round(dominantPct * 100)}% of the time it was followed by ${domSide}.`,
+              urgent: pastOccurrences >= 3 && dominantPct >= 0.8,
+            });
+          }
+        }
+      }
+    }
+
+    formations.sort((a, b) => b.strength - a.strength || b.length - a.length);
+    const strongest = formations[0] || null;
+    return {
+      formations,
+      strongest,
+      hasStrongFormation: strongest !== null && strongest.strength >= 80,
+      count: sides.length,
+    };
+  }
+
+  /**
+   * Rolling pattern tracker looking at the last 8, 9, 10, 11 rolls alongside current setup.
+   * Exact weighted equation:
+   * - Current setup = 50%
+   * - Roll 11 = 20%
+   * - Roll 10 = 15%
+   * - Roll 9 = 10%
+   * - Roll 8 = 5%
+   * Total = 100%
+   */
+  function analyzeRollingConfirmation(rows, currentNext, curCfg) {
+    const sides = [];
+    for (const r of rows || []) {
+      const s = r.effSide || r.side;
+      if (s === 'A' || s === 'B') {
+        sides.push(s);
+      }
+    }
+
+    const currentSide = currentNext?.side || (currentNext?.phase === 'factor' ? currentNext.ifA : null);
+    const currentPhase = currentNext?.phase || 'collect';
+    const currentStep = currentNext?.step != null ? currentNext.step : 0;
+
+    // Weights configuration: current = 50%, 11 = 20%, 10 = 15%, 9 = 10%, 8 = 5%
+    const HORIZON_WEIGHTS = [
+      { len: 11, weight: 20 },
+      { len: 10, weight: 15 },
+      { len: 9, weight: 10 },
+      { len: 8, weight: 5 },
+    ];
+
+    const horizons = HORIZON_WEIGHTS.map(({ len, weight }) => {
+      if (sides.length < len) {
+        return {
+          length: len,
+          weight,
+          ready: false,
+          pattern: null,
+          factor: null,
+          projectedSide: null,
+          repeatSide: null,
+          matchesCurrent: null,
+          status: 'collecting',
+          needed: len - sides.length,
+        };
+      }
+      const window = sides.slice(-len);
+      const pat = window.slice(0, len - 1);
+      const factor = window[len - 1];
+      // Core rule: "patterns should not repeat"
+      const repeatSide = (pat[1] === pat[0]) ? factor : opp(factor);
+      const projectedSide = opp(repeatSide);
+      const matchesCurrent = currentSide ? (projectedSide === currentSide) : null;
+      return {
+        length: len,
+        weight,
+        ready: true,
+        pattern: abstract(pat),
+        rawPattern: pat.join(''),
+        factor,
+        repeatSide,
+        projectedSide,
+        matchesCurrent,
+        status: matchesCurrent === true ? 'confirm' : (matchesCurrent === false ? 'opposite' : 'neutral'),
+      };
+    });
+
+    const readyHorizons = horizons.filter(h => h.ready);
+    let weightedScore = 0;
+    let matchCount = 0;
+    const totalSignals = 1 + HORIZON_WEIGHTS.length; // 5 signals (current + 11, 10, 9, 8)
+
+    // Current setup always contributes 50% if there is an active projected play
+    const currentActive = Boolean(currentSide);
+    if (currentActive) {
+      weightedScore += 50;
+      matchCount += 1; // current setup matches itself
+    }
+
+    let readyWeightSum = currentActive ? 50 : 0;
+    for (const h of horizons) {
+      if (h.ready) {
+        readyWeightSum += h.weight;
+        if (h.matchesCurrent === true) {
+          weightedScore += h.weight;
+          matchCount += 1;
+        }
+      }
+    }
+
+    // Normalized weighted confirmation percentage (0 to 100%)
+    const normalizedWeighted = readyWeightSum > 0 ? Math.round((weightedScore / readyWeightSum) * 100) : 0;
+    // Discrete match percentage across the 5 signals (0%, 20%, 40%, 60%, 80%, 100%)
+    const discreteMatchPct = Math.round((matchCount / totalSignals) * 100);
+
+    const oppositeCount = readyHorizons.filter(h => h.matchesCurrent === false).length;
+    const hasClash = currentActive && readyHorizons.length >= 3 && (oppositeCount >= 3 || (oppositeCount >= 2 && currentStep >= 3));
+
+    let signalType = 'neutral';
+    let message = '';
+    if (!currentActive) {
+      signalType = 'waiting';
+      message = 'Collecting rolls for active group projection.';
+    } else if (discreteMatchPct >= 80) {
+      signalType = 'strong_confirm';
+      message = `${discreteMatchPct}% Rolling Confirmation Match (${normalizedWeighted}% weighted). Strong support for ${currentSide}.`;
+    } else if (discreteMatchPct >= 60) {
+      signalType = 'moderate_confirm';
+      message = `${discreteMatchPct}% Rolling Pattern Match (${normalizedWeighted}% weighted). Moderate confirmation on ${currentSide}.`;
+    } else if (discreteMatchPct === 40) {
+      signalType = 'split';
+      message = `40% Rolling Pattern Match. Split signals: some rolling horizons project ${opp(currentSide)}.`;
+    } else if (discreteMatchPct <= 20) {
+      signalType = 'clash';
+      message = `CAUTION: ${discreteMatchPct}% Rolling Match (${normalizedWeighted}% weighted). Rolling patterns strongly project OPPOSITE play (${opp(currentSide)}).`;
+    }
+
+    return {
+      currentSide,
+      currentPhase,
+      currentStep,
+      discreteMatchPct,
+      normalizedWeighted,
+      weightedScore,
+      matchCount,
+      totalSignals,
+      horizons,
+      hasClash,
+      signalType,
+      message,
+    };
+  }
+
+  const api = {
+    PROGRESSIONS, FIB_SEQUENCE, GROUP_SIZES, opp, abstract, betPlan, run, stats,
+    analyzeBusts, simulateDelays, recoveryOptions, specialProbability, detectTripleRisk, detectDragon,
+    patternStats, analyzeDeepPatterns, analyzeRollingConfirmation,
+  };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Engine = api;
 })(this);

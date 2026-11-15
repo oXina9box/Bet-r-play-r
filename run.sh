@@ -2,6 +2,7 @@
 # Opens Bet-R Play-R as its own app window and makes sure the local data server is running
 # (saves to data/betrplayr.json + daily backups in data/backups/).
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="$HOME/.local/share/mise/shims:$PATH"
 PORT=47615
 URL="http://127.0.0.1:$PORT/"
 mkdir -p "$DIR/data"
