@@ -313,7 +313,7 @@
   function switchTo(site, gameId) {
     if (!ready) return;
     cancelVoice();
-    if (screenReader?.canSwitch?.() === false) { $('site').value = data.cur.site; return toast('A verified hand is waiting. Finish or clear manual input, then resume recording.'); }
+    if (screenReader?.canSwitch?.() === false) { $('site').value = data.cur.site; $('games').value = data.cur.game; return toast('A verified hand is waiting. Finish or clear manual input, then resume recording.'); }
     screenReader?.stop('Casino/game changed; click Start to record');
     game().emptyPending(); // Cancel an active card timer before leaving its game.
     data.cur = { site, game: gameId };
@@ -365,7 +365,8 @@
   function renderHeader() {
     document.body?.setAttribute?.('data-game', data.cur.game);
     $('site').innerHTML = data.sites.map((s) => `<option value="${escapeHTML(s.id)}" ${s.id === data.cur.site ? 'selected' : ''}>${escapeHTML(s.name)}</option>`).join('');
-    seg($('games'), Object.values(GAMES).map((g) => [g.id, g.name]), data.cur.game, (id) => switchTo(data.cur.site, id));
+    $('games').innerHTML = Object.values(GAMES).map((g) => `<option value="${g.id}" ${g.id === data.cur.game ? 'selected' : ''}>${escapeHTML(g.name)}</option>`).join('');
+    $('games').value = data.cur.game;
     const b = book();
     const n = view.rows.length;
     $('sessionInfo').textContent = `Session #${b.sessions.length} · ${n} ${game().entryName.toLowerCase()}${n === 1 ? '' : 's'}${curSession().endedAt !== undefined ? ' · ENDED' : ''}`;
@@ -510,7 +511,7 @@
     // The directive card is static: banners, ladder and result notes live in the notification area below.
     $('next').innerHTML = h + skip;
     const notices = $('noticeBanners');
-    if (notices) notices.innerHTML = targetBadge + recBanner + drawBanner + alertBanner + dragonBanner + ladderBadge + lastLine;
+    if (notices) notices.innerHTML = targetBadge + recBanner + drawBanner + alertBanner + ladderBadge + lastLine;
     $('skipBetOnce')?.addEventListener('click', toggleNoBet);
     $('betMinus')?.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -656,23 +657,24 @@
 
     const timerBadge = !urgentState.expired
       ? `<span id="urgentTimerBadge" class="urgent-timer-badge">${urgentState.secondsLeft}s</span>`
-      : `<span class="urgent-status-note">Normal progression active</span>`;
+      : `<span class="urgent-timer-badge expired">0s</span>`;
 
-    const actionBtn = !urgentState.expired && alert.actionLabel
-      ? `<div class="urgent-alert-actions">
-           <button id="urgentAcceptBtn" class="urgent-accept-btn">${escapeHTML(alert.actionLabel)}</button>
-           <span class="urgent-status-note">Normal progression continues unless accepted within 10s.</span>
-         </div>`
+    const acceptBtn = !urgentState.expired && alert.actionLabel
+      ? `<button id="urgentAcceptBtn" class="urgent-accept-btn" type="button">${escapeHTML(alert.actionLabel)}</button>`
       : '';
 
+    const note = !urgentState.expired
+      ? 'Normal progression continues unless accepted within 10s.'
+      : 'Normal progression active.';
+
     el.innerHTML = `
-      <div class="urgent-alert-head">
+      <div class="urgent-line-1">
         <span class="urgent-alert-badge">${escapeHTML(alert.badge)}</span>
         ${timerBadge}
+        <span class="urgent-msg-inline"><b>${escapeHTML(alert.title)}:</b> ${alert.body}</span>
+        ${acceptBtn}
       </div>
-      <div class="urgent-alert-title">${escapeHTML(alert.title)}</div>
-      <div class="urgent-alert-body">${alert.body}</div>
-      ${actionBtn}
+      <div class="urgent-line-2">${note}</div>
     `;
 
     $('urgentAcceptBtn')?.addEventListener('click', (e) => {
@@ -695,19 +697,7 @@
     const b = book();
     const items = [];
 
-    // Target profit progress
-    if (b.cfg.targetProfit > 0) {
-      const s = stats(rows);
-      const tDol = b.cfg.targetProfit;
-      const reached = s.net >= tDol;
-      const diff = Math.max(0, tDol - s.net);
-      items.push(`
-        <div class="standard-msg-item">
-          <span class="standard-msg-badge ${reached ? 'win' : 'info'}">Target</span>
-          <span>${reached ? 'Goal Achieved!' : `Target: ${fmt(tDol)} · Needed: ${fmt(diff)}`}</span>
-        </div>
-      `);
-    }
+
 
     // Recovery mode
     if (view.next && view.next.recovery) {
@@ -775,7 +765,8 @@
 
     if (badgeEl) {
       badgeEl.className = `rolling-signal-badge ${rolling.signalType}`;
-      badgeEl.textContent = `${rolling.discreteMatchPct}% MATCH (${rolling.normalizedWeighted}% WT)`;
+      const pctLabel = rolling.combinedPct != null ? `${rolling.combinedPct}% MATCH (${rolling.equalRollsPct}% + ${rolling.weightedHalfPct}% WT)` : `${rolling.discreteMatchPct}% MATCH (${rolling.normalizedWeighted}% WT)`;
+      badgeEl.textContent = pctLabel;
     }
 
     const currentSideLabel = rolling.currentSide ? g.sides[rolling.currentSide].label : 'Waiting';
@@ -889,10 +880,20 @@
     const recText = r.recovery ? ` [Recovery ${r.recovery.currentSet}/${r.recovery.totalSets}] ` : '';
     const scoreText = r.scoreHit ? ' [SCORE HIT] ' : '';
     const tip = `${scoreText}${nbText}${recText}` + (r.push ? `Tie, played${as || ' as nothing (no prior winner)'} · ` : '') + (r.role === 'factor' ? `Factor · fading ${r.pattern}` : r.role === 'factor-wait' ? `Delayed bet wait (${r.delayLeft} remaining)` : r.role === 'factor-break' ? 'Pattern broke during delay; sequence reset' : r.role === 'cooldown' ? `Cooldown after ${r.cooldownReason || 'bust'} (${r.cooldownLeft} remaining)` : r.bet ? `Bet ${g.sides[r.bet.side].label} ${fmt(r.bet.amount)} → ${r.result}` : '') + ' · double-click to toggle No Bet';
-    // Hover shows only what the bead can't: the dice (or score) actually rolled.
-    const fullTip = g.id === 'sicbo' ? String(c.sub).split('').join(' - ') : String(c.sub || c.main);
+    // Hover shows only what the bead can't: the dice actually rolled. Quick-entry rounds have none.
+    let fullTip = '';
+    if (g.id === 'sicbo' && Array.isArray(r.raw)) {
+      fullTip = r.raw.join(' - ');
+    } else if (g.id === 'kickoff') {
+      if (Array.isArray(r.raw)) {
+        fullTip = r.raw.join(' - ');
+      } else if (r.o?.red !== undefined && r.o?.blue !== undefined && !r.raw?.w) {
+        fullTip = `${r.o.red} - ${r.o.blue}`;
+      }
+    }
+    if (/^[\s\u2013-]*$/.test(fullTip)) fullTip = '';
     const head = fullTip;
-    return `<div class="chip bacc-bead ${sideCls}${r.lossAll ? ' special' : ''}${end}${r.noBet ? ' no-bet' : ''}" data-entry-idx="${r.entryIdx}" data-tip="${escapeHTML(fullTip)}" aria-label="${escapeHTML(head)}">${role}${res}<b>${escapeHTML(c.main)}</b><small>${escapeHTML(c.sub)}${r.scoreHit ? ' · \u2605 SCORE' : ''}</small>${c.flag ? `<i class="flag">${escapeHTML(c.flag)}</i>` : ''}</div>`;
+    return `<div class="chip bacc-bead ${sideCls}${r.lossAll ? ' special' : ''}${end}${r.noBet ? ' no-bet' : ''}" data-entry-idx="${r.entryIdx}" data-tip="${escapeHTML(fullTip)}"${head ? ` aria-label="${escapeHTML(head)}"` : ''}>${role}${res}<b>${escapeHTML(c.main)}</b><small>${escapeHTML(c.sub)}${r.scoreHit ? ' · \u2605 SCORE' : ''}</small>${c.flag ? `<i class="flag">${escapeHTML(c.flag)}</i>` : ''}</div>`;
   }
 
   function renderStrip() {
@@ -1450,7 +1451,8 @@
     strip.addEventListener('mouseover', (e) => {
       const bead = e.target.closest?.('.bacc-bead');
       if (!bead) return hide();
-      tip.textContent = bead.dataset.tip || '';
+      if (!bead.dataset.tip) return hide();
+      tip.textContent = bead.dataset.tip;
       tip.hidden = false;
       const r = bead.getBoundingClientRect(), t = tip.getBoundingClientRect();
       const left = Math.min(Math.max(4, r.left + r.width / 2 - t.width / 2), window.innerWidth - t.width - 4);
@@ -1474,6 +1476,53 @@
   $('scoreHit').onclick = toggleScoreHit;
   $('newSession').onclick = newSession;
   $('site').onchange = (e) => switchTo(e.target.value, data.cur.game);
+  $('games').onchange = (e) => switchTo(data.cur.site, e.target.value);
+  // One settings cog button opens the Settings and Visual Recorder giant popup.
+  function openPopup(tab = 'settings') {
+    const pop = $('optionsMenu');
+    if (!pop) return;
+    const tabSet = $('tabSettings'), tabRec = $('tabRecorder');
+    const panSet = $('panelSettings'), panRec = $('panelRecorder');
+    if (tab === 'recorder') {
+      tabSet?.classList.remove('on');
+      tabSet?.setAttribute?.('aria-selected', 'false');
+      tabRec?.classList.add('on');
+      tabRec?.setAttribute?.('aria-selected', 'true');
+      if (panSet) panSet.hidden = true;
+      if (panRec) panRec.hidden = false;
+    } else {
+      tabSet?.classList.add('on');
+      tabSet?.setAttribute?.('aria-selected', 'true');
+      tabRec?.classList.remove('on');
+      tabRec?.setAttribute?.('aria-selected', 'false');
+      if (panSet) panSet.hidden = false;
+      if (panRec) panRec.hidden = true;
+    }
+    if (pop.showPopover) {
+      try { pop.showPopover(); } catch {}
+    } else {
+      pop.hidden = false;
+      pop.setAttribute?.('open', '');
+    }
+  }
+
+  function closePopup() {
+    const pop = $('optionsMenu');
+    if (!pop) return;
+    if (pop.hidePopover) {
+      try { pop.hidePopover(); } catch {}
+    } else {
+      pop.hidden = true;
+      pop.removeAttribute?.('open');
+    }
+  }
+
+  if ($('settingsBtn')) $('settingsBtn').onclick = () => openPopup('settings');
+  if ($('tabSettings')) $('tabSettings').onclick = () => openPopup('settings');
+  if ($('tabRecorder')) $('tabRecorder').onclick = () => openPopup('recorder');
+  if ($('recorderToggle')) $('recorderToggle').onclick = () => openPopup('recorder');
+  if ($('optionsToggle')) $('optionsToggle').onclick = () => openPopup('settings');
+  if ($('optionsClose')) $('optionsClose').onclick = () => closePopup();
   // Inline "add site" field: Enter adds, Esc or clicking away cancels. No dialogs.
   const siteInput = $('newSite');
   $('addSite').onclick = () => { siteInput.hidden = false; siteInput.value = ''; siteInput.focus(); };

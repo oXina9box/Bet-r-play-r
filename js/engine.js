@@ -1049,6 +1049,13 @@
     // Discrete match percentage across the 5 signals (0%, 20%, 40%, 60%, 80%, 100%)
     const discreteMatchPct = Math.round((matchCount / totalSignals) * 100);
 
+    // First 50%: equal rolls percentage (e.g. 4/5 match = 40%)
+    const equalRollsPct = Math.round((matchCount / totalSignals) * 50);
+    // Second 50%: weighted match percentage
+    const weightedHalfPct = readyWeightSum > 0 ? Math.round((weightedScore / readyWeightSum) * 50) : 0;
+    // Combined total percentage (first 50% equal + weighted %)
+    const combinedPct = Math.min(100, equalRollsPct + weightedHalfPct);
+
     const oppositeCount = readyHorizons.filter(h => h.matchesCurrent === false).length;
     const hasClash = currentActive && readyHorizons.length >= 3 && (oppositeCount >= 3 || (oppositeCount >= 2 && currentStep >= 3));
 
@@ -1057,18 +1064,18 @@
     if (!currentActive) {
       signalType = 'waiting';
       message = 'Collecting rolls for active group projection.';
-    } else if (discreteMatchPct >= 80) {
+    } else if (combinedPct >= 75) {
       signalType = 'strong_confirm';
-      message = `${discreteMatchPct}% Rolling Confirmation Match (${normalizedWeighted}% weighted). Strong support for ${currentSide}.`;
-    } else if (discreteMatchPct >= 60) {
+      message = `${combinedPct}% Rolling Confirmation Match (${equalRollsPct}% rolls + ${weightedHalfPct}% wt). Strong support for ${currentSide}.`;
+    } else if (combinedPct >= 55) {
       signalType = 'moderate_confirm';
-      message = `${discreteMatchPct}% Rolling Pattern Match (${normalizedWeighted}% weighted). Moderate confirmation on ${currentSide}.`;
-    } else if (discreteMatchPct === 40) {
+      message = `${combinedPct}% Rolling Pattern Match (${equalRollsPct}% rolls + ${weightedHalfPct}% wt). Moderate confirmation on ${currentSide}.`;
+    } else if (combinedPct >= 35) {
       signalType = 'split';
-      message = `40% Rolling Pattern Match. Split signals: some rolling horizons project ${opp(currentSide)}.`;
-    } else if (discreteMatchPct <= 20) {
+      message = `${combinedPct}% Rolling Pattern Match (${equalRollsPct}% rolls + ${weightedHalfPct}% wt). Split signals: some rolling horizons project ${opp(currentSide)}.`;
+    } else {
       signalType = 'clash';
-      message = `CAUTION: ${discreteMatchPct}% Rolling Match (${normalizedWeighted}% weighted). Rolling patterns strongly project OPPOSITE play (${opp(currentSide)}).`;
+      message = `CAUTION: ${combinedPct}% Rolling Match (${equalRollsPct}% rolls + ${weightedHalfPct}% wt). Rolling patterns project OPPOSITE play (${opp(currentSide)}).`;
     }
 
     return {
@@ -1077,6 +1084,9 @@
       currentStep,
       discreteMatchPct,
       normalizedWeighted,
+      equalRollsPct,
+      weightedHalfPct,
+      combinedPct,
       weightedScore,
       matchCount,
       totalSignals,

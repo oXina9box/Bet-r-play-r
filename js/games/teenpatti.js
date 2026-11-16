@@ -203,9 +203,7 @@
 
     pendingHTML(p, cfg) {
       if (cfg?.entryMode === 'quick') {
-        return `<div class="quick-status-panel">
-          <div class="quick-status-hint">Quick Mode Active · Press <b>1</b> for Player A · <b>2</b> for Player B · <b>3</b> for Tie</div>
-        </div>`;
+        return '';
       }
       p = p || { cards: [], active: null };
       const cards = p.cards || [];

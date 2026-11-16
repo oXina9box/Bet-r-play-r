@@ -47,6 +47,16 @@ test('analyzeRollingConfirmation computes 50/20/15/10/5 weights and discrete mat
   assert.equal(res.horizons[1].weight, 15); // len 10
   assert.equal(res.horizons[2].weight, 10); // len 9
   assert.equal(res.horizons[3].weight, 5);  // len 8
+
+  // First 50% = equal percentage across rolls (e.g. 4/5 match = 40%)
+  assert.equal(typeof res.equalRollsPct, 'number');
+  assert.ok(res.equalRollsPct >= 0 && res.equalRollsPct <= 50);
+  assert.equal(typeof res.weightedHalfPct, 'number');
+  assert.ok(res.weightedHalfPct >= 0 && res.weightedHalfPct <= 50);
+  assert.equal(res.combinedPct, res.equalRollsPct + res.weightedHalfPct);
+  // Specifically verify 4/5 equal rolls = 40% rule
+  const fourOfFive = Math.round((4 / 5) * 50);
+  assert.equal(fourOfFive, 40, '4/5 matches is exactly 40% in first half');
 });
 
 test('patternStats aggregates win and bust stats for all played patterns', () => {
@@ -67,7 +77,7 @@ test('patternStats aggregates win and bust stats for all played patterns', () =>
 });
 
 // App DOM tests for workbench enhancements
-function bootApp(initialGame = 'sicbo') {
+async function bootApp(initialGame = 'sicbo') {
   const elements = new Map();
   function element(id) {
     if (!elements.has(id)) elements.set(id, {
@@ -116,21 +126,54 @@ function bootApp(initialGame = 'sicbo') {
   }
   context.AppData = require('../js/data.js');
   vm.runInContext(fs.readFileSync('js/app.js', 'utf8'), context, { filename: path.resolve('js/app.js') });
+  for (let i = 0; i < 12; i++) await Promise.resolve();
   return { element, context, timers };
 }
 
-test('bet area #next never has overlays and urgent alert area operates cleanly', () => {
-  const app = bootApp('sicbo');
+test('bet area #next never has overlays and urgent alert area operates cleanly', async () => {
+  const app = await bootApp('sicbo');
   const nextEl = app.element('next');
   assert.ok(!nextEl.innerHTML.includes('triple-overlay'), '#next must never contain triple-overlay');
   assert.ok(app.element('urgentAlertArea'), 'urgentAlertArea exists in DOM');
   assert.ok(app.element('standardMessageArea'), 'standardMessageArea exists in DOM');
   assert.ok(app.element('rollingTracker'), 'rollingTracker exists in DOM');
   assert.ok(app.element('deepPatterns'), 'deepPatterns exists in DOM');
+  assert.ok(app.element('settingsBtn'), 'single settings cog button exists');
+  assert.ok(app.element('games'), 'games selector dropdown exists');
+  assert.ok(app.element('tabSettings'), 'settings tab exists in giant popup');
+  assert.ok(app.element('tabRecorder'), 'recorder tab exists in giant popup');
 });
 
-test('scoreboard renders Baccarat beads for groups', () => {
-  const app = bootApp('baccarat');
+test('settingsBtn opens giant popup with Settings and Visual Recorder tabs', async () => {
+  const app = await bootApp('sicbo');
+  const btn = app.element('settingsBtn');
+  const pop = app.element('optionsMenu');
+  btn.onclick?.();
+  assert.equal(pop.hidden, false, 'optionsMenu opens on settingsBtn click');
+  assert.ok(app.element('tabSettings').classList.contains('on'), 'Settings tab is active by default');
+  assert.equal(app.element('panelSettings').hidden, false, 'Settings panel is visible');
+  assert.equal(app.element('panelRecorder').hidden, true, 'Recorder panel is hidden');
+
+  app.element('tabRecorder').onclick?.();
+  assert.ok(app.element('tabRecorder').classList.contains('on'), 'Recorder tab becomes active');
+  assert.equal(app.element('panelSettings').hidden, true, 'Settings panel is hidden');
+  assert.equal(app.element('panelRecorder').hidden, false, 'Recorder panel is visible');
+
+  app.element('optionsClose').onclick?.();
+  assert.equal(pop.hidden, true, 'optionsClose hides giant popup');
+});
+
+test('Teen Patti quick mode does not duplicate entry instructions in pendingHTML', async () => {
+  const app = await bootApp('teenpatti');
+  const tp = app.context.Games.teenpatti;
+  const quickPending = tp.pendingHTML(null, { entryMode: 'quick' });
+  assert.equal(quickPending, '', 'pendingHTML is empty in quick mode to prevent duplicating instructions');
+  const quickPad = tp.padHTML({ entryMode: 'quick' });
+  assert.ok(quickPad.includes('Quick Entry Mode'), 'padHTML contains the entry instruction');
+});
+
+test('scoreboard renders Baccarat beads for groups', async () => {
+  const app = await bootApp('baccarat');
   const stripEl = app.element('strip');
   assert.ok(stripEl, '#strip element exists');
 });

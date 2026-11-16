@@ -41,7 +41,11 @@ function boot({ cache = null, get = async () => ({ ok: true, json: async () => f
   beforeApp(context);
   vm.runInContext(fs.readFileSync('js/app.js', 'utf8'), context, { filename: path.resolve('js/app.js') });
   const clickKey = (key) => element('pad').listeners.click?.({ target: { closest: () => ({ dataset: { key } }) } });
-  const pick = (id, value) => element(id).onclick?.({ target: { closest: () => ({ dataset: { v: value } }) } });
+  const pick = (id, value) => {
+    // Game and casino pickers are dropdowns; everything else is a segmented button group.
+    if (id === 'games') { const el = element(id); el.value = value; return el.onchange?.({ target: { value } }); }
+    return element(id).onclick?.({ target: { closest: () => ({ dataset: { v: value } }) } });
+  };
   return {
     element, context, stored, requests, clickKey, pick,
     key(key, options = {}) { const event = { key, target: {}, preventDefault() { this.prevented = true; }, ...options }; documentListeners.keydown?.(event); return event; },
@@ -424,9 +428,9 @@ function boot({ cache = null, get = async () => ({ ok: true, json: async () => f
   } });
   await tick(); heldReader.pick('games', 'sicbo');
   assert.match(heldReader.element('toast').textContent, /verified hand/i, 'pending hand blocks changing game');
-  assert.match(heldReader.element('games').innerHTML, /teenpatti[^>]*class="on"/);
+  assert.equal(heldReader.element('games').value, 'teenpatti');
   held = false; heldReader.pick('games', 'sicbo');
-  assert.match(heldReader.element('games').innerHTML, /sicbo[^>]*class="on"/, 'game can change when pending hand resolves');
+  assert.equal(heldReader.element('games').value, 'sicbo', 'game can change when pending hand resolves');
 
   function recoveryApp(session = { id: 'recover', start: 1 }) {
     const clock = { at: 1900000000000 }, hooks = {};
