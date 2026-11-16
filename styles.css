@@ -1293,3 +1293,23 @@ body[data-game] #sessionInfo { flex: 1 1 0; min-width: 0; overflow: hidden; text
 body[data-game] .session > * { flex-shrink: 0; }
 body[data-game] .session > #sessionInfo { flex-shrink: 1; }
 .strip .bacc-lane .chip.bacc-bead.special { box-shadow: 0 0 0 1px var(--warn); }
+
+/* fixes: alert box was stretching (column-wrap bug); header + directive at very narrow widths */
+body[data-game] .urgent-alert-area { flex-direction: row; align-content: flex-start; align-items: center; height: auto; }
+body[data-game] .urgent-alert-head { flex: 0 0 auto; }
+body[data-game] .notify-panel, body[data-game] .notice-banners, body[data-game] .standard-message-area { flex: 0 0 auto; height: auto; }
+@media (max-width: 560px) {
+  body[data-game] .topbar { flex-wrap: wrap; row-gap: 2px; }
+  body[data-game] .session { flex: 1 1 100%; justify-content: space-between; }
+  body[data-game] #sessionInfo { text-align: left; font-size: 10px; }
+}
+@media (max-width: 440px) {
+  :root { --top-h: 196px; }
+  body[data-game] main { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  body[data-game] #next { grid-template-columns: minmax(0, 1fr); row-gap: 3px; justify-items: center; text-align: center; padding: 4px 6px; }
+  body[data-game] #next > * { grid-column: 1 / -1; }
+  body[data-game] .bet-side, body[data-game] .bet-side.wait { font-size: 20px; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  body[data-game] .bet-amt { font-size: 15px; justify-content: center; flex-wrap: wrap; }
+  body[data-game] .plan { justify-content: center; }
+  body[data-game] .pattern { font-size: 10px; }
+}
