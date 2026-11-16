@@ -379,6 +379,7 @@
     if (data.cur.game === 'sicbo' && curSession().endedAt !== undefined) {
       $('next').className = 'next wait';
       $('next').innerHTML = '<div class="phase">SESSION ENDED</div><div class="bet-side wait">Missed roll</div><div class="pattern">History saved as-is. Start a new session to continue.</div><button id="resumeSession">Start new session</button>';
+      if ($('noticeBanners')) $('noticeBanners').innerHTML = '';
       $('resumeSession')?.addEventListener('click', newSession); return;
     }
     const nx = view.next, g = game();
@@ -506,7 +507,10 @@
     }
     $('next').className = 'next ' + nx.phase + (nx.phase === 'bet' ? ' side-' + nx.side.toLowerCase() : '') + (nx.recovery ? ' recovery' : '');
     const skip = nx.phase === 'bet' ? `<button id="skipBetOnce" class="skip-bet ${noBetArmed ? 'armed' : ''}">${noBetArmed ? 'Cancel one-time skip' : 'Skip this bet once'}</button>` : '';
-    $('next').innerHTML = targetBadge + recBanner + drawBanner + alertBanner + dragonBanner + h + ladderBadge + lastLine + skip;
+    // The directive card is static: banners, ladder and result notes live in the notification area below.
+    $('next').innerHTML = h + skip;
+    const notices = $('noticeBanners');
+    if (notices) notices.innerHTML = targetBadge + recBanner + drawBanner + alertBanner + dragonBanner + ladderBadge + lastLine;
     $('skipBetOnce')?.addEventListener('click', toggleNoBet);
     $('betMinus')?.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -885,7 +889,10 @@
     const recText = r.recovery ? ` [Recovery ${r.recovery.currentSet}/${r.recovery.totalSets}] ` : '';
     const scoreText = r.scoreHit ? ' [SCORE HIT] ' : '';
     const tip = `${scoreText}${nbText}${recText}` + (r.push ? `Tie, played${as || ' as nothing (no prior winner)'} · ` : '') + (r.role === 'factor' ? `Factor · fading ${r.pattern}` : r.role === 'factor-wait' ? `Delayed bet wait (${r.delayLeft} remaining)` : r.role === 'factor-break' ? 'Pattern broke during delay; sequence reset' : r.role === 'cooldown' ? `Cooldown after ${r.cooldownReason || 'bust'} (${r.cooldownLeft} remaining)` : r.bet ? `Bet ${g.sides[r.bet.side].label} ${fmt(r.bet.amount)} → ${r.result}` : '') + ' · double-click to toggle No Bet';
-    return `<div class="chip bacc-bead ${sideCls}${r.lossAll ? ' special' : ''}${end}${r.noBet ? ' no-bet' : ''}" data-entry-idx="${r.entryIdx}" title="${escapeHTML(tip)}">${role}${res}<b>${escapeHTML(c.main)}</b><small>${escapeHTML(c.sub)}${r.scoreHit ? ' · \u2605 SCORE' : ''}</small>${c.flag ? `<i class="flag">${escapeHTML(c.flag)}</i>` : ''}</div>`;
+    const countText = g.id === 'sicbo' ? `Total ${c.main} · dice ${String(c.sub).split('').join('-')}${c.flag ? ' · TRIPLE' : ''}` : `${c.main} ${c.sub}`;
+    const head = `#${r.entryIdx + 1} · ${countText} · ${r.side && g.sides[r.side] ? g.sides[r.side].label : 'Tie'}`;
+    const fullTip = `${head}\n${tip.replace(' · double-click to toggle No Bet', '')}`;
+    return `<div class="chip bacc-bead ${sideCls}${r.lossAll ? ' special' : ''}${end}${r.noBet ? ' no-bet' : ''}" data-entry-idx="${r.entryIdx}" data-tip="${escapeHTML(fullTip)}" aria-label="${escapeHTML(head)}">${role}${res}<b>${escapeHTML(c.main)}</b><small>${escapeHTML(c.sub)}${r.scoreHit ? ' · \u2605 SCORE' : ''}</small>${c.flag ? `<i class="flag">${escapeHTML(c.flag)}</i>` : ''}</div>`;
   }
 
   function renderStrip() {
@@ -1435,6 +1442,24 @@
   $('undo').onclick = undo;
   $('clear').onclick = clearPending;
   // Double-click a past entry to flip No Bet (single clicks do nothing, so stray clicks can't change history).
+  // Readable hover pop-up for history beads (fixed-position so the strip never clips it or moves).
+  (function beadTooltip() {
+    const tip = $('beadTip'), strip = $('strip');
+    if (!tip || !strip.addEventListener) return;
+    const hide = () => { tip.hidden = true; };
+    strip.addEventListener('mouseover', (e) => {
+      const bead = e.target.closest?.('.bacc-bead');
+      if (!bead) return hide();
+      tip.textContent = bead.dataset.tip || '';
+      tip.hidden = false;
+      const r = bead.getBoundingClientRect(), t = tip.getBoundingClientRect();
+      const left = Math.min(Math.max(4, r.left + r.width / 2 - t.width / 2), window.innerWidth - t.width - 4);
+      const top = r.top - t.height - 6 >= 4 ? r.top - t.height - 6 : r.bottom + 6;
+      tip.style.left = left + 'px'; tip.style.top = top + 'px';
+    });
+    strip.addEventListener('mouseleave', hide);
+    strip.addEventListener('scroll', hide);
+  })();
   $('strip').addEventListener('dblclick', (e) => {
     if (!ready) return;
     const chip = e.target.closest('.chip[data-entry-idx]');
