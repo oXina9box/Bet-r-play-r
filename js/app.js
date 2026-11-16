@@ -334,6 +334,42 @@
 
   function renderPad() { $('pad').innerHTML = game().padHTML(book().cfg); }
 
+  function renderTargetBetLine() {
+    const el = $('targetBetLine');
+    if (!el) return;
+    const b = book();
+    const nx = view.next;
+    const parts = [];
+
+    if (b.cfg.targetProfit > 0) {
+      const s = stats(view.rows);
+      const targetDol = b.cfg.targetProfit;
+      const diffDol = targetDol - s.net;
+      const reached = s.net >= targetDol;
+      parts.push(`<span class="val-target">Target: <span class="val-num">$${fmt(targetDol)}</span></span>`);
+      if (reached) {
+        parts.push(`<span class="val-achieved">Goal Achieved!</span>`);
+      } else {
+        parts.push(`<span class="val-needed">Needed: <span class="val-num">$${fmt(Math.max(0, diffDol))}</span></span>`);
+      }
+    }
+
+    if (nx && (nx.phase === 'bet' || nx.phase === 'continue')) {
+      const currentAmt = manualBetAmount != null ? manualBetAmount : nx.amount;
+      if (currentAmt > 0) {
+        parts.push(`<span class="val-bet">Bet: <span class="val-num">$${fmt(currentAmt)}</span></span>`);
+      }
+    }
+
+    if (parts.length > 0) {
+      el.innerHTML = parts.join('<span class="sep">·</span>');
+      el.hidden = false;
+    } else {
+      el.innerHTML = '';
+      el.hidden = true;
+    }
+  }
+
   function render() {
     view = compute();
     renderHeader();
@@ -343,6 +379,7 @@
     renderRollingTracker();
     renderDeepPatterns();
     $('pending').innerHTML = game().pendingHTML(pending, book().cfg) + (noBetArmed ? '<span class="nobet-indicator">NO BET ARMED</span>' : '');
+    renderTargetBetLine();
     const nbBtn = $('noBet');
     if (nbBtn) {
       nbBtn.classList.toggle('armed', noBetArmed);
@@ -404,38 +441,15 @@
     let alertBanner = '';
     const prob = Engine.specialProbability ? Engine.specialProbability(data.cur.game, view.rows) : null;
     if (g.id !== 'kickoff' && prob && (prob.isOverdue || prob.isHigh)) {
-      alertBanner = `<div class="special-alert ${prob.isHigh ? 'high' : ''}">${escapeHTML(prob.message)}<small>Past waiting does not increase the next outcome's probability.</small></div>`;
+      alertBanner = `<div class="special-alert ${prob.isHigh ? 'high' : ''}">${prob.rollsSince} rolls without ${prob.type}</div>`;
     }
 
     let drawBanner = '';
     if (g.id === 'kickoff') {
       const signal = g.drawSignal(book().entries, last || null);
-      const evidence = signal.evidence;
-      const contexts = signal.patterns.filter(p => p.active);
-      const patternLine = contexts.map(p => `${p.label}: ${p.draws}/${p.matches}${p.play ? ' \u2713' : ''}`).join(' · ');
-      drawBanner = `<div id="drawSignal" class="draw-signal ${signal.play ? 'play' : 'wait'}" role="status"><strong>${signal.play ? 'PLAY DRAW' : 'WAIT DRAW'}</strong><span>${escapeHTML(signal.reason)}</span><small>${escapeHTML(evidence.label)} · Draws: ${evidence.draws}/${evidence.matches} matches vs ${evidence.otherDraws}/${evidence.others} other contexts · All saved history · Historical signal</small>${patternLine ? `<small>${escapeHTML(patternLine)}</small>` : ''}</div>`;
+      drawBanner = `<div id="drawSignal" class="draw-signal ${signal.play ? 'play' : 'wait'}" role="status"><strong>${signal.play ? 'PLAY DRAW' : 'WAIT DRAW'}</strong><span>${escapeHTML(signal.reason)}</span></div>`;
     }
     const b = book();
-    let targetBadge = '';
-    if (b.cfg.targetProfit > 0) {
-      const s = stats(view.rows);
-      const targetDol = b.cfg.targetProfit;
-      const targetU = targetDol / b.cfg.unit;
-      const diffDol = targetDol - s.net;
-      const diffU = targetU - s.units;
-      const reached = s.net >= targetDol;
-      const signDol = diffDol > 0 ? `-$${fmt(diffDol).replace('$', '')}` : `+$${fmt(Math.abs(diffDol)).replace('$', '')}`;
-      const signU = diffU > 0 ? `-${diffU.toFixed(1)}u` : `+${Math.abs(diffU).toFixed(1)}u`;
-      targetBadge = `
-        <div class="target-badge ${reached ? 'achieved' : 'needed'}">
-          <span class="target-title">Target: ${fmt(targetDol)} (${targetU.toFixed(1)}u)</span>
-          <span class="target-progress">${reached ? 'Goal Achieved!' : 'Needed:'} <b>${fmt(Math.max(0, diffDol))}</b> (${Math.max(0, diffU).toFixed(1)}u)</span>
-          <span class="target-diff">[<b>${signDol}</b> / <b>${signU}</b>]</span>
-        </div>
-      `;
-    }
-
-
 
     let dragonBanner = '';
     const dragon = Engine.detectDragon ? Engine.detectDragon(view.rows) : null;
@@ -511,7 +525,7 @@
     // The directive card is static: banners, ladder and result notes live in the notification area below.
     $('next').innerHTML = h + skip;
     const notices = $('noticeBanners');
-    if (notices) notices.innerHTML = targetBadge + recBanner + drawBanner + alertBanner + ladderBadge + lastLine;
+    if (notices) notices.innerHTML = recBanner + drawBanner + alertBanner + ladderBadge + lastLine;
     $('skipBetOnce')?.addEventListener('click', toggleNoBet);
     $('betMinus')?.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -551,10 +565,12 @@
       urgentAlert = {
         key: `triple:${rows.length}:${nx.step}`,
         type: tripleRisk.urgent ? 'critical' : 'warning',
-        badge: tripleRisk.urgent ? 'Critical Step 5 Alert' : 'Triple Risk Detected',
-        title: tripleRisk.urgent ? 'HIGH STAKE AT RISK ON STEP 5' : 'HISTORICAL GAP THRESHOLD REACHED',
-        body: escapeHTML(tripleRisk.message) + (tripleRisk.shieldRecommended ? ` · ${escapeHTML(tripleRisk.shieldMessage)}` : ''),
-        actionLabel: noBetArmed ? 'Bet Skipped (Armed)' : (tripleRisk.urgent ? 'Accept Skip Bet (One-Time)' : 'Accept Skip This Bet'),
+        badge: tripleRisk.urgent ? 'Step 5 Alert' : 'Triple Risk',
+        title: tripleRisk.urgent ? 'High Risk' : 'Triple Overdue',
+        body: tripleRisk.urgent
+          ? `${tripleRisk.rollsSince} rolls since triple. Skip recommended.`
+          : `${tripleRisk.rollsSince} rolls without triple.`,
+        actionLabel: noBetArmed ? 'Bet Skipped' : 'Skip Bet',
         onAccept: () => {
           if (!noBetArmed) toggleNoBet();
           dismissedTripleRoll = rows.length;
@@ -570,10 +586,10 @@
           urgentAlert = {
             key: `dragon:skip:${rows.length}:${dragon.length}`,
             type: 'warning',
-            badge: 'Dragon Alert · Streak of 4',
-            title: `STREAK OF 4 ${dragon.side}s DETECTED`,
-            body: escapeHTML(dragon.message),
-            actionLabel: noBetArmed ? 'Bet Skipped (Armed)' : 'Accept Skip Roll 5',
+            badge: `Dragon ${dragon.side}`,
+            title: `4 ${dragon.side}s`,
+            body: `Skip roll 5.`,
+            actionLabel: noBetArmed ? 'Bet Skipped' : 'Skip Roll 5',
             onAccept: () => {
               if (!noBetArmed) toggleNoBet();
             },
@@ -582,12 +598,12 @@
           urgentAlert = {
             key: `dragon:bet:${rows.length}:${dragon.length}`,
             type: 'warning',
-            badge: 'Dragon Alert · Streak of 5',
-            title: `STREAK OF 5 ${dragon.side}s · ANTI-STREAK SIGNAL`,
-            body: escapeHTML(dragon.message),
-            actionLabel: `Accept Anti-Streak Bet on ${g.sides[dragon.antiSide].label}`,
+            badge: `Dragon ${dragon.side}`,
+            title: `5 ${dragon.side}s`,
+            body: `Bet roll 6 on ${g.sides[dragon.antiSide].label}.`,
+            actionLabel: `Bet ${g.sides[dragon.antiSide].label}`,
             onAccept: () => {
-              toast(`Anti-streak bet on ${g.sides[dragon.antiSide].label} accepted.`);
+              toast(`Bet ${g.sides[dragon.antiSide].label} accepted.`);
             },
           };
         }
@@ -601,10 +617,10 @@
         urgentAlert = {
           key: `clash:${rows.length}:${nx.step}:${rolling.discreteMatchPct}`,
           type: 'warning',
-          badge: 'Rolling Pattern Clash',
-          title: `ROLLING PATTERN CONTRADICTION (${rolling.discreteMatchPct}% MATCH)`,
-          body: escapeHTML(rolling.message),
-          actionLabel: noBetArmed ? 'Bet Skipped (Armed)' : 'Accept Skip Contradicted Bet',
+          badge: 'Pattern Clash',
+          title: `Clash (${rolling.discreteMatchPct}%)`,
+          body: `Patterns project opposite (${opp(nx.side)}).`,
+          actionLabel: noBetArmed ? 'Bet Skipped' : 'Skip Bet',
           onAccept: () => {
             if (!noBetArmed) toggleNoBet();
           },
@@ -664,8 +680,8 @@
       : '';
 
     const note = !urgentState.expired
-      ? 'Normal progression continues unless accepted within 10s.'
-      : 'Normal progression active.';
+      ? 'Auto-resumes in 10s.'
+      : 'Active.';
 
     el.innerHTML = `
       <div class="urgent-line-1">
@@ -706,7 +722,7 @@
       items.push(`
         <div class="standard-msg-item">
           <span class="standard-msg-badge warn">Recovery</span>
-          <span>Set ${rec.currentSet} of ${rec.totalSets} (${profit} per win)</span>
+          <span>Set ${rec.currentSet}/${rec.totalSets} (${profit}/win)</span>
         </div>
       `);
     }
@@ -717,7 +733,7 @@
       items.push(`
         <div class="standard-msg-item">
           <span class="standard-msg-badge warn">${escapeHTML(prob.label)}</span>
-          <span>${prob.rollsSince} rolls since last ${prob.type} (${prob.cumPct}% historical interval)</span>
+          <span>${prob.rollsSince} rolls without ${prob.type}</span>
         </div>
       `);
     }
@@ -826,7 +842,7 @@
     }
 
     if (!deep.formations || deep.formations.length === 0) {
-      deepEl.innerHTML = `<div class="muted small">Collecting deep history (lengths 8–16). ${deep.count} rolls analyzed so far.</div>`;
+      deepEl.innerHTML = `<div class="muted small">Collecting: ${deep.count}/16 rolls.</div>`;
       return;
     }
 

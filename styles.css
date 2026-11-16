@@ -290,7 +290,30 @@ main { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); ga
 .last { margin-top: 12px; font-weight: 700; font-size: 15px; }
 
 /* entry */
-.pending { display: flex; align-items: center; justify-content: center; gap: 16px; min-height: 76px; margin-bottom: 12px; }
+.entry-line { display: flex; align-items: center; justify-content: center; gap: 14px; min-height: 70px; margin-bottom: 8px; flex-wrap: wrap; }
+.pending { display: flex; align-items: center; justify-content: center; gap: 14px; min-height: 58px; }
+.target-bet-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: 7px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.target-bet-line .val-num {
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.target-bet-line .val-target { color: var(--color-urgent-text); }
+.target-bet-line .val-needed { color: var(--color-warn); }
+.target-bet-line .val-achieved { color: var(--color-win); }
+.target-bet-line .val-bet { color: var(--color-info-text); }
+.target-bet-line .sep { color: var(--line); font-weight: 400; }
 .slots { display: flex; gap: 8px; }
 .slot { width: 58px; height: 58px; border: 2px dashed var(--line); border-radius: 10px; display: grid; place-items: center; font-size: 22px; font-weight: 800; }
 .slot.filled { border-style: solid; border-color: var(--text); background: var(--panel2); }

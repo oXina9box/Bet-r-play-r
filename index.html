@@ -34,7 +34,10 @@
 
       <div class="entry">
         <div id="voiceTranscript" class="voice-transcript" hidden></div>
-        <div id="pending" class="pending"></div>
+        <div class="entry-line">
+          <div id="pending" class="pending"></div>
+          <div id="targetBetLine" class="target-bet-line" hidden></div>
+        </div>
         <div id="pad"></div>
         <div class="entry-actions">
           <button id="voiceBtn" class="act voice-btn" title="Enable voice entry in Options, then hold Space to speak"><svg class="mic-icon" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><rect x="5" y="1.5" width="6" height="8.5" rx="3"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2M5.5 14.5h5"/></svg> Hold Space</button>
@@ -57,7 +60,7 @@
     <div id="notifyPanel" class="notify-panel" aria-label="Notifications">
       <div id="urgentAlertArea" class="urgent-alert-area" hidden role="alert" aria-live="assertive"></div>
       <section id="rollRecovery" hidden role="alert" aria-live="assertive">
-        <span id="rollRecoveryMessage">Could not verify the completed roll. Enter all three dice now.</span>
+        <span id="rollRecoveryMessage">Verify roll: enter 3 dice.</span>
         <span id="rollRecoveryCountdown" aria-live="off"></span>
       </section>
       <div id="noticeBanners" class="notice-banners"></div>
@@ -105,7 +108,7 @@
 
   <dialog id="screenAreaDialog" class="watch-dialog" aria-labelledby="screenAreaTitle" aria-describedby="screenAreaHint">
     <div class="options-head"><h2 id="screenAreaTitle">Draw watch area</h2><button id="screenAreaUseSaved" hidden>Use saved calibration</button><button id="screenAreaCancel" autofocus>Cancel</button></div>
-    <p id="screenAreaHint">Drag around the whole game video. Recording resumes when you release.</p>
+    <p id="screenAreaHint">Drag around the game video.</p>
     <canvas id="screenAreaPreview" width="640" height="1" aria-label="Drag a rectangle around the game video"></canvas>
   </dialog>
 
@@ -155,14 +158,14 @@
         <details id="recorderMenu" class="recorder-menu" open><summary style="display:none"></summary>
           <div class="recorder-panel"><div class="card screen-card">
             <div class="screen-actions"><b>Visual recorder</b><button id="screenStart">Share screen</button><button id="screenSyncStart" hidden disabled>Start synced</button><button id="screenStop" disabled>Stop</button><button id="screenSelectArea">Draw watch area</button></div>
-            <div id="screenStatus" class="muted small" role="status" aria-live="polite">Select casino and game above, then share the casino tab or window.</div>
+            <div id="screenStatus" class="muted small" role="status" aria-live="polite">Share the casino window or tab.</div>
             <section id="screenSicBoCalibration" class="reader-calibration" aria-label="Sic Bo reading areas">
               <details id="screenSourceDetails" open>
                 <summary>Shared screen</summary>
                 <output id="screenSourceLabel">No screen shared</output>
                 <canvas id="screenSourcePreview" width="640" height="1" aria-label="Live shared source; green box marks the selected history column"></canvas>
               </details>
-              <div class="reader-calibration-head"><b>Reading areas</b><output id="screenTimingStatus" aria-live="polite">Select history area, then start two seconds after it updates.</output><span id="screenCaptureIndicator" class="capture-indicator" data-active="false" role="status">Capture off</span></div>
+              <div class="reader-calibration-head"><b>Reading areas</b><output id="screenTimingStatus" aria-live="polite">Select history area, then start.</output><span id="screenCaptureIndicator" class="capture-indicator" data-active="false" role="status">Capture off</span></div>
               <div class="reader-source">
                 <button id="screenHistorySelect" data-screen-region="history" aria-pressed="false" aria-label="Select the Sic Bo history section" title="Select the history strip containing totals and dice.">Select history section</button>
                 <canvas id="screenHistoryPreview" width="160" height="80" aria-label="Selected Sic Bo history section"></canvas>

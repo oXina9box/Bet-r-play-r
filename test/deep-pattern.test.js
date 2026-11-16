@@ -142,6 +142,8 @@ test('bet area #next never has overlays and urgent alert area operates cleanly',
   assert.ok(app.element('games'), 'games selector dropdown exists');
   assert.ok(app.element('tabSettings'), 'settings tab exists in giant popup');
   assert.ok(app.element('tabRecorder'), 'recorder tab exists in giant popup');
+  assert.ok(app.element('targetBetLine'), 'targetBetLine exists on dice entry line');
+  assert.ok(!app.element('noticeBanners').innerHTML.includes('target-badge'), 'target-badge is never in noticeBanners');
 });
 
 test('settingsBtn opens giant popup with Settings and Visual Recorder tabs', async () => {

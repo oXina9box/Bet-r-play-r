@@ -719,11 +719,11 @@
     const action = streakLen === 4 ? 'skip' : (streakLen === 5 ? 'bet' : 'watch');
     let message = '';
     if (streakLen === 4) {
-      message = `DRAGON ALERT (4 straight ${streakSide}s): Anti-streak rule recommends SKIPPING Roll 5. If 5 resets, bet next factor.`;
+      message = `Dragon 4 ${streakSide}s: Skip roll 5.`;
     } else if (streakLen === 5) {
-      message = `DRAGON ALERT (5 straight ${streakSide}s): Anti-streak rule recommends BETTING Roll 6 on ${antiSide}.`;
+      message = `Dragon 5 ${streakSide}s: Bet roll 6 on ${antiSide}.`;
     } else {
-      message = `EXTENDED DRAGON (${streakLen} straight ${streakSide}s): Anti-streak caution on ${streakSide}.`;
+      message = `Dragon ${streakLen} ${streakSide}s: Caution on ${streakSide}.`;
     }
     return {
       side: streakSide,
@@ -858,7 +858,7 @@
           abstract: abstract(window),
           strength: 95 + Math.min(5, (L - 8)),
           projectedSide: antiSide,
-          reason: `Unbroken streak of ${L} ${streakSide}s. Anti-streak rule projects ${antiSide}.`,
+          reason: `Streak of ${L} ${streakSide}s: projects ${antiSide}.`,
           urgent: L >= 10,
         });
       }
@@ -879,7 +879,7 @@
           abstract: abstract(window),
           strength: 90 + Math.min(10, (L - 8)),
           projectedSide: nextChopSide,
-          reason: `Clean ${L}-roll alternating pattern (${str}). Projects ${nextChopSide} on continuation.`,
+          reason: `Chop ${L} rolls: projects ${nextChopSide}.`,
           urgent: L >= 10,
         });
       }
@@ -901,7 +901,7 @@
             abstract: abstract(window),
             strength: 85 + Math.min(10, (L - 8)),
             projectedSide: nextPeriodicSide,
-            reason: `Strict 2-2 double-chop formation (${str}). Projects ${nextPeriodicSide}.`,
+            reason: `2-2 double chop (${L} rolls): projects ${nextPeriodicSide}.`,
             urgent: false,
           });
         }
@@ -936,7 +936,7 @@
               abstract: abstract(window),
               strength: Math.round(dominantPct * 100),
               projectedSide: domSide,
-              reason: `Sequence ${str} appeared ${pastOccurrences} times in prior history; ${Math.round(dominantPct * 100)}% of the time it was followed by ${domSide}.`,
+              reason: `History (${pastOccurrences}x): ${Math.round(dominantPct * 100)}% followed by ${domSide}.`,
               urgent: pastOccurrences >= 3 && dominantPct >= 0.8,
             });
           }
@@ -1063,19 +1063,19 @@
     let message = '';
     if (!currentActive) {
       signalType = 'waiting';
-      message = 'Collecting rolls for active group projection.';
+      message = 'Collecting rolls for projection.';
     } else if (combinedPct >= 75) {
       signalType = 'strong_confirm';
-      message = `${combinedPct}% Rolling Confirmation Match (${equalRollsPct}% rolls + ${weightedHalfPct}% wt). Strong support for ${currentSide}.`;
+      message = `${combinedPct}% match: Strong support for ${currentSide}.`;
     } else if (combinedPct >= 55) {
       signalType = 'moderate_confirm';
-      message = `${combinedPct}% Rolling Pattern Match (${equalRollsPct}% rolls + ${weightedHalfPct}% wt). Moderate confirmation on ${currentSide}.`;
+      message = `${combinedPct}% match: Moderate support for ${currentSide}.`;
     } else if (combinedPct >= 35) {
       signalType = 'split';
-      message = `${combinedPct}% Rolling Pattern Match (${equalRollsPct}% rolls + ${weightedHalfPct}% wt). Split signals: some rolling horizons project ${opp(currentSide)}.`;
+      message = `${combinedPct}% match: Split signals (${opp(currentSide)}).`;
     } else {
       signalType = 'clash';
-      message = `CAUTION: ${combinedPct}% Rolling Match (${equalRollsPct}% rolls + ${weightedHalfPct}% wt). Rolling patterns project OPPOSITE play (${opp(currentSide)}).`;
+      message = `${combinedPct}% match: Projects opposite (${opp(currentSide)}).`;
     }
 
     return {
