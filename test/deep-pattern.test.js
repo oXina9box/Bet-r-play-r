@@ -38,15 +38,19 @@ test('analyzeRollingConfirmation computes 50/20/15/10/5 weights and discrete mat
 
   const res = Engine.analyzeRollingConfirmation(rows, next);
   assert.equal(res.currentSide, 'B');
-  assert.equal(res.horizons.length, 4); // 11, 10, 9, 8
-  assert.ok([0, 20, 40, 60, 80, 100].includes(res.discreteMatchPct));
+  assert.equal(res.horizons.length, 4); // 12, 11, 10, 9
+  assert.ok([0, 25, 50, 75, 100].includes(res.discreteMatchPct));
   assert.ok(res.normalizedWeighted >= 0 && res.normalizedWeighted <= 100);
 
-  // Check horizon weights are 20, 15, 10, 5
-  assert.equal(res.horizons[0].weight, 20); // len 11
-  assert.equal(res.horizons[1].weight, 15); // len 10
-  assert.equal(res.horizons[2].weight, 10); // len 9
-  assert.equal(res.horizons[3].weight, 5);  // len 8
+  // Check horizon weights are 20, 15, 10, 5 for lengths 12, 11, 10, 9
+  assert.equal(res.horizons[0].length, 12);
+  assert.equal(res.horizons[0].weight, 20); // len 12
+  assert.equal(res.horizons[1].length, 11);
+  assert.equal(res.horizons[1].weight, 15); // len 11
+  assert.equal(res.horizons[2].length, 10);
+  assert.equal(res.horizons[2].weight, 10); // len 10
+  assert.equal(res.horizons[3].length, 9);
+  assert.equal(res.horizons[3].weight, 5);  // len 9
 
   // First 50% = equal percentage across rolls (e.g. 4/5 match = 40%)
   assert.equal(typeof res.equalRollsPct, 'number');

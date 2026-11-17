@@ -781,48 +781,13 @@
 
     if (badgeEl) {
       badgeEl.className = `rolling-signal-badge ${rolling.signalType}`;
-      const pctLabel = rolling.combinedPct != null ? `${rolling.combinedPct}% MATCH (${rolling.equalRollsPct}% + ${rolling.weightedHalfPct}% WT)` : `${rolling.discreteMatchPct}% MATCH (${rolling.normalizedWeighted}% WT)`;
-      badgeEl.textContent = pctLabel;
+      badgeEl.textContent = `${rolling.combinedPct ?? 0}%`;
     }
 
-    const currentSideLabel = rolling.currentSide ? g.sides[rolling.currentSide].label : 'Waiting';
-    let rowsHtml = `
-      <tr class="current-row">
-        <td class="left-align">Current Setup</td>
-        <td>50%</td>
-        <td><b>${escapeHTML(currentSideLabel)}</b></td>
-        <td><span class="rolling-status-badge confirm">Active Bet</span></td>
-      </tr>
-    `;
-
-    for (const h of rolling.horizons) {
-      const projLabel = h.projectedSide ? g.sides[h.projectedSide].label : '–';
-      const statusCls = h.status === 'confirm' ? 'confirm' : (h.status === 'opposite' ? 'opposite' : 'collecting');
-      const statusText = h.status === 'confirm' ? '✓ Confirm' : (h.status === 'opposite' ? '✗ Opposite' : `Need ${h.needed || 0}`);
-      rowsHtml += `
-        <tr>
-          <td class="left-align">${h.length} Rolls</td>
-          <td>${h.weight}%</td>
-          <td>${escapeHTML(projLabel)}</td>
-          <td><span class="rolling-status-badge ${statusCls}">${statusText}</span></td>
-        </tr>
-      `;
-    }
-
-    rollingEl.innerHTML = `
-      <div class="muted small" style="margin-bottom: 4px;">${escapeHTML(rolling.message)}</div>
-      <table class="rolling-table">
-        <thead>
-          <tr>
-            <th class="left-align">Horizon</th>
-            <th>Weight</th>
-            <th>Projected</th>
-            <th>Signal</th>
-          </tr>
-        </thead>
-        <tbody>${rowsHtml}</tbody>
-      </table>
-    `;
+    rollingEl.innerHTML = `<div class="rolling-chips">${rolling.horizons.map(h => {
+      const mark = h.status === 'confirm' ? '<span class="ok">✓</span>' : (h.status === 'opposite' ? '<span class="no">✗</span>' : '<span class="wait">–</span>');
+      return `<span class="rolling-chip">${h.length}${mark}</span>`;
+    }).join('')}</div>`;
   }
 
   function renderDeepPatterns() {

@@ -96,36 +96,22 @@ function makeEntries(diceList, skips = []) {
   });
 }
 
-// Sequence: 5 rolls to set factor: [11(A), 14(A), 9(B), 14(A), 6(B)] -> pattern B
-// Roll 5: 13(A) -> factor A
-// Roll 6 is Bet 1 (step 0).
-// If we skip Bet 1 (i = 6):
+// Skipping a bet never pauses or shifts the group: the roll counts and the step advances.
 const runSkip1 = Engine.run(makeEntries([11, 14, 9, 14, 6, 13, 12], [6]), cfg);
 assert.equal(runSkip1.rows[6].noBet, true);
 assert.equal(runSkip1.rows[6].pnl, 0);
-assert.equal(runSkip1.next.step, 0, 'Skipping bet 1 keeps step frozen at 0');
-assert.equal(runSkip1.next.mult, 1, 'Stake remains 1x after skipping bet 1');
-assert.equal(runSkip1.next.plan[runSkip1.next.step], runSkip1.next.side, 'Plan step 0 updates to match shifted rollIndex side after skip');
+assert.equal(runSkip1.next.step, 1, 'Skipping bet 1 still advances the group to bet 2');
+assert.equal(runSkip1.next.plan[runSkip1.next.step], runSkip1.next.side, 'Next side is the unshifted group side');
 
-// Now lose next roll for real: step advances to 1 (bet 2)
-// For rollIndex 1, plan[1] is 'A' (Big). So 9 (B, Small) is a loss.
+// The skipped roll plus a real loss advances two steps.
 const runLossAfterSkip = Engine.run(makeEntries([11, 14, 9, 14, 6, 13, 12, 9], [6]), cfg);
 assert.equal(runLossAfterSkip.rows[7].result, 'loss');
-assert.equal(runLossAfterSkip.next.step, 1, 'Next bet is now step 1 (2x)');
-assert.equal(runLossAfterSkip.next.mult, 2);
+assert.equal(runLossAfterSkip.next.step, 2, 'Group continues to bet 3');
 
-// Now advance to Bet 3 (step 2) and skip:
-// Roll 6: skip at step 0 (12 -> A, plan[0] is B -> loss). Step stays 0.
-// Roll 7: loss at step 0 (9 -> B, plan[1] is A -> loss). Step advances to 1.
-// Roll 8: loss at step 1 (12 -> A, plan[2] is B -> loss). Step advances to 2.
-// Roll 9: skip at step 2 (9 -> B, plan[3] is A -> loss). Step remains at 2!
-const runSkip3 = Engine.run(makeEntries([11, 14, 9, 14, 6, 13, 12, 9, 12, 9], [6, 9]), cfg);
-assert.equal(runSkip3.rows[9].noBet, true);
-assert.equal(runSkip3.rows[9].bet.step, 2);
-assert.equal(runSkip3.rows[9].bet.mult, 4);
-assert.equal(runSkip3.next.step, 2, 'Skipping bet 3 keeps next bet at step 2');
-assert.equal(runSkip3.next.mult, 4, 'Stake remains 4x after skipping bet 3');
-assert.equal(runSkip3.next.plan[runSkip3.next.step], runSkip3.next.side, 'Plan step 2 matches shifted rollIndex side after skip');
+// The group plan matches an unskipped run exactly.
+const runNoSkip = Engine.run(makeEntries([11, 14, 9, 14, 6, 13, 12, 9], []), cfg);
+assert.deepEqual(runLossAfterSkip.next.plan, runNoSkip.next.plan, 'Skipping does not change the group');
+assert.equal(runLossAfterSkip.next.side, runNoSkip.next.side);
 
 // Option B Test: If a skipped roll matches the win side, set ends as won ($0 pnl)
 // Pattern fading A: bet side is B (Small, <= 10).

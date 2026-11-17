@@ -256,9 +256,9 @@
           cooldownReason = 'win';
           set = null;
         } else {
-          // If bet was skipped, the bet value remains at the previous step value
-          if (!e.nb) {
-            if (!push && isLadderProg && !r.bankReset) {
+          // Skipped bet: the group still advances exactly as if played; only money is not risked.
+          {
+            if (!e.nb && !push && isLadderProg && !r.bankReset) {
               ladderLevel = Math.min(FIB_SEQUENCE.length - 1, set.ladderLevel + 1);
             }
             if (++set.step >= set.plan.length) {
@@ -955,14 +955,12 @@
   }
 
   /**
-   * Rolling pattern tracker looking at the last 8, 9, 10, 11 rolls alongside current setup.
-   * Exact weighted equation:
-   * - Current setup = 50%
-   * - Roll 11 = 20%
-   * - Roll 10 = 15%
-   * - Roll 9 = 10%
-   * - Roll 8 = 5%
-   * Total = 100%
+   * Rolling pattern tracker looking at the last 12, 11, 10, 9 rolls.
+   * Total (100%) = 50% equal share (12.5% per horizon) + 50% tiered:
+   * - Roll 12 = 20%
+   * - Roll 11 = 15%
+   * - Roll 10 = 10%
+   * - Roll 9 = 5%
    */
   function analyzeRollingConfirmation(rows, currentNext, curCfg) {
     const sides = [];
@@ -977,12 +975,12 @@
     const currentPhase = currentNext?.phase || 'collect';
     const currentStep = currentNext?.step != null ? currentNext.step : 0;
 
-    // Weights configuration: current = 50%, 11 = 20%, 10 = 15%, 9 = 10%, 8 = 5%
+    // Weights configuration: current = 50%, 12 = 20%, 11 = 15%, 10 = 10%, 9 = 5%
     const HORIZON_WEIGHTS = [
-      { len: 11, weight: 20 },
-      { len: 10, weight: 15 },
-      { len: 9, weight: 10 },
-      { len: 8, weight: 5 },
+      { len: 12, weight: 20 },
+      { len: 11, weight: 15 },
+      { len: 10, weight: 10 },
+      { len: 9, weight: 5 },
     ];
 
     const horizons = HORIZON_WEIGHTS.map(({ len, weight }) => {
@@ -1024,37 +1022,29 @@
     const readyHorizons = horizons.filter(h => h.ready);
     let weightedScore = 0;
     let matchCount = 0;
-    const totalSignals = 1 + HORIZON_WEIGHTS.length; // 5 signals (current + 11, 10, 9, 8)
-
-    // Current setup always contributes 50% if there is an active projected play
+    const totalSignals = HORIZON_WEIGHTS.length; // 4 horizons (12, 11, 10, 9)
     const currentActive = Boolean(currentSide);
-    if (currentActive) {
-      weightedScore += 50;
-      matchCount += 1; // current setup matches itself
-    }
 
-    let readyWeightSum = currentActive ? 50 : 0;
-    for (const h of horizons) {
-      if (h.ready) {
-        readyWeightSum += h.weight;
-        if (h.matchesCurrent === true) {
-          weightedScore += h.weight;
-          matchCount += 1;
-        }
+    // Weights 20/15/10/5 already sum to 50 = the tiered half of the total.
+    const readyWeightSum = readyHorizons.reduce((s, h) => s + h.weight, 0);
+    for (const h of readyHorizons) {
+      if (h.matchesCurrent === true) {
+        weightedScore += h.weight;
+        matchCount += 1;
       }
     }
 
     // Normalized weighted confirmation percentage (0 to 100%)
     const normalizedWeighted = readyWeightSum > 0 ? Math.round((weightedScore / readyWeightSum) * 100) : 0;
-    // Discrete match percentage across the 5 signals (0%, 20%, 40%, 60%, 80%, 100%)
+    // Discrete match percentage across the 4 horizons (0, 25, 50, 75, 100)
     const discreteMatchPct = Math.round((matchCount / totalSignals) * 100);
 
-    // First 50%: equal rolls percentage (e.g. 4/5 match = 40%)
+    // First 50%: equal share per horizon (each 12.5% of the total)
     const equalRollsPct = Math.round((matchCount / totalSignals) * 50);
-    // Second 50%: weighted match percentage
-    const weightedHalfPct = readyWeightSum > 0 ? Math.round((weightedScore / readyWeightSum) * 50) : 0;
-    // Combined total percentage (first 50% equal + weighted %)
-    const combinedPct = Math.min(100, equalRollsPct + weightedHalfPct);
+    // Second 50%: tiered weights (12=20, 11=15, 10=10, 9=5)
+    const weightedHalfPct = weightedScore;
+    // Combined total percentage out of 100
+    const combinedPct = Math.min(100, Math.round((matchCount / totalSignals) * 50 + weightedScore));
 
     const oppositeCount = readyHorizons.filter(h => h.matchesCurrent === false).length;
     const hasClash = currentActive && readyHorizons.length >= 3 && (oppositeCount >= 3 || (oppositeCount >= 2 && currentStep >= 3));
