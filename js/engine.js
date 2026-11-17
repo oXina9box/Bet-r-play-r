@@ -156,7 +156,7 @@
     let sessionBankProfit = 0;
 
     for (const e of entries) {
-      const r = Object.assign({}, e, { role: 'collect', bet: null, result: null, pnl: 0, setEnd: null });
+      const r = Object.assign({}, e, { role: 'collect', bet: null, result: null, pnl: 0, setEnd: null }, e.nb ? { noBet: true } : {});
       rows.push(r);
 
       // Tie: plays as whoever won last (for pattern/flow), but money-wise it's a push unless lossAll.

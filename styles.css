@@ -1378,9 +1378,12 @@ body[data-game="sicbo"] #extra { flex: 0 0 auto; max-height: none; min-height: 0
 body[data-game] .stats .bars { height: 60px; }
 .strip .bacc-lane .chip.bacc-bead.special { box-shadow: 0 0 0 1px var(--warn); }
 
-/* Compact rolling card: no scroll, roll # + check/x */
+/* Compact rolling card: no scroll, roll # + check/x across all games */
+body[data-game] #rollingCard,
 #rollingCard { overflow: hidden; }
+body[data-game] #rollingCard .stats-head,
 #rollingCard .stats-head { margin: 0; }
+body[data-game] #rollingCard .rolling-signal-badge,
 #rollingCard .rolling-signal-badge { font-size: 14px; padding: 2px 8px; }
 .rolling-chips { display: flex; gap: 6px; margin-top: 6px; flex-wrap: nowrap; }
 .rolling-chip { flex: 1; display: flex; align-items: center; justify-content: center; gap: 3px; font-size: 13px; font-weight: 700; padding: 3px 0; background: var(--panel2); border-radius: var(--radius-sm); }

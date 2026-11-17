@@ -183,3 +183,57 @@ test('scoreboard renders Baccarat beads for groups', async () => {
   const stripEl = app.element('strip');
   assert.ok(stripEl, '#strip element exists');
 });
+
+test('rolling tracker and bet skipping operate consistently across all games', async () => {
+  const gameIds = ['sicbo', 'baccarat', 'teenpatti', 'kickoff'];
+  const cfg = { n: 5, prog: 'double', unit: 1, payout: 1, waitBust: 0, waitWin: 0, waitBet: 0 };
+
+  for (const gid of gameIds) {
+    // 1. Engine.analyzeRollingConfirmation across all games
+    const sides = ['A', 'B', 'A', 'B', 'A', 'B', 'A', 'B', 'A', 'B', 'A', 'B', 'A'];
+    const rows = sides.map((s, i) => ({ side: s, effSide: s, t: 1000 + i }));
+    const next = { side: 'B', phase: 'bet', step: 0 };
+    const rolling = Engine.analyzeRollingConfirmation(rows, next, cfg);
+
+    assert.equal(rolling.horizons.length, 4, `${gid}: 4 roll horizons (12, 11, 10, 9)`);
+    assert.deepEqual(rolling.horizons.map(h => h.length), [12, 11, 10, 9], `${gid}: horizon lengths`);
+    assert.equal(typeof rolling.combinedPct, 'number', `${gid}: single combined percentage`);
+    assert.ok(rolling.combinedPct >= 0 && rolling.combinedPct <= 100, `${gid}: combinedPct in 0-100`);
+
+    // 2. Bet skipping flow across all games:
+    // With n=5: 5 rolls pattern, 6th roll factor, 7th roll Bet 1 (step 0), 8th roll Bet 2 (step 1).
+    // Skipping Bet 1 (index 6): rolls are counted, step advances to 1, no money risked.
+    const entriesWithSkip = [
+      { side: 'A', t: 1 }, { side: 'B', t: 2 }, { side: 'A', t: 3 }, { side: 'B', t: 4 },
+      { side: 'A', t: 5 }, // pattern [A, B, A, B, A]
+      { side: 'A', t: 6 }, // factor roll: factor A
+      { side: 'B', t: 7, nb: true }, // Bet 1 skipped (would-be loss): step advances 0 -> 1
+      { side: 'A', t: 8 }, // Bet 2 (loss): step advances 1 -> 2
+    ];
+    const runSkip = Engine.run(entriesWithSkip, cfg);
+    assert.equal(runSkip.rows[6].noBet, true, `${gid}: row 6 marked noBet`);
+    assert.equal(runSkip.rows[6].pnl, 0, `${gid}: row 6 pnl is 0`);
+    assert.equal(runSkip.rows[6].role, 'bet', `${gid}: row 6 role is bet`);
+    assert.equal(runSkip.rows.length, 8, `${gid}: all 8 rolls counted consecutively`);
+    assert.equal(runSkip.next.step, 2, `${gid}: group continued advancing to step 2`);
+
+    // Verify unskipped run has the exact same group structure and sides
+    const entriesNoSkip = entriesWithSkip.map(e => ({ side: e.side, t: e.t }));
+    const runNoSkip = Engine.run(entriesNoSkip, cfg);
+    assert.equal(runSkip.rows[6].role, runNoSkip.rows[6].role, `${gid}: role matches unskipped`);
+    assert.equal(runSkip.next.plan[runSkip.next.step], runNoSkip.next.plan[runNoSkip.next.step], `${gid}: group sides unchanged by skip`);
+
+    // 3. App DOM renders Rolling card for each game
+    const app = await bootApp(gid);
+    const badgeEl = app.element('rollingSignalBadge');
+    const rollingEl = app.element('rollingTracker');
+    assert.ok(badgeEl, `${gid}: rollingSignalBadge exists in DOM`);
+    assert.ok(rollingEl, `${gid}: rollingTracker exists in DOM`);
+    assert.ok(rollingEl.innerHTML.includes('rolling-chip'), `${gid}: renders rolling chips in DOM`);
+    assert.ok(rollingEl.innerHTML.includes('12'), `${gid}: contains roll 12`);
+    assert.ok(rollingEl.innerHTML.includes('11'), `${gid}: contains roll 11`);
+    assert.ok(rollingEl.innerHTML.includes('10'), `${gid}: contains roll 10`);
+    assert.ok(rollingEl.innerHTML.includes('9'), `${gid}: contains roll 9`);
+  }
+});
+
